@@ -1,32 +1,25 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
 
+class ConfigManager:
+    _instance = None
 
-def get_deepseek_api_key() -> str:
-    return os.getenv("DEEPSEEK_API_KEY", "")
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._load_config()
+        return cls._instance
 
+    def _load_config(self):
+        load_dotenv()
+        self.api_key = os.getenv("DEEPSEEK_API_KEY", "")
+        self.base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        self.model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
+        self.knowledge_base_path = os.getenv("KNOWLEDGE_BASE_PATH", "./knowledge/bug_experience.txt")
+        self.max_tokens = int(os.getenv("MAX_TOKENS", 4096))
+        self.temperature = float(os.getenv("TEMPERATURE", 0.7))
 
-def get_deepseek_base_url() -> str:
-    return os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-
-
-def get_deepseek_model() -> str:
-    return os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
-
-
-def get_knowledge_base_path() -> str:
-    return os.getenv("KNOWLEDGE_BASE_PATH", "./knowledge/bug_experience.txt")
-
-
-def get_max_tokens() -> int:
-    return int(os.getenv("MAX_TOKENS", 4096))
-
-
-def get_temperature() -> float:
-    return float(os.getenv("TEMPERATURE", 0.7))
-
-
-def is_api_configured() -> bool:
-    return bool(get_deepseek_api_key())
+    @property
+    def is_api_configured(self) -> bool:
+        return bool(self.api_key)
