@@ -13,7 +13,7 @@ config = ConfigManager()
 st.title("🧪 AI Test Assistant")
 
 tab1, tab2, tab3 = st.tabs([
-    "📋 需求转测试点",
+    "📋 生成测试分析报告",
     "🧑‍💻 自动化用例生成",
     "🔍 异常日志分析"
 ])
