@@ -90,7 +90,12 @@ class TestAssistantManager:
         if bug_kb_content:
             user_prompt += f"【历史Bug经验知识库】\n{bug_kb_content}\n\n"
 
-        rag_context = self.rag_manager.search_similar_cases(prd_content, top_k=2)
+        rag_context, max_score, matched_count = self.rag_manager.search_similar_cases(prd_content, top_k=2)
+        self._rag_used = len(rag_context) > 0
+        self._rag_context_preview = rag_context[:500] if rag_context else ""
+        self._rag_max_score = max_score
+        self._rag_matched_count = matched_count
+        
         if rag_context:
             user_prompt += f"【相似历史测试点参考】\n{rag_context}\n\n"
         

@@ -17,6 +17,8 @@ def render_ui():
         st.session_state.rag_info = {}
     if "current_report" not in st.session_state:
         st.session_state.current_report = ""
+    if "refining" not in st.session_state:
+        st.session_state.refining = False
 
     col1, col2 = st.columns([2, 1])
 
@@ -38,6 +40,66 @@ def render_ui():
         
         has_input = bool(requirement_text.strip()) or uploaded_prd is not None
         generate_btn = st.button("🚀 生成测试分析报告", type="primary", disabled=not has_input)
+
+        if generate_btn:
+            kb_manager = KnowledgeBaseManager()
+            test_manager = TestAssistantManager()
+
+            prd_content = requirement_text.strip()
+            prd_title = requirement_text.strip().split('\n')[0] if requirement_text.strip() else ""
+            
+            if uploaded_prd:
+                try:
+                    prd_content = extract_text_from_file(uploaded_prd)
+                    if not prd_title:
+                        prd_title = uploaded_prd.name.replace('.md', '').replace('.txt', '').replace('.pdf', '').replace('.docx', '')
+                except ValueError as e:
+                    st.error(f"PRD文档解析失败: {str(e)}")
+                    return
+
+            bug_kb_content = ""
+            bug_kb_source = "未使用"
+            if uploaded_knowledge:
+                try:
+                    bug_kb_content = extract_text_from_file(uploaded_knowledge)
+                    bug_kb_source = f"上传文件: {uploaded_knowledge.name}"
+                except ValueError as e:
+                    st.error(f"知识库文件解析失败: {str(e)}")
+                    return
+            else:
+                bug_kb_content = kb_manager.load_bug_experience()
+                if bug_kb_content:
+                    bug_kb_source = "默认Bug经验库"
+
+            rag_count = test_manager.get_rag_count()
+
+            st.session_state.rag_info = {
+                "bug_kb_source": bug_kb_source,
+                "bug_kb_length": len(bug_kb_content),
+                "rag_count": rag_count,
+                "rag_used": False,
+                "rag_max_score": 0.0,
+                "rag_matched_count": 0,
+            }
+
+            with st.spinner("正在分析需求并生成测试分析报告..."):
+                result_container = st.empty()
+                full_result = ""
+
+                for chunk in test_manager.generate_test_points_stream(prd_content, bug_kb_content):
+                    full_result += chunk
+                    result_container.markdown(full_result)
+
+                rag_max_score = test_manager.get_rag_max_score()
+                rag_matched_count = test_manager.get_rag_matched_count()
+
+                st.session_state.test_points_result = full_result
+                st.session_state.current_report = full_result
+                st.session_state.test_points_prd_title = prd_title
+                st.session_state.test_points_prd_content = prd_content
+                st.session_state.rag_info["rag_used"] = test_manager.get_rag_used()
+                st.session_state.rag_info["rag_max_score"] = rag_max_score
+                st.session_state.rag_info["rag_matched_count"] = rag_matched_count
 
     with col2:
         st.subheader("知识库配置")
@@ -65,67 +127,44 @@ def render_ui():
         **检索逻辑**:
         1. 将当前需求转换为向量
         2. 在向量库中搜索最相似的历史记录
-        3. 相似度 > 1% 才会作为参考
+        3. 相似度 >= 60% 才会作为参考（低于阈值的记录会被过滤）
         """)
 
-    if generate_btn:
-        kb_manager = KnowledgeBaseManager()
-        test_manager = TestAssistantManager()
-
-        prd_content = requirement_text.strip()
-        prd_title = requirement_text.strip().split('\n')[0] if requirement_text.strip() else ""
-        
-        if uploaded_prd:
-            try:
-                prd_content = extract_text_from_file(uploaded_prd)
-                if not prd_title:
-                    prd_title = uploaded_prd.name.replace('.md', '').replace('.txt', '').replace('.pdf', '').replace('.docx', '')
-            except ValueError as e:
-                st.error(f"PRD文档解析失败: {str(e)}")
-                return
-
-        bug_kb_content = ""
-        bug_kb_source = "未使用"
-        if uploaded_knowledge:
-            try:
-                bug_kb_content = extract_text_from_file(uploaded_knowledge)
-                bug_kb_source = f"上传文件: {uploaded_knowledge.name}"
-            except ValueError as e:
-                st.error(f"知识库文件解析失败: {str(e)}")
-                return
-        else:
-            bug_kb_content = kb_manager.load_bug_experience()
-            if bug_kb_content:
-                bug_kb_source = "默认Bug经验库"
-
-        rag_count = test_manager.get_rag_count()
-
-        st.session_state.rag_info = {
-            "bug_kb_source": bug_kb_source,
-            "bug_kb_length": len(bug_kb_content),
-            "rag_count": rag_count,
-            "rag_used": False,
-        }
-
-        with st.spinner("正在分析需求并生成测试分析报告..."):
-            result_container = st.empty()
-            full_result = ""
-
-            for chunk in test_manager.generate_test_points_stream(prd_content, bug_kb_content):
-                full_result += chunk
-                result_container.markdown(full_result)
-
-            st.session_state.test_points_result = full_result
-            st.session_state.current_report = full_result
-            st.session_state.test_points_prd_title = prd_title
-            st.session_state.test_points_prd_content = prd_content
-            st.session_state.rag_info["rag_used"] = test_manager.get_rag_used()
-            
-            st.rerun()
-
-    if st.session_state.test_points_result:
+    if st.session_state.test_points_result or st.session_state.refining:
         st.subheader("生成结果")
-        st.markdown(st.session_state.test_points_result)
+        
+        if st.session_state.rag_info:
+            rag_info = st.session_state.rag_info
+            rag_max_score = rag_info.get("rag_max_score", 0.0)
+            rag_matched_count = rag_info.get("rag_matched_count", 0)
+            rag_count = rag_info.get("rag_count", 0)
+            
+            if rag_matched_count > 0:
+                st.info(f"🔍 已从 Milvus 召回 {rag_matched_count} 条高相似度历史资产作为设计参考（最高相似度：{rag_max_score*100:.1f}%）")
+            elif rag_count > 0:
+                st.caption("ℹ️ 未检索到与当前需求高度相似的历史用例（相似度均 < 60%），本次将基于标准规则直接生成。")
+            else:
+                st.caption("ℹ️ 向量库暂无历史用例资产，本次将基于标准规则直接生成。")
+        
+        if st.session_state.refining:
+            test_manager = TestAssistantManager()
+            with st.spinner("正在根据您的意见修正报告..."):
+                result_container = st.empty()
+                full_result = ""
+                
+                for chunk in test_manager.refine_test_points_stream(
+                    st.session_state.test_points_prd_content,
+                    st.session_state.current_report,
+                    st.session_state._refine_request
+                ):
+                    full_result += chunk
+                    result_container.markdown(full_result)
+                
+                st.session_state.current_report = full_result
+                st.session_state.test_points_result = full_result
+                st.session_state.refining = False
+        else:
+            st.markdown(st.session_state.test_points_result)
 
         if st.session_state.rag_info:
             with st.expander("🔍 RAG 上下文信息（验证知识库使用情况）"):
@@ -167,21 +206,8 @@ def render_ui():
         refine_btn = st.button("🔄 根据意见重新生成", type="secondary", disabled=not refine_input.strip())
         
         if refine_btn:
-            test_manager = TestAssistantManager()
-            
-            with st.spinner("正在根据您的意见修正报告..."):
-                result_container = st.empty()
-                full_result = ""
-                
-                for chunk in test_manager.refine_test_points_stream(
-                    st.session_state.test_points_prd_content,
-                    st.session_state.current_report,
-                    refine_input
-                ):
-                    full_result += chunk
-                    result_container.markdown(full_result)
-                
-                st.session_state.current_report = full_result
-                st.session_state.test_points_result = full_result
-                
-                st.rerun()
+            st.session_state.refining = True
+            st.session_state._refine_request = refine_input
+            st.session_state.test_points_result = ""
+            st.session_state.current_report = ""
+            st.rerun()
