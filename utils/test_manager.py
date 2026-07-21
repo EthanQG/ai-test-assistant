@@ -30,9 +30,11 @@ class TestAssistantManager:
         if bug_kb_content:
             user_prompt += f"【历史Bug经验知识库】\n{bug_kb_content}\n\n"
 
-        rag_context = self.rag_manager.search_similar_cases(prd_content, top_k=2)
+        rag_context, max_score, matched_count = self.rag_manager.search_similar_cases(prd_content, top_k=2)
         self._rag_used = len(rag_context) > 0
         self._rag_context_preview = rag_context[:500] if rag_context else ""
+        self._rag_max_score = max_score
+        self._rag_matched_count = matched_count
         
         if rag_context:
             user_prompt += f"【相似历史测试点参考】\n{rag_context}\n\n"
@@ -49,6 +51,12 @@ class TestAssistantManager:
     
     def get_rag_context_preview(self) -> str:
         return getattr(self, '_rag_context_preview', "")
+    
+    def get_rag_max_score(self) -> float:
+        return getattr(self, '_rag_max_score', 0.0)
+    
+    def get_rag_matched_count(self) -> int:
+        return getattr(self, '_rag_matched_count', 0)
 
     def refine_test_points_stream(self, prd_content: str, current_report: str, refine_request: str):
         system_prompt = self._get_system_prompt("test_points")

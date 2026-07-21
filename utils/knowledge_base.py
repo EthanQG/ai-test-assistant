@@ -93,7 +93,7 @@ class MilvusRAGManager:
 
     def _init_milvus(self):
         try:
-            from pymilvus import MilvusClient
+            from pymilvus import MilvusClient, DataType
 
             self.client = MilvusClient(uri=f"http://{self.milvus_host}:{self.milvus_port}")
 
@@ -102,22 +102,25 @@ class MilvusRAGManager:
                     auto_id=True,
                     enable_dynamic_field=True
                 )
-                schema.add_field(field_name="id", datatype="INT64", is_primary=True)
-                schema.add_field(field_name="vector", datatype="FLOAT_VECTOR", dim=self.dim)
-                schema.add_field(field_name="prd_content", datatype="VARCHAR", max_length=65535)
-                schema.add_field(field_name="test_points", datatype="VARCHAR", max_length=65535)
+                schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
+                schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=self.dim)
+                schema.add_field(field_name="prd_content", datatype=DataType.VARCHAR, max_length=65535)
+                schema.add_field(field_name="test_points", datatype=DataType.VARCHAR, max_length=65535)
 
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     schema=schema,
                     index_params=MilvusClient.prepare_index_params(
                         field_name="vector",
-                        metric_type="L2",
+                        metric_type="COSINE",
                         index_type="IVF_FLAT",
                         index_name="vector_index",
                         params={"nlist": 128}
                     )
                 )
+                print(f"[RAG] 新建集合，使用COSINE相似度索引")
+            else:
+                print(f"[RAG] 集合已存在")
 
             self.client.load_collection(self.collection_name)
             print(f"[RAG] Milvus连接成功，集合已加载")
@@ -162,37 +165,38 @@ class MilvusRAGManager:
         except Exception as e:
             raise ValueError(f"保存到Milvus失败: {str(e)}")
 
-    def search_similar_cases(self, current_prd: str, top_k: int = 2) -> str:
+    def search_similar_cases(self, current_prd: str, top_k: int = 2, similarity_threshold: float = 0.60) -> tuple:
         print(f"[RAG] 开始检索，查询文本长度: {len(current_prd)}")
+        print(f"[RAG] 相似度阈值: {similarity_threshold}")
         
         if self.client is None:
             try:
                 self._init_milvus()
             except ConnectionError as e:
                 print(f"[RAG] Milvus连接失败: {e}")
-                return ""
+                return "", 0.0, 0
 
         try:
             stats = self.client.get_collection_stats(self.collection_name)
             row_count = stats.get("row_count", 0)
             print(f"[RAG] 向量库中共有 {row_count} 条数据")
             if row_count == 0:
-                return ""
+                return "", 0.0, 0
         except Exception as e:
             print(f"[RAG] 获取统计信息失败: {e}")
-            return ""
+            return "", 0.0, 0
 
         try:
             query_vector = self._get_embedding(current_prd)
             print(f"[RAG] 查询向量长度: {len(query_vector)}")
             if not query_vector:
-                return ""
+                return "", 0.0, 0
 
             results = self.client.search(
                 collection_name=self.collection_name,
                 data=[query_vector],
                 anns_field="vector",
-                search_params={"metric_type": "L2", "params": {"nprobe": 10}},
+                search_params={"metric_type": "COSINE", "params": {"nprobe": 10}},
                 limit=top_k,
                 output_fields=["prd_content", "test_points"],
             )
@@ -201,9 +205,12 @@ class MilvusRAGManager:
             
             if not results or not results[0]:
                 print("[RAG] 未检索到任何结果")
-                return ""
+                return "", 0.0, 0
 
             context = ""
+            matched_count = 0
+            max_score = 0.0
+
             for i, hit in enumerate(results[0]):
                 print(f"[RAG] 命中 {i+1}: {hit}")
                 
@@ -216,28 +223,32 @@ class MilvusRAGManager:
                     test = ""
                 
                 distance = hit.get("distance", 0)
-                print(f"[RAG] 命中 {i+1}: distance={distance}, prd_len={len(prd)}, test_len={len(test)}")
+                similarity = 1.0 - distance
+                print(f"[RAG] 命中 {i+1}: distance={distance}, similarity={similarity:.4f}, prd_len={len(prd)}, test_len={len(test)}")
 
-                if prd and test:
-                    similarity = 1.0 / (1.0 + distance)
-                    print(f"[RAG] 相似度: {similarity:.4f}")
+                if prd and test and similarity >= similarity_threshold:
+                    print(f"[RAG] 命中 {i+1} 符合阈值要求，加入上下文")
                     
-                    if similarity > 0.01:
-                        context += f"【历史测试点 {i+1} - 相似度: {similarity:.4f}】\n"
-                        context += f"需求摘要: {prd[:100]}...\n" if len(prd) > 100 else f"需求摘要: {prd}\n"
-                        context += f"测试点内容:\n{test[:500]}...\n\n" if len(test) > 500 else f"测试点内容:\n{test}\n\n"
-                    else:
-                        print(f"[RAG] 命中 {i+1} 相似度太低 ({similarity:.4f})，跳过")
+                    if similarity > max_score:
+                        max_score = similarity
+                    matched_count += 1
+                    
+                    context += f"【历史测试点 {i+1} - 相似度: {similarity:.4f}】\n"
+                    context += f"需求摘要: {prd[:100]}...\n" if len(prd) > 100 else f"需求摘要: {prd}\n"
+                    context += f"测试点内容:\n{test[:500]}...\n\n" if len(test) > 500 else f"测试点内容:\n{test}\n\n"
                 else:
-                    print(f"[RAG] 命中 {i+1} 内容为空，跳过")
+                    if not prd or not test:
+                        print(f"[RAG] 命中 {i+1} 内容为空，跳过")
+                    else:
+                        print(f"[RAG] 命中 {i+1} 相似度太低 ({similarity:.4f})，低于阈值 {similarity_threshold}，跳过")
 
-            print(f"[RAG] 最终返回上下文长度: {len(context)}")
-            return context.strip()
+            print(f"[RAG] 最终返回上下文长度: {len(context)}, 最高相似度: {max_score:.4f}, 命中数量: {matched_count}")
+            return context.strip(), max_score, matched_count
         except Exception as e:
             print(f"[RAG] 检索失败: {e}")
             import traceback
             traceback.print_exc()
-            return ""
+            return "", 0.0, 0
 
     def get_total_count(self) -> int:
         try:
