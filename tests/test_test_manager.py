@@ -61,6 +61,8 @@ class TestAssistantManagerTests(unittest.TestCase):
         self.assertIn("用户提交支付订单", self.llm.last_prompt)
         self.assertIn("支付接口超时后需要查询订单状态", self.llm.last_prompt)
         self.assertIn("历史支付重复扣款测试点", self.llm.last_prompt)
+        self.assertNotIn("{prd_content}", self.llm.last_system_prompt)
+        self.assertNotIn("{bug_kb_content}", self.llm.last_system_prompt)
 
     def test_rag_metrics_are_exposed_after_generation(self):
         self.manager.generate_test_points("用户提交支付订单")

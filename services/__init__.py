@@ -2,6 +2,7 @@
 
 from .document_service import DocumentService
 from .llm_service import LLMService
+from .prompt_service import PromptService
 from .rag_service import RAGService
 
-__all__ = ["DocumentService", "LLMService", "RAGService"]
+__all__ = ["DocumentService", "LLMService", "PromptService", "RAGService"]

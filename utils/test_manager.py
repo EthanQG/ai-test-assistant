@@ -1,8 +1,8 @@
-import os
 import time
 import traceback
 
 from services.llm_service import LLMService
+from services.prompt_service import PromptService
 from services.rag_service import RAGSearchResult, RAGService
 
 
@@ -11,17 +11,11 @@ class TestAssistantManager:
         self,
         llm_service: LLMService | None = None,
         rag_service: RAGService | None = None,
+        prompt_service: PromptService | None = None,
     ):
-        self.prompts_dir = "./prompts"
         self.llm_service = llm_service or LLMService()
         self.rag_service = rag_service or RAGService()
-
-    def _get_system_prompt(self, prompt_name: str) -> str:
-        prompt_path = os.path.join(self.prompts_dir, f"{prompt_name}.txt")
-        if os.path.exists(prompt_path):
-            with open(prompt_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        return ""
+        self.prompt_service = prompt_service or PromptService()
 
     def _remember_rag_result(self, result: RAGSearchResult) -> None:
         self._rag_used = result.used
@@ -30,20 +24,14 @@ class TestAssistantManager:
         self._rag_matched_count = result.matched_count
 
     def generate_test_points_stream(self, prd_content: str, bug_kb_content: str = None):
-        system_prompt = self._get_system_prompt("test_points")
-
-        user_prompt = f"请分析以下需求描述，并生成测试点文档：\n\n【需求描述】\n{prd_content}\n\n"
-        
-        if bug_kb_content:
-            user_prompt += f"【历史Bug经验知识库】\n{bug_kb_content}\n\n"
-
         rag_result = self.rag_service.search(prd_content, top_k=2)
         self._remember_rag_result(rag_result)
-        
-        if rag_result.context:
-            user_prompt += f"【相似历史测试点参考】\n{rag_result.context}\n\n"
-        
-        user_prompt += "请按照输出文档规范生成测试点分析文档。"
+        system_prompt = self.prompt_service.load_system_prompt("test_points")
+        user_prompt = self.prompt_service.build_test_points_prompt(
+            requirement=prd_content,
+            bug_knowledge=bug_kb_content,
+            rag_context=rag_result.context,
+        )
 
         yield from self.llm_service.generate_stream(user_prompt, system_prompt)
     
@@ -60,41 +48,24 @@ class TestAssistantManager:
         return getattr(self, '_rag_matched_count', 0)
 
     def refine_test_points_stream(self, prd_content: str, current_report: str, refine_request: str):
-        system_prompt = self._get_system_prompt("test_points")
-
-        user_prompt = f"""请根据用户的修改意见，对当前测试分析报告进行滚动修正。
-
-【原始需求描述】
-{prd_content}
-
-【当前测试分析报告】
-{current_report}
-
-【用户修改意见】
-{refine_request}
-
-请根据用户的修改意见，重新生成完整的测试分析报告。注意：
-1. 需要保持报告的整体结构和格式
-2. 只根据用户意见进行针对性修改，不要随意改动其他部分
-3. 输出完整的测试分析报告，而不是只输出修改部分"""
+        system_prompt = self.prompt_service.load_system_prompt("test_points")
+        user_prompt = self.prompt_service.build_refine_prompt(
+            requirement=prd_content,
+            current_report=current_report,
+            refine_request=refine_request,
+        )
 
         yield from self.llm_service.generate_stream(user_prompt, system_prompt)
 
     def generate_test_points(self, prd_content: str, bug_kb_content: str = None) -> str:
-        system_prompt = self._get_system_prompt("test_points")
-
-        user_prompt = f"请分析以下需求描述，并生成测试点文档：\n\n【需求描述】\n{prd_content}\n\n"
-        
-        if bug_kb_content:
-            user_prompt += f"【历史Bug经验知识库】\n{bug_kb_content}\n\n"
-
         rag_result = self.rag_service.search(prd_content, top_k=2)
         self._remember_rag_result(rag_result)
-        
-        if rag_result.context:
-            user_prompt += f"【相似历史测试点参考】\n{rag_result.context}\n\n"
-        
-        user_prompt += "请按照输出文档规范生成测试点分析文档。"
+        system_prompt = self.prompt_service.load_system_prompt("test_points")
+        user_prompt = self.prompt_service.build_test_points_prompt(
+            requirement=prd_content,
+            bug_knowledge=bug_kb_content,
+            rag_context=rag_result.context,
+        )
 
         return self.llm_service.generate(user_prompt, system_prompt)
 
