@@ -19,6 +19,8 @@ def render_ui():
         st.session_state.current_report = ""
     if "refining" not in st.session_state:
         st.session_state.refining = False
+    if "_generating" not in st.session_state:
+        st.session_state._generating = False
 
     col1, col2 = st.columns([2, 1])
 
@@ -82,24 +84,10 @@ def render_ui():
                 "rag_matched_count": 0,
             }
 
-            with st.spinner("正在分析需求并生成测试分析报告..."):
-                result_container = st.empty()
-                full_result = ""
-
-                for chunk in test_manager.generate_test_points_stream(prd_content, bug_kb_content):
-                    full_result += chunk
-                    result_container.markdown(full_result)
-
-                rag_max_score = test_manager.get_rag_max_score()
-                rag_matched_count = test_manager.get_rag_matched_count()
-
-                st.session_state.test_points_result = full_result
-                st.session_state.current_report = full_result
-                st.session_state.test_points_prd_title = prd_title
-                st.session_state.test_points_prd_content = prd_content
-                st.session_state.rag_info["rag_used"] = test_manager.get_rag_used()
-                st.session_state.rag_info["rag_max_score"] = rag_max_score
-                st.session_state.rag_info["rag_matched_count"] = rag_matched_count
+            st.session_state._generating = True
+            st.session_state._gen_prd_content = prd_content
+            st.session_state._gen_bug_kb = bug_kb_content
+            st.session_state._gen_prd_title = prd_title
 
     with col2:
         st.subheader("知识库配置")
@@ -130,23 +118,34 @@ def render_ui():
         3. 相似度 >= 60% 才会作为参考（低于阈值的记录会被过滤）
         """)
 
-    if st.session_state.test_points_result or st.session_state.refining:
-        st.subheader("生成结果")
+    if st.session_state.test_points_result or st.session_state.refining or st.session_state._generating:
+        if st.session_state._generating:
+            test_manager = TestAssistantManager()
+            with st.spinner("正在分析需求并生成测试分析报告..."):
+                result_container = st.empty()
+                full_result = ""
+                
+                for chunk in test_manager.generate_test_points_stream(
+                    st.session_state._gen_prd_content,
+                    st.session_state._gen_bug_kb
+                ):
+                    full_result += chunk
+                    result_container.markdown(full_result)
+                
+                rag_max_score = test_manager.get_rag_max_score()
+                rag_matched_count = test_manager.get_rag_matched_count()
+                
+                st.session_state.test_points_result = full_result
+                st.session_state.current_report = full_result
+                st.session_state.test_points_prd_title = st.session_state._gen_prd_title
+                st.session_state.test_points_prd_content = st.session_state._gen_prd_content
+                st.session_state.rag_info["rag_used"] = test_manager.get_rag_used()
+                st.session_state.rag_info["rag_max_score"] = rag_max_score
+                st.session_state.rag_info["rag_matched_count"] = rag_matched_count
+                st.session_state._generating = False
+                st.rerun()
         
-        if st.session_state.rag_info:
-            rag_info = st.session_state.rag_info
-            rag_max_score = rag_info.get("rag_max_score", 0.0)
-            rag_matched_count = rag_info.get("rag_matched_count", 0)
-            rag_count = rag_info.get("rag_count", 0)
-            
-            if rag_matched_count > 0:
-                st.info(f"🔍 已从 Milvus 召回 {rag_matched_count} 条高相似度历史资产作为设计参考（最高相似度：{rag_max_score*100:.1f}%）")
-            elif rag_count > 0:
-                st.caption("ℹ️ 未检索到与当前需求高度相似的历史用例（相似度均 < 60%），本次将基于标准规则直接生成。")
-            else:
-                st.caption("ℹ️ 向量库暂无历史用例资产，本次将基于标准规则直接生成。")
-        
-        if st.session_state.refining:
+        elif st.session_state.refining:
             test_manager = TestAssistantManager()
             with st.spinner("正在根据您的意见修正报告..."):
                 result_container = st.empty()
@@ -163,8 +162,25 @@ def render_ui():
                 st.session_state.current_report = full_result
                 st.session_state.test_points_result = full_result
                 st.session_state.refining = False
+                st.rerun()
+        
         else:
             st.markdown(st.session_state.test_points_result)
+            st.subheader("生成结果")
+        
+        # RAG提示移到报告末尾
+        if st.session_state.rag_info:
+            rag_info = st.session_state.rag_info
+            rag_max_score = rag_info.get("rag_max_score", 0.0)
+            rag_matched_count = rag_info.get("rag_matched_count", 0)
+            rag_count = rag_info.get("rag_count", 0)
+            
+            if rag_matched_count > 0:
+                st.info(f"🔍 已从 Milvus 召回 {rag_matched_count} 条高相似度历史资产作为设计参考（最高相似度：{rag_max_score*100:.1f}%）")
+            elif rag_count > 0:
+                st.caption("ℹ️ 未检索到与当前需求高度相似的历史用例（相似度均 < 60%），本次将基于标准规则直接生成。")
+            else:
+                st.caption("ℹ️ 向量库暂无历史用例资产，本次将基于标准规则直接生成。")
 
         if st.session_state.rag_info:
             with st.expander("🔍 RAG 上下文信息（验证知识库使用情况）"):

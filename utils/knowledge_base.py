@@ -223,7 +223,7 @@ class MilvusRAGManager:
                     test = ""
                 
                 distance = hit.get("distance", 0)
-                similarity = 1.0 - distance
+                similarity = distance  # pymilvus>=2.4 COSINE metric: distance 即余弦相似度
                 print(f"[RAG] 命中 {i+1}: distance={distance}, similarity={similarity:.4f}, prd_len={len(prd)}, test_len={len(test)}")
 
                 if prd and test and similarity >= similarity_threshold:
