@@ -1,15 +1,20 @@
 import os
 import time
 import traceback
-from utils.ai_client import DeepSeekClient
-from utils.knowledge_base import MilvusRAGManager
+
+from services.llm_service import LLMService
+from services.rag_service import RAGSearchResult, RAGService
 
 
 class TestAssistantManager:
-    def __init__(self):
+    def __init__(
+        self,
+        llm_service: LLMService | None = None,
+        rag_service: RAGService | None = None,
+    ):
         self.prompts_dir = "./prompts"
-        self.ai_client = None
-        self.rag_manager = MilvusRAGManager()
+        self.llm_service = llm_service or LLMService()
+        self.rag_service = rag_service or RAGService()
 
     def _get_system_prompt(self, prompt_name: str) -> str:
         prompt_path = os.path.join(self.prompts_dir, f"{prompt_name}.txt")
@@ -18,9 +23,11 @@ class TestAssistantManager:
                 return f.read().strip()
         return ""
 
-    def _ensure_ai_client(self):
-        if self.ai_client is None:
-            self.ai_client = DeepSeekClient()
+    def _remember_rag_result(self, result: RAGSearchResult) -> None:
+        self._rag_used = result.used
+        self._rag_context_preview = result.context[:500]
+        self._rag_max_score = result.max_score
+        self._rag_matched_count = result.matched_count
 
     def generate_test_points_stream(self, prd_content: str, bug_kb_content: str = None):
         system_prompt = self._get_system_prompt("test_points")
@@ -30,21 +37,15 @@ class TestAssistantManager:
         if bug_kb_content:
             user_prompt += f"【历史Bug经验知识库】\n{bug_kb_content}\n\n"
 
-        rag_context, max_score, matched_count = self.rag_manager.search_similar_cases(prd_content, top_k=2)
-        self._rag_used = len(rag_context) > 0
-        self._rag_context_preview = rag_context[:500] if rag_context else ""
-        self._rag_max_score = max_score
-        self._rag_matched_count = matched_count
+        rag_result = self.rag_service.search(prd_content, top_k=2)
+        self._remember_rag_result(rag_result)
         
-        if rag_context:
-            user_prompt += f"【相似历史测试点参考】\n{rag_context}\n\n"
+        if rag_result.context:
+            user_prompt += f"【相似历史测试点参考】\n{rag_result.context}\n\n"
         
         user_prompt += "请按照输出文档规范生成测试点分析文档。"
 
-        self._ensure_ai_client()
-
-        for chunk in self.ai_client.call_stream(user_prompt, system_prompt):
-            yield chunk
+        yield from self.llm_service.generate_stream(user_prompt, system_prompt)
     
     def get_rag_used(self) -> bool:
         return getattr(self, '_rag_used', False)
@@ -77,10 +78,7 @@ class TestAssistantManager:
 2. 只根据用户意见进行针对性修改，不要随意改动其他部分
 3. 输出完整的测试分析报告，而不是只输出修改部分"""
 
-        self._ensure_ai_client()
-
-        for chunk in self.ai_client.call_stream(user_prompt, system_prompt):
-            yield chunk
+        yield from self.llm_service.generate_stream(user_prompt, system_prompt)
 
     def generate_test_points(self, prd_content: str, bug_kb_content: str = None) -> str:
         system_prompt = self._get_system_prompt("test_points")
@@ -90,25 +88,21 @@ class TestAssistantManager:
         if bug_kb_content:
             user_prompt += f"【历史Bug经验知识库】\n{bug_kb_content}\n\n"
 
-        rag_context, max_score, matched_count = self.rag_manager.search_similar_cases(prd_content, top_k=2)
-        self._rag_used = len(rag_context) > 0
-        self._rag_context_preview = rag_context[:500] if rag_context else ""
-        self._rag_max_score = max_score
-        self._rag_matched_count = matched_count
+        rag_result = self.rag_service.search(prd_content, top_k=2)
+        self._remember_rag_result(rag_result)
         
-        if rag_context:
-            user_prompt += f"【相似历史测试点参考】\n{rag_context}\n\n"
+        if rag_result.context:
+            user_prompt += f"【相似历史测试点参考】\n{rag_result.context}\n\n"
         
         user_prompt += "请按照输出文档规范生成测试点分析文档。"
 
-        self._ensure_ai_client()
-        return self.ai_client.call(user_prompt, system_prompt)
+        return self.llm_service.generate(user_prompt, system_prompt)
 
     def save_to_rag(self, prd_content: str, test_points: str) -> tuple:
         try:
-            before_count = self.rag_manager.get_total_count()
-            self.rag_manager.save_case(prd_content, test_points)
-            after_count = self.rag_manager.get_total_count()
+            before_count = self.rag_service.count()
+            self.rag_service.save_case(prd_content, test_points)
+            after_count = self.rag_service.count()
             
             if after_count > before_count:
                 return True, "保存成功"
@@ -119,7 +113,7 @@ class TestAssistantManager:
             print(f"[DEBUG] {error_info}")
             
             try:
-                after_count = self.rag_manager.get_total_count()
+                after_count = self.rag_service.count()
                 if after_count > 0:
                     return True, f"保存成功（过程中出现警告: {str(e)}）"
             except Exception:
@@ -128,7 +122,7 @@ class TestAssistantManager:
             return False, str(e)
 
     def get_rag_count(self) -> int:
-        return self.rag_manager.get_total_count()
+        return self.rag_service.count()
 
     def generate_test_cases_stream(self, test_points_content: str, module_name: str = None, class_name: str = None, method_name: str = None):
         messages = [

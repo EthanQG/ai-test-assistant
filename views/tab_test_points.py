@@ -1,7 +1,7 @@
 import streamlit as st
 from utils.knowledge_base import KnowledgeBaseManager
 from utils.test_manager import TestAssistantManager
-from utils.file_parser import extract_text_from_file
+from services.document_service import DocumentService
 
 
 def render_ui():
@@ -73,7 +73,7 @@ def render_ui():
 
                 if uploaded_prd:
                     try:
-                        prd_content = extract_text_from_file(uploaded_prd)
+                        prd_content = DocumentService.extract_text(uploaded_prd)
                         if not prd_title:
                             prd_title = uploaded_prd.name.replace('.md', '').replace('.txt', '').replace('.pdf', '').replace('.docx', '')
                     except ValueError as e:
@@ -84,7 +84,7 @@ def render_ui():
                 bug_kb_source = "未使用"
                 if uploaded_knowledge:
                     try:
-                        bug_kb_content = extract_text_from_file(uploaded_knowledge)
+                        bug_kb_content = DocumentService.extract_text(uploaded_knowledge)
                         bug_kb_source = f"上传文件: {uploaded_knowledge.name}"
                     except ValueError as e:
                         st.error(f"知识库文件解析失败: {str(e)}")

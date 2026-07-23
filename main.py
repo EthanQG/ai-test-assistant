@@ -1,8 +1,8 @@
 import streamlit as st
-from views import render_test_points, render_test_cases, render_log_analysis
+from views import render_test_points
 
 st.set_page_config(
-    page_title="AI Test Assistant",
+    page_title="Test Analysis Agent",
     page_icon="🧪",
     layout="wide",
 )
@@ -109,19 +109,7 @@ hr {
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🧪 AI Test Assistant")
+st.title("🧪 Test Analysis Agent")
+st.caption("基于大模型与历史测试资产检索的智能测试分析助手")
 
-tab1, tab2, tab3 = st.tabs([
-    "📋 生成测试分析报告",
-    "🧑‍💻 自动化用例生成",
-    "🔍 异常日志分析"
-])
-
-with tab1:
-    render_test_points()
-
-with tab2:
-    render_test_cases()
-
-with tab3:
-    render_log_analysis()
+render_test_points()
