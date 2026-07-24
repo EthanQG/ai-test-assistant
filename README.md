@@ -17,12 +17,15 @@
 
 ```text
 .
+├── AGENTS.md               # Codex跨设备协作与开发约定
 ├── main.py                 # Streamlit 应用入口
+├── agent/                  # Agent状态、事件及后续节点
 ├── views/                  # 页面与交互状态
 ├── services/               # LLM、RAG、文档解析应用服务
 ├── utils/                  # 基础客户端、配置及兼容业务入口
 ├── prompts/                # 模型提示词
 ├── knowledge/              # 本地测试知识
+├── docs/                   # 当前接力状态与开发复盘
 └── tests/                  # 自动化测试
 ```
 
@@ -32,9 +35,10 @@
 
 项目从 Workflow 向 Agent 演进的阶段记录、概念解释、设计原因和验证结果，请查看：
 
+- [当前开发状态与跨设备接力](docs/CURRENT_STATUS.md)
 - [开发与复盘日志](docs/DEVELOPMENT_LOG.md)
 
-每完成一个可独立验证的小阶段，都会在该文档中追加本次功能变化和下一步计划。
+`CURRENT_STATUS.md` 保存最新接力点，`DEVELOPMENT_LOG.md` 保存完整历史。Codex 的仓库级协作规则位于 [AGENTS.md](AGENTS.md)。
 
 ## 本地运行
 
@@ -67,8 +71,9 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 
 ## 后续计划
 
-1. 引入结构化 Agent State
-2. 将需求分析、知识检索、测试点生成封装为 Agent Tools
-3. 增加 Reviewer 质量评审与自动修正循环
-4. 建立离线评测集，量化 RAG 和 Reviewer 带来的覆盖率提升
-5. Agent 核心稳定后，再评估 FastAPI + React/Vue 前后端分离
+1. 实现 `RequirementAnalyzer` 结构化需求分析节点
+2. 将知识检索与测试点生成封装为 Agent Tools
+3. 增加 Agent 编排器与执行轨迹
+4. 增加 Reviewer 质量评审与自动修正循环
+5. 建立离线评测集，量化 RAG 和 Reviewer 带来的覆盖率提升
+6. Agent 核心稳定后，再评估 FastAPI + React/Vue 前后端分离
