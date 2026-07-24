@@ -1,5 +1,7 @@
 # AI Test Assistant - 产品需求说明书（PRD）
 
+> **归档说明**：这是项目早期三模块固定 Workflow 方案，仅用于保留历史设计，不代表当前产品范围、实现状态或验收依据。当前有效版本请查看 [Test Analysis Agent PRD V2](../product/PRD_AGENT_V2.md)。
+
 ---
 
 ## 1. 项目解决的核心问题

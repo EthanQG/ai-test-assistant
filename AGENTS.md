@@ -20,15 +20,16 @@
 按顺序完成：
 
 1. 阅读 `README.md`
-2. 阅读 `docs/CURRENT_STATUS.md`
-3. 阅读 `docs/DEVELOPMENT_LOG.md` 的最新阶段
-4. 阅读 `docs/LEARNING_NOTES.md` 的对应阶段
-5. 执行 `git status -sb`
-6. 执行 `git log -5 --oneline --decorate`
-7. 执行 `python -m unittest discover -s tests -v`
-8. 先向用户说明当前状态、测试结果和准备修改的范围，再开始编辑
+2. 阅读当前产品 PRD：`docs/product/PRD_AGENT_V2.md`
+3. 阅读 `docs/CURRENT_STATUS.md`
+4. 阅读 `docs/DEVELOPMENT_LOG.md` 的最新阶段
+5. 阅读 `docs/LEARNING_NOTES.md` 的对应阶段
+6. 执行 `git status -sb`
+7. 执行 `git log -5 --oneline --decorate`
+8. 执行 `python -m unittest discover -s tests -v`
+9. 先向用户说明当前状态、测试结果和准备修改的范围，再开始编辑
 
-如果文档、Git 状态和代码不一致，以代码与测试结果为事实依据，并在本次修改中修正文档。
+如果文档、Git 状态和代码不一致，以代码与测试结果为完成度依据，以当前 V2 PRD 为产品范围依据，并在本次修改中修正文档。
 
 ## 当前架构边界
 
@@ -85,12 +86,15 @@ git status --short
 
 每完成一个小阶段：
 
-1. 更新 `docs/CURRENT_STATUS.md`
-2. 在 `docs/DEVELOPMENT_LOG.md` 追加阶段说明
-3. 在 `docs/LEARNING_NOTES.md` 补充代码知识、参考答案、面试追问和动手练习
-4. 如果启动方式或项目能力变化，同步更新 `README.md`
+1. 如果产品范围或验收标准变化，先更新 `docs/product/PRD_AGENT_V2.md`
+2. 更新 `docs/CURRENT_STATUS.md`
+3. 在 `docs/DEVELOPMENT_LOG.md` 追加阶段说明
+4. 在 `docs/LEARNING_NOTES.md` 补充代码知识、参考答案、面试追问和动手练习
+5. 如果启动方式或项目能力变化，同步更新 `README.md`
 
 `CURRENT_STATUS.md` 只保留最新接力信息；`DEVELOPMENT_LOG.md` 保存完整历史和设计原因；`LEARNING_NOTES.md` 保存代码学习与面试复盘。
+
+历史 PRD 位于 `docs/archive/`，只用于理解项目演进，不作为当前开发需求依据。
 
 ## Git 规则
 

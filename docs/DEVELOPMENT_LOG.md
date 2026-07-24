@@ -2,7 +2,7 @@
 
 这份文档记录项目从固定 Workflow 向 Agent 架构演进的过程。它不仅记录代码变化，还解释每次调整的原因、解决的问题、验证方式和下一步计划，方便后续复盘及面试表达。
 
-最新开发接力点请查看 [CURRENT_STATUS.md](CURRENT_STATUS.md)，代码知识与面试复盘请查看 [LEARNING_NOTES.md](LEARNING_NOTES.md)，跨电脑的 Codex 协作规则请查看根目录 [AGENTS.md](../AGENTS.md)。
+当前产品范围请查看 [PRD V2](product/PRD_AGENT_V2.md)，最新开发接力点请查看 [CURRENT_STATUS.md](CURRENT_STATUS.md)，代码知识与面试复盘请查看 [LEARNING_NOTES.md](LEARNING_NOTES.md)，跨电脑的 Codex 协作规则请查看根目录 [AGENTS.md](../AGENTS.md)。
 
 ## 如何维护本文档
 
@@ -27,6 +27,7 @@
 | 阶段 1.5 | 已完成 | 整理 System/User Prompt 边界 | `95aba63` |
 | 阶段 2.1/2.2 | 已完成 | Agent 状态与执行事件模型 | `e118865` |
 | 阶段 2.3 | 已完成 | RequirementAnalyzer 需求分析节点 | 本阶段提交 |
+| 产品范围 V2 | 已完成 | 从三模块 Workflow 收敛为测试分析 Agent | 本阶段提交 |
 | 阶段 2.4 | 待开始 | Agent知识检索节点 | - |
 
 ---
@@ -357,3 +358,45 @@ LLM 超时、JSON 无效或字段校验失败时，节点记录 `TASK_FAILED`，
 ### 下一步
 
 实现知识检索节点，把 `RAGService` 的上下文、最高相似度和命中数量写入 `TestAnalysisState`，并记录 `retrieve_knowledge` 步骤事件。
+
+---
+
+## 产品范围 V2：测试分析 Agent PRD 重构
+
+### 调整原因
+
+旧 PRD 同时规划测试点生成、pytest 用例生成和日志分析，并以固定 Workflow 作为主体。当前只有测试分析功能形成真实闭环，另外两个模块未完成；同时项目已开始引入 State、Event 和 Agent 节点，旧 PRD 无法准确描述当前范围和验收标准。
+
+### 文档归类
+
+```text
+docs/
+├── README.md
+├── product/PRD_AGENT_V2.md
+├── archive/PRD_WORKFLOW_V1.md
+├── CURRENT_STATUS.md
+├── DEVELOPMENT_LOG.md
+└── LEARNING_NOTES.md
+```
+
+### V2 核心变化
+
+- 产品范围收敛为“从 PRD 到高质量测试分析报告”
+- 自动化用例生成和日志分析移出当前范围
+- 定义 RequirementAnalyzer、KnowledgeRetriever、Generator、Reviewer、Reviser 和 Finalizer
+- 区分现有 Workflow、Agent 内部已实现和规划中能力
+- 将可验证验收标准替代无依据的可用性与性能承诺
+- 增加 Agent 状态、分支和安全规则
+- 增加离线评测方案和简历表述边界
+
+### 当前产品依据
+
+后续功能范围和验收以 `docs/product/PRD_AGENT_V2.md` 为准。归档的 V1 PRD 只用于说明项目早期设计和范围收敛过程。
+
+### Git 提交
+
+本阶段建议提交信息：
+
+```text
+文档：重构测试分析Agent产品需求说明
+```

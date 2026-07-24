@@ -34,13 +34,15 @@
 
 ## 开发过程与设计说明
 
-项目从 Workflow 向 Agent 演进的阶段记录、概念解释、设计原因和验证结果，请查看：
+当前产品范围与项目从 Workflow 向 Agent 演进的过程，请查看：
 
+- [当前产品需求说明书 V2](docs/product/PRD_AGENT_V2.md)
+- [项目文档导航](docs/README.md)
 - [当前开发状态与跨设备接力](docs/CURRENT_STATUS.md)
 - [开发与复盘日志](docs/DEVELOPMENT_LOG.md)
 - [代码学习与面试复盘](docs/LEARNING_NOTES.md)
 
-`CURRENT_STATUS.md` 保存最新接力点，`DEVELOPMENT_LOG.md` 保存完整历史，`LEARNING_NOTES.md` 保存代码知识、参考答案和面试练习。Codex 的仓库级协作规则位于 [AGENTS.md](AGENTS.md)。
+V1 Workflow PRD 已归档在 [docs/archive/PRD_WORKFLOW_V1.md](docs/archive/PRD_WORKFLOW_V1.md)，不再代表当前产品范围。Codex 的仓库级协作规则位于 [AGENTS.md](AGENTS.md)。
 
 ## 本地运行
 

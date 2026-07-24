@@ -6,6 +6,8 @@
 
 相关文档：
 
+- [当前产品需求说明书 V2](product/PRD_AGENT_V2.md)
+- [项目文档导航](README.md)
 - [开发与复盘日志](DEVELOPMENT_LOG.md)
 - [代码学习与面试复盘](LEARNING_NOTES.md)
 - [Codex 协作规则](../AGENTS.md)
@@ -13,8 +15,8 @@
 ## Git 基线
 
 - 分支：`main`
-- 本次提交前最新提交：`f1e7cc0 文档：完善代码学习与面试复盘指南`
-- 最新已提交功能：`e118865 功能：新增Agent状态与执行事件模型`
+- 最新提交：`75476ba 功能：实现Agent结构化需求分析节点`
+- 最新已提交功能：`75476ba 功能：实现Agent结构化需求分析节点`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
 
@@ -29,6 +31,8 @@ git log -5 --oneline --decorate
 ## 当前阶段
 
 阶段 2.3 已完成：已经实现第一个真正使用 LLM 和 `TestAnalysisState` 的需求分析节点 `RequirementAnalyzer`。
+
+产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
 
 ## 已完成
 
@@ -136,7 +140,8 @@ python -m compileall -q agent services utils views tests main.py
 
 ```text
 请按照 AGENTS.md 初始化本次开发上下文。
-读取 README.md、docs/CURRENT_STATUS.md 和
+读取 README.md、docs/product/PRD_AGENT_V2.md、
+docs/CURRENT_STATUS.md 和
 docs/DEVELOPMENT_LOG.md、docs/LEARNING_NOTES.md 的最新阶段，
 检查 Git 状态和最近提交，
 运行现有测试，然后说明当前进度和下一步任务。
