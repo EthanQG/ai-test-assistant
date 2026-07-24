@@ -81,7 +81,7 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 
 ## 后续计划
 
-1. 将Agent状态、执行轨迹、人工审核和最终确认接入Streamlit页面
-2. 实现Finalizer，将结构化测试点转换为展示和下载报告
+1. 实现Finalizer，将结构化测试点整理为统一的最终结果和可下载报告
+2. 将Agent状态、执行轨迹、人工审核和最终确认接入Streamlit页面
 3. 建立离线评测集，量化 RAG 和 Reviewer 带来的覆盖率提升
 4. Agent 核心稳定后，再评估 FastAPI + React/Vue 前后端分离

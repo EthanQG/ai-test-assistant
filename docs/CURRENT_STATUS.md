@@ -160,7 +160,7 @@ agent/
   TestPointReviser
   HumanFeedbackHandler
   AgentOrchestrator
-  后续接入Streamlit页面和Finalizer
+  后续实现Finalizer，再接入Streamlit页面
 ```
 
 ## 当前测试基线
@@ -180,22 +180,22 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：Streamlit接入Agent
+## 下一步任务：Finalizer最终结果整理节点
 
-阶段 2.9 提交后，进入阶段 2.10：把内部Agent主链路接入Streamlit，展示执行状态、结构化测试点、Reviewer结果和人工反馈入口。
+阶段 2.9 提交后，进入阶段 2.10：实现 `Finalizer`，先补齐Agent内部从结构化测试点到最终交付结果的闭环，再进行页面集成。
 
 目标流程：
 
 ```text
-用户输入PRD
-  → 页面创建TestAnalysisState并启动Orchestrator
-  → 展示当前步骤和AgentEvent
-  → 展示结构化测试点与Reviewer问题
-  → 支持待确认项和人工反馈
-  → 用户最终确认后进入Finalizer或保存
+Reviewer评审通过或结果被人工确认
+  → Orchestrator选择Finalizer
+  → Finalizer汇总测试点、覆盖情况、质量结果、来源和风险
+  → 将统一最终结果写入TestAnalysisState
+  → 任务状态更新为completed
+  → Orchestrator返回terminal
 ```
 
-本阶段优先接入Agent执行和人工审核，不进行前后端分离。
+阶段2.11再把完整Agent链路接入Streamlit，展示执行轨迹、结构化测试点、Reviewer结果、人工反馈和最终报告。阶段2.12建立离线评测与演示材料。本阶段不进行前后端分离。
 
 ## 当前限制
 
