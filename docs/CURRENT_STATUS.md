@@ -13,7 +13,8 @@
 ## Git 基线
 
 - 分支：`main`
-- 最新功能提交：`e118865 功能：新增Agent状态与执行事件模型`
+- 本次提交前最新提交：`f1e7cc0 文档：完善代码学习与面试复盘指南`
+- 最新已提交功能：`e118865 功能：新增Agent状态与执行事件模型`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
 
@@ -27,7 +28,7 @@ git log -5 --oneline --decorate
 
 ## 当前阶段
 
-阶段 2.3 待开始：实现第一个真正使用 LLM 和 `TestAnalysisState` 的需求分析节点 `RequirementAnalyzer`。
+阶段 2.3 已完成：已经实现第一个真正使用 LLM 和 `TestAnalysisState` 的需求分析节点 `RequirementAnalyzer`。
 
 ## 已完成
 
@@ -54,6 +55,16 @@ git log -5 --oneline --decorate
 - 支持转换为可保存或通过 API 返回的字典/JSON
 - 已限制非法跳步、终态继续执行和等待用户时绕过恢复
 
+### 阶段 2.3：RequirementAnalyzer
+
+- 新增结构化需求分析结果与推导风险模型
+- 新增需求分析 System Prompt 和 User Prompt 构建方法
+- LLM 输出经过 JSON 解析、字段类型和未知字段校验
+- 分析结果写入 `TestAnalysisState`
+- 有待确认项时任务进入 `waiting_for_user`
+- LLM 超时或 JSON 无效时任务进入 `failed`
+- 使用 Fake LLM 覆盖成功、待确认和失败路径
+
 ## 当前架构
 
 ```text
@@ -71,7 +82,9 @@ agent/
   AgentEvent
   AgentStatus
   AgentStep
-  后续加入 RequirementAnalyzer 和编排器
+  RequirementAnalysisResult
+  RequirementAnalyzer
+  后续加入知识检索节点和编排器
 ```
 
 ## 当前测试基线
@@ -79,7 +92,7 @@ agent/
 验证日期：2026-07-24
 
 ```text
-16 tests passed
+27 tests passed
 ```
 
 验证命令：
@@ -91,46 +104,27 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：RequirementAnalyzer
+## 下一步任务：知识检索节点
 
-本阶段建议只完成需求分析节点，不同时实现 RAG Tool、Generator 或 Reviewer。
+阶段 2.3 提交后，建议进入阶段 2.4：把现有 RAG 能力接入 AgentState 和事件模型。
 
 目标流程：
 
 ```text
-原始需求
-  → 构建需求分析 Prompt
-  → LLM 返回结构化 JSON
-  → 校验和解析 JSON
-  → 更新 TestAnalysisState
-  → 记录步骤开始/完成/失败事件
+完成需求分析
+  → 启动 retrieve_knowledge 步骤
+  → RAGService 检索历史测试资产
+  → 写入 rag_context / score / count
+  → 记录步骤完成或降级事件
 ```
 
-建议输出字段：
-
-- `summary`：需求摘要
-- `modules`：业务模块
-- `requirement_facts`：需求明确事实
-- `business_rules`：业务规则
-- `states`：状态及流转
-- `inferred_risks`：风险与推导依据
-- `open_questions`：因信息不足需要确认的问题
-
-建议开发范围：
-
-1. 定义结构化需求分析结果模型
-2. 新增需求分析 System Prompt
-3. 在 `PromptService` 增加需求分析 User Prompt
-4. 实现 `RequirementAnalyzer`
-5. 使用 Fake LLM 编写成功、解析失败和 LLM 失败测试
-6. 将结果写入 `TestAnalysisState`
-7. 更新本文件、`DEVELOPMENT_LOG.md` 和 `LEARNING_NOTES.md`
+本阶段只实现知识检索节点，不同时实现测试点 Generator 或 Reviewer。
 
 ## 当前限制
 
 - 现有 Streamlit 页面尚未使用 `TestAnalysisState`
-- `RequirementAnalyzer` 尚未实现
 - Agent 尚不能自主选择 Tool
+- RAG 尚未通过 Agent 节点写入 State
 - 尚未实现 Reviewer 和自动修正循环
 - 内部测试点输出仍然是 Markdown，而不是结构化数据
 - Milvus 与 Embedding 地址仍在现有客户端中硬编码

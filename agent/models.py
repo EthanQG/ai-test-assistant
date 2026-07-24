@@ -1,0 +1,147 @@
+import json
+from dataclasses import dataclass, field
+from typing import Any
+
+
+class RequirementAnalysisValidationError(ValueError):
+    """Raised when the LLM response cannot be used as requirement analysis."""
+
+
+def _required_text(payload: dict[str, Any], field_name: str) -> str:
+    value = payload.get(field_name)
+    if not isinstance(value, str) or not value.strip():
+        raise RequirementAnalysisValidationError(
+            f"{field_name} must be a non-empty string"
+        )
+    return value.strip()
+
+
+def _string_list(payload: dict[str, Any], field_name: str) -> list[str]:
+    value = payload.get(field_name)
+    if not isinstance(value, list):
+        raise RequirementAnalysisValidationError(
+            f"{field_name} must be a list"
+        )
+
+    cleaned_items = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise RequirementAnalysisValidationError(
+                f"{field_name} must contain non-empty strings"
+            )
+        cleaned_items.append(item.strip())
+    return cleaned_items
+
+
+@dataclass(frozen=True)
+class InferredRisk:
+    risk: str
+    basis: str
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "InferredRisk":
+        if not isinstance(payload, dict):
+            raise RequirementAnalysisValidationError(
+                "each inferred risk must be an object"
+            )
+        return cls(
+            risk=_required_text(payload, "risk"),
+            basis=_required_text(payload, "basis"),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        return {"risk": self.risk, "basis": self.basis}
+
+
+@dataclass(frozen=True)
+class RequirementAnalysisResult:
+    summary: str
+    modules: list[str] = field(default_factory=list)
+    requirement_facts: list[str] = field(default_factory=list)
+    business_rules: list[str] = field(default_factory=list)
+    state_transitions: list[str] = field(default_factory=list)
+    inferred_risks: list[InferredRisk] = field(default_factory=list)
+    open_questions: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_json(cls, raw_response: str) -> "RequirementAnalysisResult":
+        cleaned_response = cls._strip_code_fence(raw_response)
+        try:
+            payload = json.loads(cleaned_response)
+        except json.JSONDecodeError as exc:
+            raise RequirementAnalysisValidationError(
+                f"LLM response is not valid JSON: {exc.msg}"
+            ) from exc
+
+        if not isinstance(payload, dict):
+            raise RequirementAnalysisValidationError(
+                "LLM response must be a JSON object"
+            )
+        return cls.from_dict(payload)
+
+    @classmethod
+    def from_dict(
+        cls,
+        payload: dict[str, Any],
+    ) -> "RequirementAnalysisResult":
+        expected_fields = {
+            "summary",
+            "modules",
+            "requirement_facts",
+            "business_rules",
+            "state_transitions",
+            "inferred_risks",
+            "open_questions",
+        }
+        unexpected_fields = set(payload) - expected_fields
+        if unexpected_fields:
+            raise RequirementAnalysisValidationError(
+                "unexpected fields: "
+                + ", ".join(sorted(unexpected_fields))
+            )
+
+        risk_payload = payload.get("inferred_risks")
+        if not isinstance(risk_payload, list):
+            raise RequirementAnalysisValidationError(
+                "inferred_risks must be a list"
+            )
+
+        return cls(
+            summary=_required_text(payload, "summary"),
+            modules=_string_list(payload, "modules"),
+            requirement_facts=_string_list(
+                payload,
+                "requirement_facts",
+            ),
+            business_rules=_string_list(payload, "business_rules"),
+            state_transitions=_string_list(
+                payload,
+                "state_transitions",
+            ),
+            inferred_risks=[
+                InferredRisk.from_dict(item) for item in risk_payload
+            ],
+            open_questions=_string_list(payload, "open_questions"),
+        )
+
+    @staticmethod
+    def _strip_code_fence(raw_response: str) -> str:
+        cleaned = raw_response.strip()
+        if cleaned.startswith("```") and cleaned.endswith("```"):
+            lines = cleaned.splitlines()
+            if len(lines) >= 3:
+                return "\n".join(lines[1:-1]).strip()
+        return cleaned
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "summary": self.summary,
+            "modules": self.modules,
+            "requirement_facts": self.requirement_facts,
+            "business_rules": self.business_rules,
+            "state_transitions": self.state_transitions,
+            "inferred_risks": [
+                risk.to_dict() for risk in self.inferred_risks
+            ],
+            "open_questions": self.open_questions,
+        }

@@ -910,3 +910,218 @@ raise ValueError("requirement cannot be empty")
 - [ ] 我能说明至少一个设计取舍
 - [ ] 我能回答三个连续追问
 - [ ] 我能独立完成一个小修改并补测试
+
+---
+
+## 十三、阶段 2.3：RequirementAnalyzer
+
+### 13.1 核心文件
+
+- `agent/models.py`
+- `agent/requirement_analyzer.py`
+- `prompts/requirement_analysis.txt`
+- `services/prompt_service.py`
+- `agent/state.py`
+- `tests/test_requirement_analyzer.py`
+
+### 13.2 本阶段实现了什么
+
+`RequirementAnalyzer` 接收一个包含原始 PRD 的 `TestAnalysisState`，调用 LLM 获得 JSON，经过代码校验后写回：
+
+- 需求摘要
+- 业务模块
+- 需求事实
+- 业务规则
+- 状态流转
+- 推导风险及依据
+- 待确认项
+
+它是项目第一个真正使用 LLM、State 和 Event 的 Agent 节点。
+
+### 13.3 调用链
+
+```text
+RequirementAnalyzer.analyze(state)
+  → state.start_step(ANALYZE_REQUIREMENT)
+  → PromptService.load_system_prompt()
+  → PromptService.build_requirement_analysis_prompt()
+  → LLMService.generate()
+  → RequirementAnalysisResult.from_json()
+  → RequirementAnalyzer._apply_result()
+  → state.complete_step()
+  → 有open_questions时state.wait_for_user()
+```
+
+### 13.4 为什么要求结构化 JSON
+
+如果直接让 LLM 输出 Markdown，后续节点要重新从自然语言中提取模块、事实和风险，容易产生歧义。
+
+JSON 的价值：
+
+- 字段固定
+- 可以校验类型
+- 方便写入 State
+- 方便单元测试
+- 方便未来 API 返回
+- Reviewer 可以按字段处理
+
+但“要求模型输出 JSON”不等于结果一定合法，所以代码仍需要解析和校验。
+
+### 13.5 结构化模型与普通字典
+
+普通字典可以保存任意键，拼写错误要到运行时很晚才发现。`RequirementAnalysisResult` 明确定义合法字段，并在创建前校验输入。
+
+`InferredRisk` 单独建模，强制每条风险同时包含：
+
+```json
+{
+  "risk": "重复提交可能重复扣减库存",
+  "basis": "需求存在提交和库存扣减操作"
+}
+```
+
+这能避免模型只给风险结论，却不说明推导依据。
+
+### 13.6 JSON 解析与校验
+
+解析流程：
+
+```text
+LLM原始文本
+  → 去除首尾空白
+  → 兼容```json代码围栏
+  → json.loads()
+  → 检查顶层必须是对象
+  → 拒绝未知顶层字段
+  → 检查字符串和数组类型
+  → 检查风险结构
+  → 生成RequirementAnalysisResult
+```
+
+兼容代码围栏是为了处理模型偶尔返回：
+
+````text
+```json
+{"summary": "..."}
+```
+````
+
+Prompt 仍明确要求不要输出围栏；解析兼容属于防御性处理，不代表鼓励模型违反格式。
+
+### 13.7 为什么拒绝未知字段
+
+Prompt 要求只能使用固定字段。如果模型额外返回 `confidence`、`recommendation` 等内容，而代码默默忽略，可能掩盖 Prompt 漂移或字段拼写错误。
+
+严格拒绝的好处：
+
+- 尽早发现模型输出变化
+- 防止错误字段静默丢失
+- 保持节点之间的数据契约稳定
+
+代价是模型轻微偏离格式也会失败。后续可以结合有限重试或结构化输出 API 改善，但不能直接放弃校验。
+
+### 13.8 节点如何更新 State
+
+分析开始：
+
+```python
+state.start_step(
+    AgentStep.ANALYZE_REQUIREMENT,
+    "正在分析需求结构与信息边界",
+)
+```
+
+校验成功后 `_apply_result()` 将结果复制到 State，再记录完成事件。
+
+使用 `list(...)` 创建新列表，避免 State 和结果对象意外共享可变列表。
+
+### 13.9 为什么先 complete_step 再 wait_for_user
+
+存在待确认项不代表需求分析失败。节点已经成功识别出事实、风险和问题，因此先记录：
+
+```text
+STEP_COMPLETED
+```
+
+再记录：
+
+```text
+INFORMATION：需要用户补充
+status = waiting_for_user
+```
+
+如果直接进入等待而不完成步骤，执行轨迹会错误地显示需求分析一直没有完成。
+
+### 13.10 异常链 `raise ... from exc`
+
+节点捕获底层异常后：
+
+```python
+raise RequirementAnalysisError(...) from exc
+```
+
+上层看到统一的节点异常，同时 Python 保留原始原因，例如：
+
+- `TimeoutError`
+- `JSONDecodeError`
+- `RequirementAnalysisValidationError`
+
+这叫异常链，方便定位根因。
+
+### 13.11 面试问题与参考答案
+
+#### 问：为什么让 LLM 输出 JSON 后还要校验？
+
+答：
+
+> Prompt 只是软约束，模型仍可能返回 Markdown、缺字段或错误类型。RequirementAnalysisResult 会进行 JSON 解析、固定字段、数组类型、非空字符串和风险依据校验，只有通过后才写入 AgentState，避免错误数据污染后续节点。
+
+#### 问：为什么不直接使用字典？
+
+答：
+
+> 字典缺少明确契约，字段拼写和类型错误容易被忽略。结构化模型明确了输入输出，使节点边界更清晰，也便于测试、序列化和后续替换成 Pydantic 等校验方案。
+
+#### 问：模型返回错误 JSON 怎么办？
+
+答：
+
+> 节点不会继续执行。解析器抛出校验异常，RequirementAnalyzer 将 State 标记为 failed，记录 TASK_FAILED 事件，再向上抛出统一的 RequirementAnalysisError。后续可以在编排器中增加有限重试，但本阶段先保证失败可见且不会污染状态。
+
+#### 问：为什么有待确认项时要暂停？
+
+答：
+
+> 如果缺少关键业务规则，继续生成测试点可能会把推测当成预期结果。节点保留已完成的分析结果，并将状态切换为 waiting_for_user，强制后续步骤等待补充信息。这体现了 Agent 根据当前状态决定是否继续。
+
+#### 问：这一步让项目成为完整 Agent 了吗？
+
+答：
+
+> 还没有，但已经从只有状态模型进展到拥有第一个执行节点。当前节点能调用 LLM、校验结果、更新 State 并根据待确认项改变状态；还需要知识检索节点、Generator、Reviewer 和编排器组成完整闭环。
+
+### 13.12 当前限制
+
+- 没有对格式错误进行自动重试
+- 没有使用真实 DeepSeek 验证 Prompt 稳定性
+- 没有接入页面
+- 待确认项还没有 UI 交互
+- 没有基于分析结果自动决定是否调用 RAG
+
+### 13.13 动手练习
+
+- [ ] 给分析结果增加一个经过讨论确认的新字段，并同步 Prompt、State、解析器和测试
+- [ ] 构造缺少 `summary` 的响应，观察错误
+- [ ] 构造包含未知字段的响应，观察严格校验
+- [ ] 解释为什么 `open_questions=[]` 时任务保持 running
+- [ ] 为模型返回 JSON 数组而不是对象增加测试
+- [ ] 画出成功、等待用户和失败三条事件流
+
+### 13.14 掌握检查
+
+- [ ] 能解释 RequirementAnalyzer 的完整调用链
+- [ ] 能说明 Prompt 约束与代码校验的区别
+- [ ] 能解释为什么风险必须包含 basis
+- [ ] 能解释异常链
+- [ ] 能说明为什么先完成步骤再等待用户
+- [ ] 能独立增加一个解析校验测试

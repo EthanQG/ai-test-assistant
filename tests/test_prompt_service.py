@@ -36,6 +36,21 @@ class PromptServiceTests(unittest.TestCase):
         self.assertNotIn("【本地历史 Bug 经验】", prompt)
         self.assertNotIn("【向量检索召回的相似历史测试资产】", prompt)
 
+    def test_requirement_analysis_prompt_contains_requirement_once(self):
+        prompt = PromptService.build_requirement_analysis_prompt(
+            "  用户提交订单后扣减库存  "
+        )
+
+        self.assertEqual(prompt.count("用户提交订单后扣减库存"), 1)
+        self.assertIn("【原始需求】", prompt)
+
+    def test_empty_requirement_analysis_prompt_is_rejected(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "requirement cannot be empty",
+        ):
+            PromptService.build_requirement_analysis_prompt("  ")
+
     def test_custom_prompt_directory_can_be_used(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             prompt_path = Path(temp_dir) / "custom.txt"

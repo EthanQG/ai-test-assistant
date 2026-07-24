@@ -117,12 +117,24 @@ class TestAnalysisStateTests(unittest.TestCase):
     def test_state_can_be_serialized_to_json(self):
         state = TestAnalysisState(requirement="用户可以提交订单")
         state.start_step(AgentStep.ANALYZE_REQUIREMENT, "分析需求")
+        state.modules = ["订单"]
+        state.business_rules = ["库存不足时不能提交"]
+        state.state_transitions = ["待提交 -> 已提交"]
 
         payload = state.to_dict()
         serialized = json.dumps(payload, ensure_ascii=False)
 
         self.assertEqual(payload["status"], "running")
         self.assertEqual(payload["current_step"], "analyze_requirement")
+        self.assertEqual(payload["modules"], ["订单"])
+        self.assertEqual(
+            payload["business_rules"],
+            ["库存不足时不能提交"],
+        )
+        self.assertEqual(
+            payload["state_transitions"],
+            ["待提交 -> 已提交"],
+        )
         self.assertIn("用户可以提交订单", serialized)
         self.assertIn("occurred_at", serialized)
 

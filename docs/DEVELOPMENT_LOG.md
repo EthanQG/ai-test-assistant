@@ -26,7 +26,8 @@
 | 阶段 1 | 已完成 | 拆分 Service 层，聚焦测试分析功能 | `5875853` |
 | 阶段 1.5 | 已完成 | 整理 System/User Prompt 边界 | `95aba63` |
 | 阶段 2.1/2.2 | 已完成 | Agent 状态与执行事件模型 | `e118865` |
-| 阶段 2.3 | 待开始 | RequirementAnalyzer 需求分析节点 | - |
+| 阶段 2.3 | 已完成 | RequirementAnalyzer 需求分析节点 | 本阶段提交 |
+| 阶段 2.4 | 待开始 | Agent知识检索节点 | - |
 
 ---
 
@@ -287,3 +288,72 @@ pending
 ```
 
 这是第一个真正使用 AgentState 的执行节点。
+
+---
+
+## 阶段 2.3：RequirementAnalyzer 需求分析节点
+
+### 本阶段目标
+
+实现第一个真正调用 LLM 并读写 `TestAnalysisState` 的 Agent 节点，把原始需求转换为可校验的结构化数据，而不是直接生成最终 Markdown 报告。
+
+### 修改内容
+
+- 新增 `RequirementAnalysisResult` 和 `InferredRisk`
+- 新增 `RequirementAnalysisValidationError`
+- 新增需求分析 System Prompt
+- `PromptService` 增加需求分析 User Prompt 构建方法
+- 新增 `RequirementAnalyzer`
+- `TestAnalysisState` 增加模块、业务规则和状态流转字段
+- 增加 JSON 代码围栏兼容
+- 增加未知顶层字段拒绝机制
+- 增加成功、待确认、无效 JSON、字段错误和 LLM 超时测试
+
+### 执行流程
+
+```text
+TestAnalysisState.requirement
+  → start_step(analyze_requirement)
+  → PromptService
+  → LLMService.generate()
+  → RequirementAnalysisResult.from_json()
+  → 字段与类型校验
+  → 写回TestAnalysisState
+  → complete_step()
+  → 存在open_questions时wait_for_user()
+```
+
+### 关键设计
+
+LLM 只负责生成候选 JSON，代码负责决定该结果是否可信。解析器要求固定顶层字段、正确数组类型、非空字符串以及每条风险同时包含 `risk` 和 `basis`。
+
+分析成功但存在待确认项时，需求分析步骤仍然记录为完成，然后任务进入 `waiting_for_user`。这样既保留已经获得的分析结果，也阻止后续知识检索和测试点生成绕过用户确认。
+
+LLM 超时、JSON 无效或字段校验失败时，节点记录 `TASK_FAILED`，并抛出统一的 `RequirementAnalysisError` 给上层处理。
+
+### 当前边界
+
+- 尚未接入 Streamlit 页面
+- 尚未实现 Agent 编排器
+- 尚未将 RAG 封装为 Agent 节点
+- 尚未生成结构化测试点
+- 没有真实模型效果评测
+
+### 验证结果
+
+- 全量 27 个单元测试通过
+- Python 编译检查通过
+- Fake LLM 覆盖成功、等待用户、解析失败和模型异常
+- 不访问真实 DeepSeek、Milvus 或 Embedding 服务
+
+### Git 提交
+
+本阶段提交信息：
+
+```text
+功能：实现Agent结构化需求分析节点
+```
+
+### 下一步
+
+实现知识检索节点，把 `RAGService` 的上下文、最高相似度和命中数量写入 `TestAnalysisState`，并记录 `retrieve_knowledge` 步骤事件。

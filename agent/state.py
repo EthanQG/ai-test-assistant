@@ -32,7 +32,10 @@ class TestAnalysisState:
     current_step: AgentStep = AgentStep.INITIALIZE
 
     requirement_summary: str = ""
+    modules: list[str] = field(default_factory=list)
     requirement_facts: list[str] = field(default_factory=list)
+    business_rules: list[str] = field(default_factory=list)
+    state_transitions: list[str] = field(default_factory=list)
     inferred_risks: list[dict[str, str]] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
 
@@ -153,7 +156,10 @@ class TestAnalysisState:
             "status": self.status.value,
             "current_step": self.current_step.value,
             "requirement_summary": self.requirement_summary,
+            "modules": self.modules,
             "requirement_facts": self.requirement_facts,
+            "business_rules": self.business_rules,
+            "state_transitions": self.state_transitions,
             "inferred_risks": self.inferred_risks,
             "open_questions": self.open_questions,
             "local_bug_knowledge": self.local_bug_knowledge,

@@ -44,6 +44,16 @@ class PromptService:
         return "\n\n".join(sections)
 
     @staticmethod
+    def build_requirement_analysis_prompt(requirement: str) -> str:
+        cleaned_requirement = requirement.strip()
+        if not cleaned_requirement:
+            raise ValueError("requirement cannot be empty")
+        return (
+            "请对以下原始需求进行结构化分析，并严格按照系统要求只返回 JSON。\n\n"
+            f"【原始需求】\n{cleaned_requirement}"
+        )
+
+    @staticmethod
     def build_refine_prompt(
         requirement: str,
         current_report: str,
