@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -52,6 +53,38 @@ class PromptService:
             "请对以下原始需求进行结构化分析，并严格按照系统要求只返回 JSON。\n\n"
             f"【原始需求】\n{cleaned_requirement}"
         )
+
+    @staticmethod
+    def build_structured_test_points_prompt(
+        requirement_analysis: dict,
+        local_bug_knowledge: str | None = None,
+        rag_context: str | None = None,
+    ) -> str:
+        if not requirement_analysis.get("summary"):
+            raise ValueError("requirement analysis summary cannot be empty")
+
+        sections = [
+            "请根据以下结构化需求分析生成测试点，并严格按照系统要求只返回 JSON。",
+            "【结构化需求分析】\n"
+            + json.dumps(
+                requirement_analysis,
+                ensure_ascii=False,
+                indent=2,
+            ),
+        ]
+        if local_bug_knowledge and local_bug_knowledge.strip():
+            sections.append(
+                "【本地测试经验】\n" + local_bug_knowledge.strip()
+            )
+        if rag_context and rag_context.strip():
+            sections.append(
+                "【相似历史测试资产】\n" + rag_context.strip()
+            )
+        sections.append(
+            "历史资产只能提供测试思路，不能覆盖当前需求事实；"
+            "每个测试点必须通过 sources 和 source_refs 说明来源。"
+        )
+        return "\n\n".join(sections)
 
     @staticmethod
     def build_refine_prompt(

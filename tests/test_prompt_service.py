@@ -51,6 +51,31 @@ class PromptServiceTests(unittest.TestCase):
         ):
             PromptService.build_requirement_analysis_prompt("  ")
 
+    def test_structured_test_points_prompt_contains_context(self):
+        prompt = PromptService.build_structured_test_points_prompt(
+            {
+                "summary": "订单提交",
+                "requirement_facts": ["提交时扣减库存"],
+            },
+            local_bug_knowledge="关注重复提交",
+            rag_context="历史库存重复扣减",
+        )
+
+        self.assertIn("订单提交", prompt)
+        self.assertIn("提交时扣减库存", prompt)
+        self.assertIn("关注重复提交", prompt)
+        self.assertIn("历史库存重复扣减", prompt)
+
+    def test_structured_test_points_prompt_omits_empty_context(self):
+        prompt = PromptService.build_structured_test_points_prompt(
+            {"summary": "订单提交"},
+            local_bug_knowledge="",
+            rag_context="",
+        )
+
+        self.assertNotIn("【本地测试经验】", prompt)
+        self.assertNotIn("【相似历史测试资产】", prompt)
+
     def test_custom_prompt_directory_can_be_used(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             prompt_path = Path(temp_dir) / "custom.txt"

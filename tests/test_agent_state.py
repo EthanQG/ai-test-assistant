@@ -122,6 +122,9 @@ class TestAnalysisStateTests(unittest.TestCase):
         state.business_rules = ["库存不足时不能提交"]
         state.state_transitions = ["待提交 -> 已提交"]
         state.knowledge_retrieval_status = KnowledgeRetrievalStatus.NO_MATCH
+        state.test_points = [
+            {"title": "订单提交", "category": "functional"}
+        ]
 
         payload = state.to_dict()
         serialized = json.dumps(payload, ensure_ascii=False)
@@ -141,6 +144,7 @@ class TestAnalysisStateTests(unittest.TestCase):
             payload["knowledge_retrieval_status"],
             "no_match",
         )
+        self.assertEqual(payload["test_points"][0]["title"], "订单提交")
         self.assertIn("用户可以提交订单", serialized)
         self.assertIn("occurred_at", serialized)
 

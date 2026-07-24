@@ -9,6 +9,12 @@ from .models import (
     InferredRisk,
     RequirementAnalysisResult,
     RequirementAnalysisValidationError,
+    TestPoint,
+    TestPointCategory,
+    TestPointGenerationResult,
+    TestPointPriority,
+    TestPointSource,
+    TestPointValidationError,
 )
 from .requirement_analyzer import (
     RequirementAnalysisError,
@@ -18,6 +24,10 @@ from .state import (
     AgentStatus,
     KnowledgeRetrievalStatus,
     TestAnalysisState,
+)
+from .test_point_generator import (
+    TestPointGenerationError,
+    TestPointGenerator,
 )
 
 __all__ = [
@@ -32,6 +42,14 @@ __all__ = [
     "RequirementAnalysisError",
     "RequirementAnalysisResult",
     "RequirementAnalysisValidationError",
+    "TestPoint",
+    "TestPointCategory",
+    "TestPointGenerationResult",
+    "TestPointPriority",
+    "TestPointSource",
+    "TestPointValidationError",
     "RequirementAnalyzer",
     "TestAnalysisState",
+    "TestPointGenerationError",
+    "TestPointGenerator",
 ]

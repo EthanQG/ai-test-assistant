@@ -55,6 +55,7 @@ class TestAnalysisState:
     )
     rag_error_message: str | None = None
 
+    test_points: list[dict[str, Any]] = field(default_factory=list)
     report: str = ""
     error_message: str | None = None
     events: list[AgentEvent] = field(default_factory=list)
@@ -181,6 +182,7 @@ class TestAnalysisState:
                 self.knowledge_retrieval_status.value
             ),
             "rag_error_message": self.rag_error_message,
+            "test_points": self.test_points,
             "report": self.report,
             "error_message": self.error_message,
             "events": [event.to_dict() for event in self.events],

@@ -29,6 +29,7 @@
 | 阶段 2.3 | 已完成 | RequirementAnalyzer 需求分析节点 | 本阶段提交 |
 | 产品范围 V2 | 已完成 | 从三模块 Workflow 收敛为测试分析 Agent | 本阶段提交 |
 | 阶段 2.4 | 已完成 | Agent知识检索节点 | 本阶段提交 |
+| 阶段 2.5 | 已完成 | 结构化测试点生成节点 | 本阶段提交 |
 
 ---
 
@@ -460,3 +461,83 @@ TestAnalysisState 中的需求分析结果
 ### 下一步
 
 进入阶段 2.5，实现结构化测试点模型与 `TestPointGenerator`，让 LLM 输出经过 Python 校验后再写入 State。
+
+---
+
+## 阶段 2.5：TestPointGenerator 结构化测试点生成节点
+
+### 本阶段目标
+
+将需求分析结果和历史知识转换为机器可校验的测试点集合，替代 Agent 内部直接依赖 Markdown 报告的方式，为后续覆盖度评审、去重和自动修正提供稳定输入。
+
+### 修改内容
+
+- 新增 `TestPoint`、`TestPointGenerationResult` 和校验异常
+- 新增测试点分类、优先级和来源枚举
+- 新增结构化测试点 System Prompt 和动态 User Prompt
+- 新增 `TestPointGenerator`
+- `TestAnalysisState` 增加 `test_points`
+- 生成成功后记录测试点总数、分类统计和优先级统计
+- 增加模型解析、节点前置条件、成功和失败路径测试
+
+### 结构化测试点字段
+
+```text
+title
+category: functional / boundary / exception / non_functional
+priority: P0 / P1 / P2
+scenario
+preconditions[]
+steps[]
+expected_results[]
+sources[]
+source_refs[]
+```
+
+`sources` 表示来源类型，`source_refs` 保存具体引用。这样 Reviewer 后续不仅能看到测试点内容，还能判断它来自当前需求、历史资产、通用测试经验还是用户反馈。
+
+### 执行链路
+
+```text
+TestAnalysisState 中的需求分析与知识检索结果
+  → 校验不存在待确认项且已经尝试知识检索
+  → TestPointGenerator.generate()
+  → PromptService 构造结构化生成 Prompt
+  → LLMService.generate()
+  → TestPointGenerationResult.from_json()
+  → Python 校验字段、枚举和非空数组
+  → 写入 state.test_points
+  → complete_step(generate_test_points)
+```
+
+### 关键设计
+
+知识检索的 `no_match` 和 `degraded` 都允许生成，因为 RAG 是增强能力；`not_started` 不允许生成，因为受控流程要求节点按顺序执行并留下检索轨迹。
+
+LLM 返回的是候选测试点，不是可信的最终结果。Python 会拒绝未知分类、非法优先级、空步骤、空预期、未知字段和空测试点集合。只有校验通过的数据才能写入 State。
+
+测试点生成是核心产出，无法解析或模型调用失败时任务进入 `failed`，不能像 RAG 一样降级为空测试点继续执行。
+
+### 验证结果
+
+- 全量 49 个单元测试通过
+- 覆盖正常生成、无 RAG 命中、RAG 降级、待确认项阻断、未检索阻断、非法 JSON 结果和 LLM 异常
+- 单元测试使用 Fake LLM，不访问真实模型
+
+### 当前边界
+
+- 尚未接入 Streamlit 页面
+- 尚未实现 Reviewer
+- 尚未实现 Orchestrator 自动串联三个节点
+- 尚未使用真实模型验证测试点质量
+- 当前来源真实性依赖模型按 Prompt 引用，后续 Reviewer 还需核对
+
+### 建议提交信息
+
+```text
+功能：实现Agent结构化测试点生成节点
+```
+
+### 下一步
+
+进入阶段 2.6，实现 `TestPointReviewer` 和结构化评审结果，检查需求覆盖、重复项、幻觉风险与可执行性。

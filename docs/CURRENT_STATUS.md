@@ -15,8 +15,8 @@
 ## Git 基线
 
 - 分支：`main`
-- 本阶段提交前基线：`18f283a 文档：重构测试分析Agent产品需求说明`
-- 最新已提交功能：`75476ba 功能：实现Agent结构化需求分析节点`
+- 本阶段提交前基线：`805a25b 功能：实现Agent历史知识检索节点`
+- 最新已提交功能：`805a25b 功能：实现Agent历史知识检索节点`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
 
@@ -30,7 +30,7 @@ git log -5 --oneline --decorate
 
 ## 当前阶段
 
-阶段 2.4 已完成：已经实现使用 `RAGService` 和 `TestAnalysisState` 的历史知识检索节点 `KnowledgeRetriever`。
+阶段 2.5 已完成：已经实现根据需求分析和历史知识生成可校验结构化测试点的 `TestPointGenerator`。
 
 产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
 
@@ -79,6 +79,17 @@ git log -5 --oneline --decorate
 - 记录 `retrieve_knowledge` 步骤的开始与完成事件
 - 保留旧 RAG 调用的兼容行为，Agent 调用使用严格错误模式
 
+### 阶段 2.5：TestPointGenerator
+
+- 新增结构化 `TestPoint` 和 `TestPointGenerationResult`
+- 支持 functional、boundary、exception、non_functional 四类测试点
+- 支持 P0、P1、P2 优先级
+- 记录 requirement、historical_asset、test_experience、user_feedback 来源及引用
+- 每条测试点包含场景、前置条件、步骤和可观察预期结果
+- LLM 返回 JSON 后由 Python 严格校验，非法字段和空数组会使任务失败
+- 检索无匹配或服务降级时仍可生成；未执行检索或存在待确认项时禁止生成
+- 合法测试点写入 `TestAnalysisState` 并记录数量、分类和优先级统计事件
+
 ## 当前架构
 
 ```text
@@ -99,7 +110,8 @@ agent/
   RequirementAnalysisResult
   RequirementAnalyzer
   KnowledgeRetriever
-  后续加入结构化测试点生成节点和编排器
+  TestPointGenerator
+  后续加入 Reviewer 和编排器
 ```
 
 ## 当前测试基线
@@ -107,7 +119,7 @@ agent/
 验证日期：2026-07-24
 
 ```text
-35 tests passed
+49 tests passed
 ```
 
 验证命令：
@@ -119,29 +131,29 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：结构化测试点生成节点
+## 下一步任务：测试点质量评审节点
 
-阶段 2.4 提交后，建议进入阶段 2.5：实现 `TestPointGenerator`，把需求事实、推导风险和历史知识转换为可校验的结构化测试点。
+阶段 2.5 提交后，建议进入阶段 2.6：实现 `TestPointReviewer`，检查需求事实覆盖、场景分类、重复项、来源可信度和可执行性。
 
 目标流程：
 
 ```text
-完成需求分析与知识检索
-  → 启动 generate_test_points 步骤
-  → PromptService 构造生成提示词
-  → LLMService 返回结构化 JSON
-  → Python 校验测试点字段与来源
+完成结构化测试点生成
+  → 启动 review_test_points 步骤
+  → 对照需求事实与测试点
+  → LLM 返回结构化评审结果
+  → Python 校验评分、遗漏项和修改建议
   → 写入 TestAnalysisState
 ```
 
-本阶段只实现结构化测试点模型和 Generator，不同时实现 Reviewer 或页面接入。
+本阶段只实现 Reviewer 和评审结果模型，不同时实现自动修正循环或页面接入。
 
 ## 当前限制
 
 - 现有 Streamlit 页面尚未使用 `TestAnalysisState`
 - Agent 尚不能自主选择 Tool
 - 尚未实现 Reviewer 和自动修正循环
-- 内部测试点输出仍然是 Markdown，而不是结构化数据
+- 现有 Streamlit 页面仍使用旧 Workflow 的 Markdown 报告，尚未展示 Agent 内部结构化测试点
 - Milvus 与 Embedding 地址仍在现有客户端中硬编码
 - 自动化用例生成和异常日志分析仍是未完成功能
 
