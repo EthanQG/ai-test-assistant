@@ -15,7 +15,7 @@
 ## Git 基线
 
 - 分支：`main`
-- 最新提交：`75476ba 功能：实现Agent结构化需求分析节点`
+- 本阶段提交前基线：`18f283a 文档：重构测试分析Agent产品需求说明`
 - 最新已提交功能：`75476ba 功能：实现Agent结构化需求分析节点`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
@@ -30,7 +30,7 @@ git log -5 --oneline --decorate
 
 ## 当前阶段
 
-阶段 2.3 已完成：已经实现第一个真正使用 LLM 和 `TestAnalysisState` 的需求分析节点 `RequirementAnalyzer`。
+阶段 2.4 已完成：已经实现使用 `RAGService` 和 `TestAnalysisState` 的历史知识检索节点 `KnowledgeRetriever`。
 
 产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
 
@@ -69,6 +69,16 @@ git log -5 --oneline --decorate
 - LLM 超时或 JSON 无效时任务进入 `failed`
 - 使用 Fake LLM 覆盖成功、待确认和失败路径
 
+### 阶段 2.4：KnowledgeRetriever
+
+- 根据结构化需求分析结果构造历史资产检索查询
+- 将 RAG 上下文、最高相似度、命中数量写入 `TestAnalysisState`
+- 使用明确状态区分 `matched`、`no_match` 和 `degraded`
+- 无历史命中时记录结果并继续，不把正常空结果误判为故障
+- Milvus 或 Embedding 服务失败时记录降级原因，当前任务仍可继续
+- 记录 `retrieve_knowledge` 步骤的开始与完成事件
+- 保留旧 RAG 调用的兼容行为，Agent 调用使用严格错误模式
+
 ## 当前架构
 
 ```text
@@ -88,7 +98,8 @@ agent/
   AgentStep
   RequirementAnalysisResult
   RequirementAnalyzer
-  后续加入知识检索节点和编排器
+  KnowledgeRetriever
+  后续加入结构化测试点生成节点和编排器
 ```
 
 ## 当前测试基线
@@ -96,7 +107,7 @@ agent/
 验证日期：2026-07-24
 
 ```text
-27 tests passed
+35 tests passed
 ```
 
 验证命令：
@@ -108,27 +119,27 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：知识检索节点
+## 下一步任务：结构化测试点生成节点
 
-阶段 2.3 提交后，建议进入阶段 2.4：把现有 RAG 能力接入 AgentState 和事件模型。
+阶段 2.4 提交后，建议进入阶段 2.5：实现 `TestPointGenerator`，把需求事实、推导风险和历史知识转换为可校验的结构化测试点。
 
 目标流程：
 
 ```text
-完成需求分析
-  → 启动 retrieve_knowledge 步骤
-  → RAGService 检索历史测试资产
-  → 写入 rag_context / score / count
-  → 记录步骤完成或降级事件
+完成需求分析与知识检索
+  → 启动 generate_test_points 步骤
+  → PromptService 构造生成提示词
+  → LLMService 返回结构化 JSON
+  → Python 校验测试点字段与来源
+  → 写入 TestAnalysisState
 ```
 
-本阶段只实现知识检索节点，不同时实现测试点 Generator 或 Reviewer。
+本阶段只实现结构化测试点模型和 Generator，不同时实现 Reviewer 或页面接入。
 
 ## 当前限制
 
 - 现有 Streamlit 页面尚未使用 `TestAnalysisState`
 - Agent 尚不能自主选择 Tool
-- RAG 尚未通过 Agent 节点写入 State
 - 尚未实现 Reviewer 和自动修正循环
 - 内部测试点输出仍然是 Markdown，而不是结构化数据
 - Milvus 与 Embedding 地址仍在现有客户端中硬编码

@@ -5,6 +5,7 @@ from agent import (
     AgentEventType,
     AgentStatus,
     AgentStep,
+    KnowledgeRetrievalStatus,
     TestAnalysisState,
 )
 
@@ -120,6 +121,7 @@ class TestAnalysisStateTests(unittest.TestCase):
         state.modules = ["订单"]
         state.business_rules = ["库存不足时不能提交"]
         state.state_transitions = ["待提交 -> 已提交"]
+        state.knowledge_retrieval_status = KnowledgeRetrievalStatus.NO_MATCH
 
         payload = state.to_dict()
         serialized = json.dumps(payload, ensure_ascii=False)
@@ -134,6 +136,10 @@ class TestAnalysisStateTests(unittest.TestCase):
         self.assertEqual(
             payload["state_transitions"],
             ["待提交 -> 已提交"],
+        )
+        self.assertEqual(
+            payload["knowledge_retrieval_status"],
+            "no_match",
         )
         self.assertIn("用户可以提交订单", serialized)
         self.assertIn("occurred_at", serialized)

@@ -1,6 +1,6 @@
 import unittest
 
-from services.rag_service import RAGSearchResult
+from services.rag_service import RAGSearchResult, RAGSearchStatus
 from utils.test_manager import TestAssistantManager
 
 
@@ -30,6 +30,7 @@ class FakeRAGService:
             context="历史支付重复扣款测试点",
             max_score=0.86,
             matched_count=1,
+            status=RAGSearchStatus.MATCHED,
         )
 
     def save_case(self, requirement: str, test_points: str) -> bool:

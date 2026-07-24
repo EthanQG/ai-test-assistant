@@ -219,10 +219,10 @@ Agent 使用受控编排：
 | FR-202 | 将 PRD 转换为向量 | P0 | 已实现（现有 Workflow） | Embedding 返回非空 768 维向量 |
 | FR-203 | Milvus 相似度检索 | P0 | 已实现（现有 Workflow） | 支持 Top-K 与余弦相似度 |
 | FR-204 | 阈值过滤 | P0 | 已实现（现有 Workflow） | 低于阈值的资产不进入上下文 |
-| FR-205 | 检索结果写入 AgentState | P0 | 规划中 | 保存上下文、最高分和命中数量 |
-| FR-206 | 记录检索步骤事件 | P0 | 规划中 | 记录开始、完成、无命中或降级 |
-| FR-207 | 无命中降级继续 | P0 | 规划中 | 0 条命中不阻塞测试点生成 |
-| FR-208 | 区分无命中和服务失败 | P1 | 规划中 | State/Event 中能识别两种情况 |
+| FR-205 | 检索结果写入 AgentState | P0 | 已实现（Agent 内部） | 保存上下文、最高分、命中数量、检索状态和错误原因 |
+| FR-206 | 记录检索步骤事件 | P0 | 已实现（Agent 内部） | 记录开始、完成、无命中或降级 |
+| FR-207 | 无命中降级继续 | P0 | 已实现（Agent 内部） | 0 条命中不阻塞测试点生成 |
+| FR-208 | 区分无命中和服务失败 | P1 | 已实现（Agent 内部） | State/Event 能区分 `no_match` 与 `degraded` |
 
 ### 6.4 测试点生成
 
@@ -280,12 +280,12 @@ Agent 使用受控编排：
 
 | 项目 | 定义 |
 |---|---|
-| 状态 | 规划中 |
+| 状态 | 已实现（Agent 内部） |
 | 输入 | 结构化需求分析结果 |
 | 使用能力 | RAGService |
 | 输出 | `rag_context`、`rag_max_score`、`rag_matched_count` |
 | 无命中 | 记录 0 条命中并允许继续 |
-| 服务失败 | 记录降级原因，由编排规则决定是否继续 |
+| 服务失败 | 记录降级原因，当前规则允许任务继续 |
 
 ### 7.3 TestPointGenerator
 
@@ -339,6 +339,7 @@ Agent 使用受控编排：
 - 推导风险和待确认项
 - 本地 Bug 知识
 - RAG 上下文、最高分和命中数量
+- 知识检索状态和降级错误原因
 - 报告、错误和执行事件
 - 创建和更新时间
 
@@ -501,7 +502,7 @@ Agent 核心流程稳定前继续使用 Streamlit。是否迁移 FastAPI + React
 - [x] AgentState
 - [x] AgentEvent
 - [x] RequirementAnalyzer
-- [ ] KnowledgeRetriever
+- [x] KnowledgeRetriever
 
 ### M2：结构化生成
 

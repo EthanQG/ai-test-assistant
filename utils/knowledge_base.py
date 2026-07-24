@@ -165,7 +165,13 @@ class MilvusRAGManager:
         except Exception as e:
             raise ValueError(f"保存到Milvus失败: {str(e)}")
 
-    def search_similar_cases(self, current_prd: str, top_k: int = 2, similarity_threshold: float = 0.60) -> tuple:
+    def search_similar_cases(
+        self,
+        current_prd: str,
+        top_k: int = 2,
+        similarity_threshold: float = 0.60,
+        raise_on_error: bool = False,
+    ) -> tuple:
         print(f"[RAG] 开始检索，查询文本长度: {len(current_prd)}")
         print(f"[RAG] 相似度阈值: {similarity_threshold}")
         
@@ -174,6 +180,8 @@ class MilvusRAGManager:
                 self._init_milvus()
             except ConnectionError as e:
                 print(f"[RAG] Milvus连接失败: {e}")
+                if raise_on_error:
+                    raise
                 return "", 0.0, 0
 
         try:
@@ -184,12 +192,16 @@ class MilvusRAGManager:
                 return "", 0.0, 0
         except Exception as e:
             print(f"[RAG] 获取统计信息失败: {e}")
+            if raise_on_error:
+                raise RuntimeError(f"获取Milvus统计信息失败: {e}") from e
             return "", 0.0, 0
 
         try:
             query_vector = self._get_embedding(current_prd)
             print(f"[RAG] 查询向量长度: {len(query_vector)}")
             if not query_vector:
+                if raise_on_error:
+                    raise ValueError("Embedding向量为空")
                 return "", 0.0, 0
 
             results = self.client.search(
@@ -248,6 +260,8 @@ class MilvusRAGManager:
             print(f"[RAG] 检索失败: {e}")
             import traceback
             traceback.print_exc()
+            if raise_on_error:
+                raise RuntimeError(f"Milvus检索失败: {e}") from e
             return "", 0.0, 0
 
     def get_total_count(self) -> int:

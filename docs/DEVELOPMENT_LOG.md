@@ -28,7 +28,7 @@
 | 阶段 2.1/2.2 | 已完成 | Agent 状态与执行事件模型 | `e118865` |
 | 阶段 2.3 | 已完成 | RequirementAnalyzer 需求分析节点 | 本阶段提交 |
 | 产品范围 V2 | 已完成 | 从三模块 Workflow 收敛为测试分析 Agent | 本阶段提交 |
-| 阶段 2.4 | 待开始 | Agent知识检索节点 | - |
+| 阶段 2.4 | 已完成 | Agent知识检索节点 | 本阶段提交 |
 
 ---
 
@@ -400,3 +400,63 @@ docs/
 ```text
 文档：重构测试分析Agent产品需求说明
 ```
+
+---
+
+## 阶段 2.4：KnowledgeRetriever 历史知识检索节点
+
+### 本阶段目标
+
+将现有 `RAGService` 从页面 Workflow 的辅助调用升级为 Agent 内部的明确节点，使历史知识检索过程能够读取和更新 State，并留下可审计的执行事件。
+
+### 修改内容
+
+- 新增 `KnowledgeRetriever` 与 `KnowledgeRetrievalError`
+- `TestAnalysisState` 增加知识检索状态和降级错误原因
+- `RAGSearchResult` 增加 `matched`、`no_match`、`failed` 三种明确结果
+- 根据需求摘要、模块、事实、业务规则和推导风险构造检索文本
+- 把检索上下文、最高相似度和命中数量写回 State
+- 记录 `retrieve_knowledge` 步骤开始与完成事件
+- 为 Agent 调用增加 RAG 严格错误模式，同时保留旧调用方的空结果兼容行为
+
+### 执行链路
+
+```text
+TestAnalysisState 中的需求分析结果
+  → KnowledgeRetriever.retrieve()
+  → 构造结构化检索查询
+  → RAGService.search()
+  → MilvusRAGManager.search_similar_cases(raise_on_error=True)
+  → 区分 matched / no_match / failed
+  → 写回 State
+  → complete_step(retrieve_knowledge)
+```
+
+### 关键设计
+
+“无匹配”和“服务失败”不是同一件事。无匹配说明检索正常完成，只是知识库没有足够相似的资产；服务失败表示 Milvus、Embedding 或检索链路发生异常。两者都允许后续生成继续，但 State 和 Event 必须保留真实状态，避免页面把故障误报为正常空结果。
+
+需求分析失败会使任务失败，因为后续节点依赖它提供可信的结构化事实；RAG 只是增强信息，失败后仍可基于当前 PRD 生成测试点，因此采用可观测的降级策略，而不是终止整个任务。
+
+### 验证结果
+
+- 全量 35 个单元测试通过
+- 覆盖检索命中、正常无匹配、服务失败降级、缺少分析前置条件和等待用户状态
+- 单元测试使用 Fake RAG，不访问真实 Milvus 或 Embedding 服务
+
+### 当前边界
+
+- 尚未接入 Streamlit 页面
+- 尚未实现 Orchestrator 自动调度
+- 尚未生成结构化测试点
+- 尚未使用真实知识库进行召回质量评测
+
+### 建议提交信息
+
+```text
+功能：实现Agent历史知识检索节点
+```
+
+### 下一步
+
+进入阶段 2.5，实现结构化测试点模型与 `TestPointGenerator`，让 LLM 输出经过 Python 校验后再写入 State。

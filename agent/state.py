@@ -20,6 +20,13 @@ class AgentStatus(str, Enum):
     FAILED = "failed"
 
 
+class KnowledgeRetrievalStatus(str, Enum):
+    NOT_STARTED = "not_started"
+    MATCHED = "matched"
+    NO_MATCH = "no_match"
+    DEGRADED = "degraded"
+
+
 TERMINAL_STATUSES = {AgentStatus.COMPLETED, AgentStatus.FAILED}
 
 
@@ -43,6 +50,10 @@ class TestAnalysisState:
     rag_context: str = ""
     rag_max_score: float = 0.0
     rag_matched_count: int = 0
+    knowledge_retrieval_status: KnowledgeRetrievalStatus = (
+        KnowledgeRetrievalStatus.NOT_STARTED
+    )
+    rag_error_message: str | None = None
 
     report: str = ""
     error_message: str | None = None
@@ -166,6 +177,10 @@ class TestAnalysisState:
             "rag_context": self.rag_context,
             "rag_max_score": self.rag_max_score,
             "rag_matched_count": self.rag_matched_count,
+            "knowledge_retrieval_status": (
+                self.knowledge_retrieval_status.value
+            ),
+            "rag_error_message": self.rag_error_message,
             "report": self.report,
             "error_message": self.error_message,
             "events": [event.to_dict() for event in self.events],
