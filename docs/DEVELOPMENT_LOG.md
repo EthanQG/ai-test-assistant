@@ -33,6 +33,7 @@
 | 阶段 2.6 | 已完成 | 测试点质量评审节点 | 本阶段提交 |
 | 阶段 2.7 | 已完成 | 测试点定向修正节点 | 本阶段提交 |
 | 阶段 2.8 | 已完成 | 结构化人工反馈与业务规则确认 | 本阶段提交 |
+| 阶段 2.9 | 已完成 | 受控Agent编排与循环限制 | 本阶段提交 |
 
 ---
 
@@ -787,3 +788,106 @@ Reviewer明确未达标
 ### 下一步
 
 进入阶段2.9，实现Python Orchestrator和Reviewer/Reviser最大循环次数。
+
+---
+
+## 阶段 2.9：AgentOrchestrator 受控编排与循环限制
+
+### 本阶段目标
+
+用确定性的Python规则串联现有Agent节点，根据共享State选择唯一合法动作，并限制Reviewer/Reviser循环，形成首个内部可自动运行的Agent主链路。
+
+### 修改内容
+
+- 新增 `AgentOrchestrator`
+- 新增 `OrchestratorAction`、`OrchestratorDecision`
+- 新增单步执行和持续执行到阻塞点两种接口
+- State增加最大修正次数、评审历史和修正历史
+- Reviewer保存每轮评分和对应修正次数
+- Reviser保存修正前后快照、评审依据和人工反馈ID
+- 增加分支选择、完整循环、次数上限和总步骤保护测试
+
+### 决策顺序
+
+```text
+任务终态 → terminal
+等待用户 → wait_for_user
+未分析 → RequirementAnalyzer
+存在待确认项 → wait_for_user
+未检索 → KnowledgeRetriever
+未生成 → TestPointGenerator
+存在ready人工反馈且未到上限 → TestPointReviser
+当前版本未评审 → TestPointReviewer
+评审通过 → ready_for_finalization
+评审未通过且未到上限 → TestPointReviser
+达到上限 → revision_limit_reached
+```
+
+顺序本身很重要。例如人工反馈要在“评审通过”判断之前检查，否则自动Reviewer一旦通过，用户意见就不会被执行。
+
+### 两种执行方式
+
+`run_next()`只执行一个节点，适合页面逐步展示和调试。
+
+`run_until_blocked()`连续执行，直到：
+
+- 等待用户补充或确认
+- 评审通过，准备最终化
+- 达到自动修正上限
+- 任务完成或失败
+
+### 双重循环保护
+
+第一层是 `max_revision_count`，默认2次，专门限制Reviewer/Reviser自动修正循环。
+
+第二层是 `max_steps`，默认20步，防止某个节点没有正确更新State，导致Orchestrator不断选择同一动作。超过总步骤上限时任务进入failed并抛出 `OrchestrationError`。
+
+### 历史记录
+
+`review_history`保存：
+
+```text
+评审轮次
+当时的revision_count
+是否达标
+完整结构化评审结果
+```
+
+`revision_history`保存：
+
+```text
+修正次数
+修正前测试点
+修正后测试点
+使用的Reviewer结果
+应用的人工反馈ID
+```
+
+### 关键设计
+
+LLM负责各节点内部的语义任务，但不返回 `next_action`。是否等待、检索、生成、评审、修正或停止完全由Python读取State决定，体现受控Agent而非无限自由的自主循环。
+
+达到修正上限不是任务执行失败。系统保留当前测试点和评审结果，返回 `revision_limit_reached`，后续页面应提示用户人工处理。
+
+### 验证结果
+
+- 全量96个单元测试通过
+- 覆盖所有主要决策分支、人工反馈优先级、完整修正闭环、修正次数上限和总步骤保护
+- 使用Fake节点验证编排，不访问真实LLM、Milvus或Embedding
+
+### 当前边界
+
+- 内部Orchestrator尚未接入Streamlit
+- 尚未实现Finalizer
+- 等待用户后的具体页面恢复操作尚未实现
+- 历史快照保存在内存State，尚未持久化
+
+### 建议提交信息
+
+```text
+功能：实现Agent受控编排与循环限制
+```
+
+### 下一步
+
+进入阶段2.10，将Agent状态、执行轨迹、结构化测试点、Reviewer结果和人工反馈接入Streamlit页面。

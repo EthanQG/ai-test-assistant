@@ -24,6 +24,12 @@ from .models import (
     TestPointSource,
     TestPointValidationError,
 )
+from .orchestrator import (
+    AgentOrchestrator,
+    OrchestrationError,
+    OrchestratorAction,
+    OrchestratorDecision,
+)
 from .requirement_analyzer import (
     RequirementAnalysisError,
     RequirementAnalyzer,
@@ -58,6 +64,7 @@ __all__ = [
     "AgentEventType",
     "AgentStatus",
     "AgentStep",
+    "AgentOrchestrator",
     "InferredRisk",
     "FeedbackAction",
     "FeedbackStatus",
@@ -68,6 +75,9 @@ __all__ = [
     "KnowledgeRetrievalError",
     "KnowledgeRetrievalStatus",
     "KnowledgeRetriever",
+    "OrchestrationError",
+    "OrchestratorAction",
+    "OrchestratorDecision",
     "RequirementAnalysisError",
     "RequirementAnalysisResult",
     "RequirementAnalysisValidationError",

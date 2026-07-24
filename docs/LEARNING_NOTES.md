@@ -27,7 +27,7 @@
 - [ ] 能解释 `yield` 为什么适合流式输出
 - [ ] 能解释 AgentState 和 AgentEvent 的区别
 - [ ] 能解释受控 Agent 与固定 Workflow 的区别
-- [ ] 能读懂现有 85 个单元测试
+- [ ] 能读懂现有 96 个单元测试
 - [ ] 能独立增加一个状态字段、事件或测试
 
 ---
@@ -709,7 +709,7 @@ Python 的 Enum、datetime 和 dataclass 不能直接作为普通 JSON 返回。
 
 答：
 
-> 不能。单元测试只验证本地模块行为，还需要集成测试、真实模型效果评测、异常网络测试、安全测试和用户验收。当前 85 个测试证明的是代码边界和状态规则，不代表生成质量已经达到生产标准。
+> 不能。单元测试只验证本地模块行为，还需要集成测试、真实模型效果评测、异常网络测试、安全测试和用户验收。当前 96 个测试证明的是代码边界和状态规则，不代表生成质量已经达到生产标准。
 
 ---
 
@@ -1907,3 +1907,150 @@ review_passed=False
 - [ ] 能解释为什么业务规则必须确认
 - [ ] 能说明人工意见如何驱动Reviser
 - [ ] 能解释为什么人工控制权高于自动评分
+
+---
+
+## 二十、阶段 2.9：AgentOrchestrator 受控编排器
+
+### 20.1 Orchestrator是什么
+
+Orchestrator是Agent的流程控制器。各节点负责具体工作，Orchestrator负责根据State选择下一步：
+
+```text
+State
+  → Python决策规则
+  → 唯一合法节点
+  → 节点更新State
+  → 再次决策
+```
+
+它不是另一个负责聊天的LLM。本项目初期使用Python规则，以获得可预测、可测试和可审计的执行过程。
+
+### 20.2 Node、Tool和Orchestrator的关系
+
+```text
+Orchestrator
+  决定调用哪个节点
+
+Node
+  执行明确业务职责并更新State
+
+Service/Tool
+  提供LLM、RAG等外部能力
+```
+
+例如Orchestrator选择KnowledgeRetriever节点，该节点再调用RAGService完成检索。
+
+### 20.3 为什么决策顺序很重要
+
+如果先判断 `review_passed=True` 就准备最终化，再检查人工反馈，那么测试工程师对已通过结果提出的修改永远不会执行。
+
+当前规则先检查ready人工反馈，再检查评审通过：
+
+```text
+存在ready人工反馈
+→ Reviser
+
+否则review_passed=True
+→ 准备最终化
+```
+
+这体现人工控制权高于自动评分。
+
+### 20.4 run_next与run_until_blocked
+
+`run_next()`只执行一次决策和一个节点，适合：
+
+- 页面展示单步进度
+- 调试某个状态分支
+- 避免一次请求长时间阻塞
+
+`run_until_blocked()`持续运行，适合：
+
+- 后台任务
+- 单元测试完整链路
+- 自动执行到需要人工介入的位置
+
+停止点包括等待用户、评审通过、达到修正上限和任务终态。
+
+### 20.5 为什么需要两种次数限制
+
+`max_revision_count`限制有效但未达标的自动修正次数。
+
+`max_steps`防止节点没有正确更新State。例如Reviewer被调用后仍让 `review_passed=None`，Orchestrator会反复选择Reviewer。总步骤保护会终止这种程序错误。
+
+```text
+业务循环保护：max_revision_count
+系统空转保护：max_steps
+```
+
+### 20.6 达到上限为什么不是failed
+
+达到修正上限说明系统已经按规则工作，只是自动方式没有把质量提高到门槛。当前结果仍可供人工审核，所以返回：
+
+```text
+revision_limit_reached
+```
+
+节点异常、非法JSON或总步骤空转才属于任务执行失败。
+
+### 20.7 为什么保存每轮快照
+
+只保留最终结果无法回答：
+
+- 第一轮评分是多少
+- Reviewer指出了什么
+- Reviser具体改了什么
+- 哪条人工反馈被应用
+- 评分是否真的改善
+
+`review_history`和`revision_history`让这些信息可复盘，也为未来页面Diff和离线评测提供数据。
+
+### 20.8 面试问题与参考答案
+
+#### 问：你的Orchestrator内部也是LLM吗？
+
+答：
+
+> 不是。当前Orchestrator使用Python规则读取AgentState并选择唯一合法节点。LLM负责需求分析、测试点生成、评审和修正等语义任务，但不能决定next_action。这样能限制循环、稳定复现并清晰测试每个分支。
+
+#### 问：这和固定Workflow有什么区别？
+
+答：
+
+> 固定Workflow通常无条件按预设顺序执行；当前编排会根据State动态分支，例如需求不足时暂停、RAG降级后继续、人工反馈覆盖自动通过、评审不达标时循环修正、达到上限时停止。路径不是单一线性流程，但合法动作仍受代码控制。
+
+#### 问：为什么不让LLM自由选择Tool？
+
+答：
+
+> 测试分析涉及业务事实、人工确认和有限循环。完全自由选择会增加不可预测调用、无限循环和审计困难。当前先使用白名单节点和Python硬规则，后续即使加入LLM软判断，代码仍应保留合法动作和次数边界。
+
+#### 问：如何证明不会无限循环？
+
+答：
+
+> Reviser拒绝完全未变化结果，Orchestrator限制最大修正次数，同时run_until_blocked还有最大总步骤数。单元测试构造不更新State的假Reviewer，验证超过max_steps后任务进入failed。
+
+### 20.9 当前限制
+
+- 还没有页面调用Orchestrator
+- 还没有Finalizer将结构化结果转成最终报告
+- 历史记录没有数据库持久化
+- 尚未通过真实模型验证完整链路耗时和稳定性
+
+### 20.10 动手练习
+
+- [ ] 为每种OrchestratorAction画出对应State条件
+- [ ] 将max_revision_count设为0并观察决策
+- [ ] 构造ready人工反馈覆盖review_passed=True
+- [ ] 构造节点不更新State并观察max_steps保护
+- [ ] 比较run_next和run_until_blocked适合的页面调用方式
+
+### 20.11 掌握检查
+
+- [ ] 能解释Orchestrator不是LLM
+- [ ] 能说清Node、Tool和Orchestrator关系
+- [ ] 能解释决策顺序的重要性
+- [ ] 能区分修正次数上限与总步骤上限
+- [ ] 能解释为什么达到修正上限不等于任务失败

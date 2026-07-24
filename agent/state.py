@@ -59,7 +59,10 @@ class TestAnalysisState:
     review_result: dict[str, Any] | None = None
     review_passed: bool | None = None
     review_threshold: int = 80
+    review_history: list[dict[str, Any]] = field(default_factory=list)
     revision_count: int = 0
+    max_revision_count: int = 2
+    revision_history: list[dict[str, Any]] = field(default_factory=list)
     human_feedback: list[dict[str, Any]] = field(default_factory=list)
     report: str = ""
     error_message: str | None = None
@@ -191,7 +194,10 @@ class TestAnalysisState:
             "review_result": self.review_result,
             "review_passed": self.review_passed,
             "review_threshold": self.review_threshold,
+            "review_history": self.review_history,
             "revision_count": self.revision_count,
+            "max_revision_count": self.max_revision_count,
+            "revision_history": self.revision_history,
             "human_feedback": self.human_feedback,
             "report": self.report,
             "error_message": self.error_message,

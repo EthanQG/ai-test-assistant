@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from services.llm_service import LLMService
 from services.prompt_service import PromptService
 
@@ -65,6 +67,22 @@ class TestPointReviser:
 
             state.test_points = revised_test_points
             state.revision_count += 1
+            state.revision_history.append(
+                {
+                    "revision_count": state.revision_count,
+                    "before_test_points": deepcopy(
+                        original_test_points
+                    ),
+                    "after_test_points": deepcopy(
+                        revised_test_points
+                    ),
+                    "review_result": deepcopy(state.review_result),
+                    "applied_feedback_ids": [
+                        feedback.feedback_id
+                        for feedback in ready_feedback
+                    ],
+                }
+            )
             state.review_passed = None
             applied_feedback_count = (
                 HumanFeedbackHandler.mark_ready_as_applied(state)

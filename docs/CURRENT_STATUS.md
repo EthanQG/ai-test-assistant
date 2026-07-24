@@ -15,8 +15,8 @@
 ## Git 基线
 
 - 分支：`main`
-- 本阶段提交前基线：`828794a 功能：实现Agent测试点定向修正节点`
-- 最新已提交功能：`828794a 功能：实现Agent测试点定向修正节点`
+- 本阶段提交前基线：`aefec4c 功能：实现Agent结构化人工反馈`
+- 最新已提交功能：`aefec4c 功能：实现Agent结构化人工反馈`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
 
@@ -30,7 +30,7 @@ git log -5 --oneline --decorate
 
 ## 当前阶段
 
-阶段 2.8 已完成：已经实现结构化人工反馈、业务规则确认以及人工意见驱动Reviser。
+阶段 2.9 已完成：已经实现受控Python `AgentOrchestrator`、最大修正次数和评审/修正历史。
 
 产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
 
@@ -123,6 +123,18 @@ git log -5 --oneline --decorate
 - 人工意见可以要求修改已经通过LLM Reviewer的测试点
 - 修正成功后反馈变为 `applied`，未确认反馈不能驱动修改
 
+### 阶段 2.9：AgentOrchestrator
+
+- 使用Python规则根据State选择唯一合法的下一节点
+- 自动串联RequirementAnalyzer、KnowledgeRetriever、Generator、Reviewer和Reviser
+- LLM不参与决定下一步或修正次数
+- 支持等待用户、准备最终化、达到修正上限和任务终态四类停止结果
+- 默认最多自动修正2次，达到上限后保留当前结果并停止循环
+- 增加最大总步骤数，防止异常节点导致无限空转
+- `review_history`保存每轮评分、达标结果和对应修正次数
+- `revision_history`保存修正前后测试点、评审依据和人工反馈ID
+- 人工反馈可覆盖自动评审通过分支，但同样受自动修正次数上限保护
+
 ## 当前架构
 
 ```text
@@ -147,7 +159,8 @@ agent/
   TestPointReviewer
   TestPointReviser
   HumanFeedbackHandler
-  后续加入 Orchestrator 和最大次数循环
+  AgentOrchestrator
+  后续接入Streamlit页面和Finalizer
 ```
 
 ## 当前测试基线
@@ -155,7 +168,7 @@ agent/
 验证日期：2026-07-24
 
 ```text
-85 tests passed
+96 tests passed
 ```
 
 验证命令：
@@ -167,29 +180,28 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：受控Agent编排器
+## 下一步任务：Streamlit接入Agent
 
-阶段 2.8 提交后，进入阶段 2.9：实现Python `Orchestrator`，根据State选择唯一合法节点，并限制Reviewer/Reviser最大循环次数。
+阶段 2.9 提交后，进入阶段 2.10：把内部Agent主链路接入Streamlit，展示执行状态、结构化测试点、Reviewer结果和人工反馈入口。
 
 目标流程：
 
 ```text
-读取当前State
-  → Python规则判断下一节点
-  → 自动串联Analyzer / Retriever / Generator / Reviewer
-  → Reviewer未达标时调用Reviser
-  → 修正后重新Reviewer
-  → 达到最大次数时停止自动修正
-  → 等待人工确认或进入Finalizer
+用户输入PRD
+  → 页面创建TestAnalysisState并启动Orchestrator
+  → 展示当前步骤和AgentEvent
+  → 展示结构化测试点与Reviewer问题
+  → 支持待确认项和人工反馈
+  → 用户最终确认后进入Finalizer或保存
 ```
 
-本阶段实现内部编排和循环保护，不同时接入Streamlit页面。
+本阶段优先接入Agent执行和人工审核，不进行前后端分离。
 
 ## 当前限制
 
 - 现有 Streamlit 页面尚未使用 `TestAnalysisState`
 - Agent 尚不能自主选择 Tool
-- 尚未实现 Orchestrator 和最大次数受控循环
+- Orchestrator已完成，但尚未由Streamlit页面调用
 - 人工反馈内部能力已完成，但尚未接入新Agent页面
 - 现有 Streamlit 页面仍使用旧 Workflow 的 Markdown 报告，尚未展示 Agent 内部结构化测试点
 - Milvus 与 Embedding 地址仍在现有客户端中硬编码

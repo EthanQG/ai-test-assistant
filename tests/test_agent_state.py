@@ -128,6 +128,9 @@ class TestAnalysisStateTests(unittest.TestCase):
         state.review_result = {"overall_score": 88}
         state.review_passed = True
         state.revision_count = 1
+        state.max_revision_count = 2
+        state.review_history = [{"review_round": 1, "passed": True}]
+        state.revision_history = [{"revision_count": 1}]
         state.human_feedback = [
             {
                 "feedback_id": "feedback-1",
@@ -163,6 +166,12 @@ class TestAnalysisStateTests(unittest.TestCase):
         self.assertTrue(payload["review_passed"])
         self.assertEqual(payload["review_threshold"], 80)
         self.assertEqual(payload["revision_count"], 1)
+        self.assertEqual(payload["max_revision_count"], 2)
+        self.assertTrue(payload["review_history"][0]["passed"])
+        self.assertEqual(
+            payload["revision_history"][0]["revision_count"],
+            1,
+        )
         self.assertEqual(
             payload["human_feedback"][0]["feedback_id"],
             "feedback-1",

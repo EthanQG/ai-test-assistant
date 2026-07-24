@@ -138,6 +138,12 @@ class TestPointReviewerTests(unittest.TestCase):
             AgentEventType.STEP_COMPLETED,
         )
         self.assertTrue(state.events[-1].data["passed"])
+        self.assertEqual(len(state.review_history), 1)
+        self.assertTrue(state.review_history[0]["passed"])
+        self.assertEqual(
+            state.review_history[0]["result"]["overall_score"],
+            90,
+        )
 
     def test_score_below_threshold_does_not_pass(self):
         llm = FakeLLMService(json.dumps(review_payload(overall_score=79)))

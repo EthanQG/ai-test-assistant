@@ -100,6 +100,13 @@ class TestPointReviserTests(unittest.TestCase):
         self.assertTrue(
             state.events[-1].data["review_invalidated"]
         )
+        self.assertEqual(len(state.revision_history), 1)
+        self.assertEqual(
+            state.revision_history[0]["before_test_points"][0][
+                "expected_results"
+            ],
+            ["订单提交失败"],
+        )
 
     def test_passing_review_cannot_be_revised(self):
         llm = FakeLLMService(revised_response())

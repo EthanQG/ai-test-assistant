@@ -51,6 +51,14 @@ class TestPointReviewer:
             state.review_result = result.to_dict()
             state.review_passed = passed
             state.review_threshold = self.passing_score
+            state.review_history.append(
+                {
+                    "review_round": len(state.review_history) + 1,
+                    "revision_count": state.revision_count,
+                    "passed": passed,
+                    "result": result.to_dict(),
+                }
+            )
             state.complete_step(
                 AgentStep.REVIEW_TEST_POINTS,
                 "结构化测试点质量评审完成",
