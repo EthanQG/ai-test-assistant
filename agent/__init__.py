@@ -40,6 +40,10 @@ from .test_point_reviewer import (
     TestPointReviewError,
     TestPointReviewer,
 )
+from .test_point_reviser import (
+    TestPointReviser,
+    TestPointRevisionError,
+)
 
 __all__ = [
     "AgentEvent",
@@ -70,4 +74,6 @@ __all__ = [
     "TestPointReviewResult",
     "TestPointReviewer",
     "TestPointReviewValidationError",
+    "TestPointReviser",
+    "TestPointRevisionError",
 ]

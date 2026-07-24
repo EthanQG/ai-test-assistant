@@ -100,6 +100,35 @@ class PromptServiceTests(unittest.TestCase):
                 [],
             )
 
+    def test_revision_prompt_contains_points_and_review_feedback(self):
+        prompt = PromptService.build_test_point_revision_prompt(
+            {
+                "summary": "订单库存",
+                "requirement_facts": ["库存不足时不能提交"],
+            },
+            [{"title": "库存不足时提交"}],
+            {
+                "overall_score": 70,
+                "revision_suggestions": ["补充库存不变预期"],
+            },
+        )
+
+        self.assertIn("库存不足时不能提交", prompt)
+        self.assertIn("库存不足时提交", prompt)
+        self.assertIn("补充库存不变预期", prompt)
+        self.assertIn("【Reviewer评审结果】", prompt)
+
+    def test_revision_prompt_rejects_empty_review(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "review result cannot be empty",
+        ):
+            PromptService.build_test_point_revision_prompt(
+                {"requirement_facts": ["需求事实"]},
+                [{"title": "测试点"}],
+                {},
+            )
+
     def test_custom_prompt_directory_can_be_used(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             prompt_path = Path(temp_dir) / "custom.txt"

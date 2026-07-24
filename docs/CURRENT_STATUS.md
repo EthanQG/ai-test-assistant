@@ -15,8 +15,8 @@
 ## Git 基线
 
 - 分支：`main`
-- 本阶段提交前基线：`d16dd74 功能：实现Agent结构化测试点生成节点`
-- 最新已提交功能：`d16dd74 功能：实现Agent结构化测试点生成节点`
+- 本阶段提交前基线：`4e62f17 功能：实现Agent测试点质量评审节点`
+- 最新已提交功能：`4e62f17 功能：实现Agent测试点质量评审节点`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
 
@@ -30,7 +30,7 @@ git log -5 --oneline --decorate
 
 ## 当前阶段
 
-阶段 2.6 已完成：已经实现对结构化测试点进行多维质量检查的 `TestPointReviewer`。
+阶段 2.7 已完成：已经实现根据结构化评审问题定向修正测试点的 `TestPointReviser`。
 
 产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
 
@@ -100,6 +100,17 @@ git log -5 --oneline --decorate
 - LLM 不允许直接返回 passed 或 next_action
 - 评审结果、阈值和达标状态写入 `TestAnalysisState`
 
+### 阶段 2.7：TestPointReviser
+
+- 新增测试点定向修正 System Prompt 和动态 User Prompt
+- 输入需求分析、当前完整测试点和上一轮结构化评审结果
+- 只允许在 `review_passed=False` 时执行，已达标结果禁止自动改写
+- 返回完整修正后测试点集合并复用现有结构化校验
+- 空结果、非法字段和完全未变化的“假修正”都会使任务失败
+- 修正成功后增加 `revision_count`
+- 保留上一轮 `review_result`，将 `review_passed` 重置为 `None`，强制重新评审
+- Event记录修正前后数量、上一轮分数和评审失效状态
+
 ## 当前架构
 
 ```text
@@ -122,7 +133,8 @@ agent/
   KnowledgeRetriever
   TestPointGenerator
   TestPointReviewer
-  后续加入 Reviser 和编排器
+  TestPointReviser
+  后续加入 HumanFeedback、Orchestrator 和最大次数循环
 ```
 
 ## 当前测试基线
@@ -130,7 +142,7 @@ agent/
 验证日期：2026-07-24
 
 ```text
-64 tests passed
+72 tests passed
 ```
 
 验证命令：
@@ -142,28 +154,29 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：测试点定向修正节点
+## 下一步任务：结构化人工反馈
 
-阶段 2.6 提交后，建议进入阶段 2.7：实现 `TestPointReviser`，只根据 Reviewer 指出的缺失项、重复项和幻觉问题定向修正测试点。
+阶段 2.7 提交后，进入阶段 2.8：实现人工反馈模型和内部处理能力，让用户意见能够进入 `TestAnalysisState` 并驱动 Reviser。
 
 目标流程：
 
 ```text
-评审未达标
-  → 启动 revise_test_points 步骤
-  → 将当前测试点和结构化评审意见发送给 LLM
-  → LLM 返回完整的修正后测试点集合
-  → Python 重新校验测试点结构
-  → 写入 State 并等待下一轮 Reviewer
+用户提交测试点意见
+  → Python校验 add / remove / modify / update_priority
+  → 区分测试建议和业务规则补充
+  → 普通建议写入State并交给Reviser
+  → 业务规则补充必须明确确认
+  → Reviser同时读取Reviewer结果与人工反馈
 ```
 
-本阶段只实现一次定向修正，不同时实现循环编排或页面接入。
+本阶段先实现内部模型、状态和Reviser输入扩展，不同时实现页面交互。
 
 ## 当前限制
 
 - 现有 Streamlit 页面尚未使用 `TestAnalysisState`
 - Agent 尚不能自主选择 Tool
-- 尚未实现自动修正节点和最大次数受控循环
+- 尚未实现 Orchestrator 和最大次数受控循环
+- 尚未实现人工反馈模型和新Agent页面交互
 - 现有 Streamlit 页面仍使用旧 Workflow 的 Markdown 报告，尚未展示 Agent 内部结构化测试点
 - Milvus 与 Embedding 地址仍在现有客户端中硬编码
 - 自动化用例生成和异常日志分析仍是未完成功能

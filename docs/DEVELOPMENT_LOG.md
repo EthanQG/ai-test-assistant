@@ -31,6 +31,7 @@
 | 阶段 2.4 | 已完成 | Agent知识检索节点 | 本阶段提交 |
 | 阶段 2.5 | 已完成 | 结构化测试点生成节点 | 本阶段提交 |
 | 阶段 2.6 | 已完成 | 测试点质量评审节点 | 本阶段提交 |
+| 阶段 2.7 | 已完成 | 测试点定向修正节点 | 本阶段提交 |
 
 ---
 
@@ -631,3 +632,69 @@ Reviewer 不修改测试点。它只保存问题证据和修正建议，下一�
 ### 下一步
 
 进入阶段 2.7，实现 `TestPointReviser`，根据结构化评审结果对当前测试点进行一次定向修正。
+
+---
+
+## 阶段 2.7：TestPointReviser 测试点定向修正节点
+
+### 本阶段目标
+
+根据上一轮 Reviewer 的结构化问题，对当前测试点进行一次受控、定向的修改，同时保留评审依据并强制修正后的结果重新评审。
+
+### 修改内容
+
+- 新增测试点修正 System Prompt
+- `PromptService` 增加修正 User Prompt 构建方法
+- 新增 `TestPointReviser`
+- `TestAnalysisState` 增加 `revision_count`
+- 修正结果复用 `TestPointGenerationResult` 严格校验
+- 增加修正前置条件、成功、无变化、非法结果和模型异常测试
+
+### 执行链路
+
+```text
+review_passed = false
+  → TestPointReviser.revise()
+  → 需求分析 + 当前测试点 + Reviewer结果
+  → LLMService.generate()
+  → TestPointGenerationResult.from_json()
+  → 拒绝非法结构或完全未变化结果
+  → 替换 state.test_points
+  → revision_count + 1
+  → review_passed = None
+  → complete_step(revise_test_points)
+```
+
+### 关键设计
+
+Reviser 只允许处理明确未达标的结果。`review_passed=True` 时自动修正会破坏已通过内容，因此代码在调用 LLM 前直接拒绝；没有完整 Reviewer 结果时也不能执行。
+
+修正后保留上一轮 `review_result` 作为“为什么修改”的证据，但把 `review_passed` 重置为 `None`。因为测试点已经变化，旧分数不能继续代表新版本，必须重新进入 Reviewer。
+
+LLM必须返回完整测试点集合，而不是只返回增量补丁。完整集合可以继续复用现有结构模型和校验器，避免编写不稳定的自然语言合并逻辑。
+
+如果修正结果与原测试点完全一致，节点会失败。这样可以防止模型表面响应成功、实际没有处理 Reviewer 问题，导致未来循环空转。
+
+### 验证结果
+
+- 全量 72 个单元测试通过
+- 覆盖修正成功、已达标阻断、缺少评审阻断、无变化拒绝、非法结构和模型异常
+- 单元测试使用 Fake LLM，不访问真实模型
+
+### 当前边界
+
+- 当前只支持显式调用一次 Reviser
+- 尚未实现最大修正次数
+- 尚未自动重新调用 Reviewer
+- 尚未保存每一轮完整测试点快照
+- 尚未接入 Streamlit 页面
+
+### 建议提交信息
+
+```text
+功能：实现Agent测试点定向修正节点
+```
+
+### 下一步
+
+进入阶段 2.8，实现结构化人工反馈模型，让用户的增删改、优先级调整和补充说明可以写入State并驱动Reviser。阶段2.9再实现Orchestrator和最大循环次数，阶段2.10接入Streamlit页面。
