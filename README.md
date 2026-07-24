@@ -37,8 +37,9 @@
 
 - [当前开发状态与跨设备接力](docs/CURRENT_STATUS.md)
 - [开发与复盘日志](docs/DEVELOPMENT_LOG.md)
+- [代码学习与面试复盘](docs/LEARNING_NOTES.md)
 
-`CURRENT_STATUS.md` 保存最新接力点，`DEVELOPMENT_LOG.md` 保存完整历史。Codex 的仓库级协作规则位于 [AGENTS.md](AGENTS.md)。
+`CURRENT_STATUS.md` 保存最新接力点，`DEVELOPMENT_LOG.md` 保存完整历史，`LEARNING_NOTES.md` 保存代码知识、参考答案和面试练习。Codex 的仓库级协作规则位于 [AGENTS.md](AGENTS.md)。
 
 ## 本地运行
 

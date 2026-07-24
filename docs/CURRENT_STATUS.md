@@ -4,6 +4,12 @@
 
 这是一份跨电脑、跨 Codex 任务的开发接力文档。开始工作时先阅读本文件；完成一个小阶段后，用最新事实覆盖更新，不在这里累积历史记录。
 
+相关文档：
+
+- [开发与复盘日志](DEVELOPMENT_LOG.md)
+- [代码学习与面试复盘](LEARNING_NOTES.md)
+- [Codex 协作规则](../AGENTS.md)
+
 ## Git 基线
 
 - 分支：`main`
@@ -118,7 +124,7 @@ python -m compileall -q agent services utils views tests main.py
 4. 实现 `RequirementAnalyzer`
 5. 使用 Fake LLM 编写成功、解析失败和 LLM 失败测试
 6. 将结果写入 `TestAnalysisState`
-7. 更新本文件和 `DEVELOPMENT_LOG.md`
+7. 更新本文件、`DEVELOPMENT_LOG.md` 和 `LEARNING_NOTES.md`
 
 ## 当前限制
 
@@ -137,7 +143,8 @@ python -m compileall -q agent services utils views tests main.py
 ```text
 请按照 AGENTS.md 初始化本次开发上下文。
 读取 README.md、docs/CURRENT_STATUS.md 和
-docs/DEVELOPMENT_LOG.md 的最新阶段，检查 Git 状态和最近提交，
+docs/DEVELOPMENT_LOG.md、docs/LEARNING_NOTES.md 的最新阶段，
+检查 Git 状态和最近提交，
 运行现有测试，然后说明当前进度和下一步任务。
 暂时不要修改代码。
 ```

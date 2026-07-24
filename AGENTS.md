@@ -22,10 +22,11 @@
 1. 阅读 `README.md`
 2. 阅读 `docs/CURRENT_STATUS.md`
 3. 阅读 `docs/DEVELOPMENT_LOG.md` 的最新阶段
-4. 执行 `git status -sb`
-5. 执行 `git log -5 --oneline --decorate`
-6. 执行 `python -m unittest discover -s tests -v`
-7. 先向用户说明当前状态、测试结果和准备修改的范围，再开始编辑
+4. 阅读 `docs/LEARNING_NOTES.md` 的对应阶段
+5. 执行 `git status -sb`
+6. 执行 `git log -5 --oneline --decorate`
+7. 执行 `python -m unittest discover -s tests -v`
+8. 先向用户说明当前状态、测试结果和准备修改的范围，再开始编辑
 
 如果文档、Git 状态和代码不一致，以代码与测试结果为事实依据，并在本次修改中修正文档。
 
@@ -86,9 +87,10 @@ git status --short
 
 1. 更新 `docs/CURRENT_STATUS.md`
 2. 在 `docs/DEVELOPMENT_LOG.md` 追加阶段说明
-3. 如果启动方式或项目能力变化，同步更新 `README.md`
+3. 在 `docs/LEARNING_NOTES.md` 补充代码知识、参考答案、面试追问和动手练习
+4. 如果启动方式或项目能力变化，同步更新 `README.md`
 
-`CURRENT_STATUS.md` 只保留最新接力信息；`DEVELOPMENT_LOG.md` 保存完整历史和设计原因。
+`CURRENT_STATUS.md` 只保留最新接力信息；`DEVELOPMENT_LOG.md` 保存完整历史和设计原因；`LEARNING_NOTES.md` 保存代码学习与面试复盘。
 
 ## Git 规则
 

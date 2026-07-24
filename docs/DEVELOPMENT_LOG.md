@@ -2,11 +2,11 @@
 
 这份文档记录项目从固定 Workflow 向 Agent 架构演进的过程。它不仅记录代码变化，还解释每次调整的原因、解决的问题、验证方式和下一步计划，方便后续复盘及面试表达。
 
-最新开发接力点请查看 [CURRENT_STATUS.md](CURRENT_STATUS.md)，跨电脑的 Codex 协作规则请查看根目录 [AGENTS.md](../AGENTS.md)。
+最新开发接力点请查看 [CURRENT_STATUS.md](CURRENT_STATUS.md)，代码知识与面试复盘请查看 [LEARNING_NOTES.md](LEARNING_NOTES.md)，跨电脑的 Codex 协作规则请查看根目录 [AGENTS.md](../AGENTS.md)。
 
 ## 如何维护本文档
 
-每完成一个可以独立验证的小阶段，先更新 `CURRENT_STATUS.md`，再在本文档顶部的“阶段索引”中增加入口，并在正文末尾追加一节，至少记录：
+每完成一个可以独立验证的小阶段，先更新 `CURRENT_STATUS.md` 和 `LEARNING_NOTES.md`，再在本文档顶部的“阶段索引”中增加入口，并在正文末尾追加一节，至少记录：
 
 1. 本阶段目标
 2. 修改内容
@@ -15,6 +15,7 @@
 5. 验证结果
 6. Git 提交
 7. 下一步计划
+8. 对应学习笔记、面试问题和动手练习
 
 如果只是修正错别字或样式，不必单独增加阶段；如果改变了架构、模型输入、状态流转或用户行为，则应该记录。
 
