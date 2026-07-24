@@ -15,8 +15,8 @@
 ## Git 基线
 
 - 分支：`main`
-- 本阶段提交前基线：`805a25b 功能：实现Agent历史知识检索节点`
-- 最新已提交功能：`805a25b 功能：实现Agent历史知识检索节点`
+- 本阶段提交前基线：`d16dd74 功能：实现Agent结构化测试点生成节点`
+- 最新已提交功能：`d16dd74 功能：实现Agent结构化测试点生成节点`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
 
@@ -30,7 +30,7 @@ git log -5 --oneline --decorate
 
 ## 当前阶段
 
-阶段 2.5 已完成：已经实现根据需求分析和历史知识生成可校验结构化测试点的 `TestPointGenerator`。
+阶段 2.6 已完成：已经实现对结构化测试点进行多维质量检查的 `TestPointReviewer`。
 
 产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
 
@@ -90,6 +90,16 @@ git log -5 --oneline --decorate
 - 检索无匹配或服务降级时仍可生成；未执行检索或存在待确认项时禁止生成
 - 合法测试点写入 `TestAnalysisState` 并记录数量、分类和优先级统计事件
 
+### 阶段 2.6：TestPointReviewer
+
+- 新增结构化评审结果、维度评分、需求覆盖和幻觉问题模型
+- 评审需求覆盖、边界异常、可执行性和来源可追踪性
+- 输出重复测试点组、缺失场景、幻觉问题和修正建议
+- Python 强制检查每条需求事实都被评审且不存在重复覆盖记录
+- 达标由代码计算：总分达到阈值、所有需求事实完全覆盖且无幻觉问题
+- LLM 不允许直接返回 passed 或 next_action
+- 评审结果、阈值和达标状态写入 `TestAnalysisState`
+
 ## 当前架构
 
 ```text
@@ -111,7 +121,8 @@ agent/
   RequirementAnalyzer
   KnowledgeRetriever
   TestPointGenerator
-  后续加入 Reviewer 和编排器
+  TestPointReviewer
+  后续加入 Reviser 和编排器
 ```
 
 ## 当前测试基线
@@ -119,7 +130,7 @@ agent/
 验证日期：2026-07-24
 
 ```text
-49 tests passed
+64 tests passed
 ```
 
 验证命令：
@@ -131,28 +142,28 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：测试点质量评审节点
+## 下一步任务：测试点定向修正节点
 
-阶段 2.5 提交后，建议进入阶段 2.6：实现 `TestPointReviewer`，检查需求事实覆盖、场景分类、重复项、来源可信度和可执行性。
+阶段 2.6 提交后，建议进入阶段 2.7：实现 `TestPointReviser`，只根据 Reviewer 指出的缺失项、重复项和幻觉问题定向修正测试点。
 
 目标流程：
 
 ```text
-完成结构化测试点生成
-  → 启动 review_test_points 步骤
-  → 对照需求事实与测试点
-  → LLM 返回结构化评审结果
-  → Python 校验评分、遗漏项和修改建议
-  → 写入 TestAnalysisState
+评审未达标
+  → 启动 revise_test_points 步骤
+  → 将当前测试点和结构化评审意见发送给 LLM
+  → LLM 返回完整的修正后测试点集合
+  → Python 重新校验测试点结构
+  → 写入 State 并等待下一轮 Reviewer
 ```
 
-本阶段只实现 Reviewer 和评审结果模型，不同时实现自动修正循环或页面接入。
+本阶段只实现一次定向修正，不同时实现循环编排或页面接入。
 
 ## 当前限制
 
 - 现有 Streamlit 页面尚未使用 `TestAnalysisState`
 - Agent 尚不能自主选择 Tool
-- 尚未实现 Reviewer 和自动修正循环
+- 尚未实现自动修正节点和最大次数受控循环
 - 现有 Streamlit 页面仍使用旧 Workflow 的 Markdown 报告，尚未展示 Agent 内部结构化测试点
 - Milvus 与 Embedding 地址仍在现有客户端中硬编码
 - 自动化用例生成和异常日志分析仍是未完成功能

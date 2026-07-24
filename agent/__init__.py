@@ -20,6 +20,13 @@ from .requirement_analyzer import (
     RequirementAnalysisError,
     RequirementAnalyzer,
 )
+from .review_models import (
+    HallucinationIssue,
+    RequirementCoverage,
+    ReviewDimensionScores,
+    TestPointReviewResult,
+    TestPointReviewValidationError,
+)
 from .state import (
     AgentStatus,
     KnowledgeRetrievalStatus,
@@ -28,6 +35,10 @@ from .state import (
 from .test_point_generator import (
     TestPointGenerationError,
     TestPointGenerator,
+)
+from .test_point_reviewer import (
+    TestPointReviewError,
+    TestPointReviewer,
 )
 
 __all__ = [
@@ -49,7 +60,14 @@ __all__ = [
     "TestPointSource",
     "TestPointValidationError",
     "RequirementAnalyzer",
+    "HallucinationIssue",
+    "RequirementCoverage",
+    "ReviewDimensionScores",
     "TestAnalysisState",
     "TestPointGenerationError",
     "TestPointGenerator",
+    "TestPointReviewError",
+    "TestPointReviewResult",
+    "TestPointReviewer",
+    "TestPointReviewValidationError",
 ]

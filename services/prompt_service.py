@@ -87,6 +87,31 @@ class PromptService:
         return "\n\n".join(sections)
 
     @staticmethod
+    def build_test_point_review_prompt(
+        requirement_analysis: dict,
+        test_points: list[dict],
+    ) -> str:
+        if not requirement_analysis.get("requirement_facts"):
+            raise ValueError("requirement facts cannot be empty")
+        if not test_points:
+            raise ValueError("test points cannot be empty")
+        return (
+            "请评审以下结构化测试点，并严格按照系统要求只返回 JSON。\n\n"
+            "【结构化需求分析】\n"
+            + json.dumps(
+                requirement_analysis,
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n\n【待评审测试点】\n"
+            + json.dumps(
+                test_points,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+
+    @staticmethod
     def build_refine_prompt(
         requirement: str,
         current_report: str,

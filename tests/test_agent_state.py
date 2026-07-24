@@ -125,6 +125,8 @@ class TestAnalysisStateTests(unittest.TestCase):
         state.test_points = [
             {"title": "订单提交", "category": "functional"}
         ]
+        state.review_result = {"overall_score": 88}
+        state.review_passed = True
 
         payload = state.to_dict()
         serialized = json.dumps(payload, ensure_ascii=False)
@@ -145,6 +147,9 @@ class TestAnalysisStateTests(unittest.TestCase):
             "no_match",
         )
         self.assertEqual(payload["test_points"][0]["title"], "订单提交")
+        self.assertEqual(payload["review_result"]["overall_score"], 88)
+        self.assertTrue(payload["review_passed"])
+        self.assertEqual(payload["review_threshold"], 80)
         self.assertIn("用户可以提交订单", serialized)
         self.assertIn("occurred_at", serialized)
 

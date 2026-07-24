@@ -30,6 +30,7 @@
 | 产品范围 V2 | 已完成 | 从三模块 Workflow 收敛为测试分析 Agent | 本阶段提交 |
 | 阶段 2.4 | 已完成 | Agent知识检索节点 | 本阶段提交 |
 | 阶段 2.5 | 已完成 | 结构化测试点生成节点 | 本阶段提交 |
+| 阶段 2.6 | 已完成 | 测试点质量评审节点 | 本阶段提交 |
 
 ---
 
@@ -541,3 +542,92 @@ LLM 返回的是候选测试点，不是可信的最终结果。Python 会拒绝
 ### 下一步
 
 进入阶段 2.6，实现 `TestPointReviewer` 和结构化评审结果，检查需求覆盖、重复项、幻觉风险与可执行性。
+
+---
+
+## 阶段 2.6：TestPointReviewer 测试点质量评审节点
+
+### 本阶段目标
+
+对结构化测试点进行独立质量评审，输出可校验的评分、覆盖映射和问题清单，并由 Python 规则决定是否达标，为后续定向修正分支提供依据。
+
+### 修改内容
+
+- 新增 `TestPointReviewResult`、`ReviewDimensionScores`
+- 新增 `RequirementCoverage` 和 `HallucinationIssue`
+- 新增 Reviewer System Prompt 和动态 User Prompt
+- 新增 `TestPointReviewer`
+- `TestAnalysisState` 增加评审结果、达标状态和评分阈值
+- 增加需求覆盖完整性硬校验
+- 增加评分、覆盖、幻觉、前置条件和失败路径测试
+
+### 评审输出
+
+```text
+overall_score
+dimension_scores:
+  requirement_coverage
+  boundary_exception
+  executability
+  traceability
+requirement_coverage[]
+missing_scenarios[]
+duplicate_groups[]
+hallucination_issues[]
+revision_suggestions[]
+```
+
+### 执行链路
+
+```text
+结构化需求分析 + 结构化测试点
+  → TestPointReviewer.review()
+  → PromptService 构造评审 Prompt
+  → LLMService.generate()
+  → TestPointReviewResult.from_json()
+  → Python 校验评分、字段和每条需求事实的覆盖记录
+  → Python 计算 review_passed
+  → 写入 State 并记录 review_test_points 完成事件
+```
+
+### 达标规则
+
+LLM 只提供评审证据，不直接决定流程分支。当前 Python 规则要求：
+
+```text
+overall_score >= passing_score
+并且所有 requirement_fact 的状态都是 covered
+并且 hallucination_issues 为空
+```
+
+默认阈值为 80。即使总分达到 80，只要存在部分覆盖、缺失事实或幻觉问题，仍然不达标。Prompt 明确禁止模型返回 `passed` 或 `next_action`，避免把流程控制交给模型。
+
+### 关键设计
+
+结构校验只能确认 Reviewer 输出格式合法。为防止模型漏评需求事实，节点还会比较 State 中的事实集合和评审结果中的事实集合；缺失、额外或重复的事实记录都会使任务失败。
+
+Reviewer 不修改测试点。它只保存问题证据和修正建议，下一阶段 Reviser 才负责定向修改，从而保持“评审”和“修改”的职责分离。
+
+### 验证结果
+
+- 全量 64 个单元测试通过
+- 覆盖达标、低分、部分覆盖、幻觉阻断、遗漏事实、非法评分、非法重复组、空测试点和模型异常
+- 单元测试使用 Fake LLM，不访问真实模型
+
+### 当前边界
+
+- 尚未接入 Streamlit 页面
+- 尚未实现 TestPointReviser
+- 尚未实现 Reviewer/Reviser 最大次数循环
+- 当前评分质量尚未通过人工标注评测集校准
+- 重复和幻觉判断仍依赖 LLM 语义判断，Python只校验结构与关键流程规则
+
+### 建议提交信息
+
+```text
+功能：实现Agent测试点质量评审节点
+```
+
+### 下一步
+
+进入阶段 2.7，实现 `TestPointReviser`，根据结构化评审结果对当前测试点进行一次定向修正。

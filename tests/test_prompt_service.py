@@ -76,6 +76,30 @@ class PromptServiceTests(unittest.TestCase):
         self.assertNotIn("【本地测试经验】", prompt)
         self.assertNotIn("【相似历史测试资产】", prompt)
 
+    def test_review_prompt_contains_requirements_and_test_points(self):
+        prompt = PromptService.build_test_point_review_prompt(
+            {
+                "summary": "订单库存",
+                "requirement_facts": ["提交订单时扣减库存"],
+            },
+            [{"title": "库存充足时提交订单"}],
+        )
+
+        self.assertIn("提交订单时扣减库存", prompt)
+        self.assertIn("库存充足时提交订单", prompt)
+        self.assertIn("【结构化需求分析】", prompt)
+        self.assertIn("【待评审测试点】", prompt)
+
+    def test_review_prompt_rejects_empty_test_points(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "test points cannot be empty",
+        ):
+            PromptService.build_test_point_review_prompt(
+                {"requirement_facts": ["需求事实"]},
+                [],
+            )
+
     def test_custom_prompt_directory_can_be_used(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             prompt_path = Path(temp_dir) / "custom.txt"
