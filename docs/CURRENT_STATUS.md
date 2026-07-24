@@ -15,8 +15,8 @@
 ## Git 基线
 
 - 分支：`main`
-- 本阶段提交前基线：`4e62f17 功能：实现Agent测试点质量评审节点`
-- 最新已提交功能：`4e62f17 功能：实现Agent测试点质量评审节点`
+- 本阶段提交前基线：`828794a 功能：实现Agent测试点定向修正节点`
+- 最新已提交功能：`828794a 功能：实现Agent测试点定向修正节点`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
 
@@ -30,7 +30,7 @@ git log -5 --oneline --decorate
 
 ## 当前阶段
 
-阶段 2.7 已完成：已经实现根据结构化评审问题定向修正测试点的 `TestPointReviser`。
+阶段 2.8 已完成：已经实现结构化人工反馈、业务规则确认以及人工意见驱动Reviser。
 
 产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
 
@@ -111,6 +111,18 @@ git log -5 --oneline --decorate
 - 保留上一轮 `review_result`，将 `review_passed` 重置为 `None`，强制重新评审
 - Event记录修正前后数量、上一轮分数和评审失效状态
 
+### 阶段 2.8：HumanFeedback
+
+- 新增 add、remove、modify、update_priority 四类反馈动作
+- 区分 `test_suggestion` 测试建议和 `business_rule` 业务规则
+- 保存反馈目标、内容、原因、唯一ID和处理状态
+- 普通测试建议直接进入 `ready`
+- 新业务规则先进入 `pending_confirmation` 并让任务等待用户
+- 确认后的业务规则才写入 `state.business_rules`
+- Reviser可同时读取Reviewer结果和已确认人工反馈
+- 人工意见可以要求修改已经通过LLM Reviewer的测试点
+- 修正成功后反馈变为 `applied`，未确认反馈不能驱动修改
+
 ## 当前架构
 
 ```text
@@ -134,7 +146,8 @@ agent/
   TestPointGenerator
   TestPointReviewer
   TestPointReviser
-  后续加入 HumanFeedback、Orchestrator 和最大次数循环
+  HumanFeedbackHandler
+  后续加入 Orchestrator 和最大次数循环
 ```
 
 ## 当前测试基线
@@ -142,7 +155,7 @@ agent/
 验证日期：2026-07-24
 
 ```text
-72 tests passed
+85 tests passed
 ```
 
 验证命令：
@@ -154,29 +167,30 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：结构化人工反馈
+## 下一步任务：受控Agent编排器
 
-阶段 2.7 提交后，进入阶段 2.8：实现人工反馈模型和内部处理能力，让用户意见能够进入 `TestAnalysisState` 并驱动 Reviser。
+阶段 2.8 提交后，进入阶段 2.9：实现Python `Orchestrator`，根据State选择唯一合法节点，并限制Reviewer/Reviser最大循环次数。
 
 目标流程：
 
 ```text
-用户提交测试点意见
-  → Python校验 add / remove / modify / update_priority
-  → 区分测试建议和业务规则补充
-  → 普通建议写入State并交给Reviser
-  → 业务规则补充必须明确确认
-  → Reviser同时读取Reviewer结果与人工反馈
+读取当前State
+  → Python规则判断下一节点
+  → 自动串联Analyzer / Retriever / Generator / Reviewer
+  → Reviewer未达标时调用Reviser
+  → 修正后重新Reviewer
+  → 达到最大次数时停止自动修正
+  → 等待人工确认或进入Finalizer
 ```
 
-本阶段先实现内部模型、状态和Reviser输入扩展，不同时实现页面交互。
+本阶段实现内部编排和循环保护，不同时接入Streamlit页面。
 
 ## 当前限制
 
 - 现有 Streamlit 页面尚未使用 `TestAnalysisState`
 - Agent 尚不能自主选择 Tool
 - 尚未实现 Orchestrator 和最大次数受控循环
-- 尚未实现人工反馈模型和新Agent页面交互
+- 人工反馈内部能力已完成，但尚未接入新Agent页面
 - 现有 Streamlit 页面仍使用旧 Workflow 的 Markdown 报告，尚未展示 Agent 内部结构化测试点
 - Milvus 与 Embedding 地址仍在现有客户端中硬编码
 - 自动化用例生成和异常日志分析仍是未完成功能

@@ -32,6 +32,7 @@
 | 阶段 2.5 | 已完成 | 结构化测试点生成节点 | 本阶段提交 |
 | 阶段 2.6 | 已完成 | 测试点质量评审节点 | 本阶段提交 |
 | 阶段 2.7 | 已完成 | 测试点定向修正节点 | 本阶段提交 |
+| 阶段 2.8 | 已完成 | 结构化人工反馈与业务规则确认 | 本阶段提交 |
 
 ---
 
@@ -698,3 +699,91 @@ LLM必须返回完整测试点集合，而不是只返回增量补丁。完整�
 ### 下一步
 
 进入阶段 2.8，实现结构化人工反馈模型，让用户的增删改、优先级调整和补充说明可以写入State并驱动Reviser。阶段2.9再实现Orchestrator和最大循环次数，阶段2.10接入Streamlit页面。
+
+---
+
+## 阶段 2.8：HumanFeedback 结构化人工反馈
+
+### 本阶段目标
+
+让测试工程师的意见成为Agent内部可校验、可确认、可追踪的正式输入，并让Reviser同时处理自动Reviewer问题和人工反馈。
+
+### 修改内容
+
+- 新增 `HumanFeedback`、`HumanFeedbackHandler`
+- 新增反馈动作、类型和状态枚举
+- `AgentStep` 增加 `collect_human_feedback`
+- `TestAnalysisState` 增加 `human_feedback`
+- 新业务规则增加确认流程
+- 扩展修正Prompt，允许Reviewer结果和人工反馈独立或同时存在
+- 扩展Reviser前置条件及反馈应用状态
+- 增加反馈模型、确认、等待、Reviser集成和序列化测试
+
+### 反馈结构
+
+```text
+feedback_id
+action: add / remove / modify / update_priority
+feedback_type: test_suggestion / business_rule
+target
+content
+reason
+status: pending_confirmation / ready / applied
+```
+
+### 两类反馈
+
+普通测试建议不会改变需求事实，例如“增加弱网支付场景”，可以直接进入 `ready` 并交给Reviser。
+
+业务规则会改变测试预期，例如“库存不足时允许创建缺货订单”，提交后先进入 `pending_confirmation`，任务切换为 `waiting_for_user`。只有明确确认后，规则才写入 `state.business_rules`，反馈才变为 `ready`。
+
+### 执行链路
+
+```text
+用户反馈
+  → HumanFeedback.from_dict()
+  → HumanFeedbackHandler.submit()
+  → 测试建议：ready
+  → 业务规则：pending_confirmation → waiting_for_user
+  → confirm_business_rule()
+  → 写入business_rules并恢复任务
+  → TestPointReviser读取ready反馈
+  → 修正成功后标记applied
+```
+
+### 关键设计
+
+LLM Reviewer通过不代表人工必须接受。如果存在 `ready` 人工反馈，即使 `review_passed=True`，Reviser也可以执行。人工意见与自动评分是两个独立质量来源。
+
+未确认业务规则不能进入Prompt，避免把用户尚未确认的说明误当成正式预期。反馈只有在修正成功后才标记为 `applied`；模型超时或结构校验失败时仍保留 `ready`，方便后续重试或人工处理。
+
+Reviser现在可以在两种条件下执行：
+
+```text
+Reviewer明确未达标
+或者
+存在已确认、尚未应用的人工反馈
+```
+
+### 验证结果
+
+- 全量85个单元测试通过
+- 覆盖反馈动作校验、业务规则等待与确认、State更新、人工意见修改已通过结果、未确认反馈阻断和应用状态
+- 单元测试不访问真实模型
+
+### 当前边界
+
+- 尚未接入Streamlit反馈输入框和确认按钮
+- 尚未实现Orchestrator自动选择反馈与修正分支
+- 业务规则确认目前按整条反馈处理，不支持字段级差异确认
+- 尚未保存人工操作用户、时间和权限信息
+
+### 建议提交信息
+
+```text
+功能：实现Agent结构化人工反馈
+```
+
+### 下一步
+
+进入阶段2.9，实现Python Orchestrator和Reviewer/Reviser最大循环次数。

@@ -121,7 +121,7 @@ class PromptServiceTests(unittest.TestCase):
     def test_revision_prompt_rejects_empty_review(self):
         with self.assertRaisesRegex(
             ValueError,
-            "review result cannot be empty",
+            "review result or human feedback is required",
         ):
             PromptService.build_test_point_revision_prompt(
                 {"requirement_facts": ["需求事实"]},

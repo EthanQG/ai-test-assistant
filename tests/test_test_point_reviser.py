@@ -2,6 +2,7 @@ import json
 import unittest
 
 from agent.events import AgentEventType, AgentStep
+from agent.human_feedback import HumanFeedbackHandler
 from agent.state import AgentStatus, TestAnalysisState
 from agent.test_point_reviser import (
     TestPointReviser,
@@ -122,7 +123,7 @@ class TestPointReviserTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             TestPointRevisionError,
-            "completed review is required",
+            "failed review or ready human feedback is required",
         ):
             TestPointReviser(llm_service=llm).revise(state)
 
@@ -165,6 +166,57 @@ class TestPointReviserTests(unittest.TestCase):
 
         self.assertEqual(state.status, AgentStatus.FAILED)
         self.assertIn("修正模型超时", state.error_message)
+
+    def test_ready_human_feedback_can_revise_passing_result(self):
+        llm = FakeLLMService(revised_response())
+        state = ready_state()
+        state.review_passed = True
+        HumanFeedbackHandler().submit(
+            state,
+            {
+                "action": "modify",
+                "feedback_type": "test_suggestion",
+                "target": "库存不足时提交订单",
+                "content": "补充库存保持不变的预期",
+                "reason": "需要验证失败操作没有副作用",
+            },
+        )
+
+        TestPointReviser(llm_service=llm).revise(state)
+
+        self.assertIn("补充库存保持不变的预期", llm.calls[0][0])
+        self.assertEqual(
+            state.human_feedback[0]["status"],
+            "applied",
+        )
+        self.assertEqual(
+            state.events[-1].data["applied_feedback_count"],
+            1,
+        )
+
+    def test_unconfirmed_business_rule_cannot_trigger_revision(self):
+        llm = FakeLLMService(revised_response())
+        state = ready_state()
+        state.review_result = None
+        state.review_passed = None
+        HumanFeedbackHandler().submit(
+            state,
+            {
+                "action": "add",
+                "feedback_type": "business_rule",
+                "target": "库存业务规则",
+                "content": "库存不足时允许创建缺货订单",
+                "reason": "用户提出新的业务处理方式",
+            },
+        )
+
+        with self.assertRaisesRegex(
+            TestPointRevisionError,
+            "failed review or ready human feedback is required",
+        ):
+            TestPointReviser(llm_service=llm).revise(state)
+
+        self.assertEqual(llm.calls, [])
 
 
 if __name__ == "__main__":

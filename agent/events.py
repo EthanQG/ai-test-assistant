@@ -14,6 +14,7 @@ class AgentStep(str, Enum):
     RETRIEVE_KNOWLEDGE = "retrieve_knowledge"
     GENERATE_TEST_POINTS = "generate_test_points"
     REVIEW_TEST_POINTS = "review_test_points"
+    COLLECT_HUMAN_FEEDBACK = "collect_human_feedback"
     REVISE_TEST_POINTS = "revise_test_points"
     FINALIZE = "finalize"
 

@@ -115,15 +115,18 @@ class PromptService:
     def build_test_point_revision_prompt(
         requirement_analysis: dict,
         current_test_points: list[dict],
-        review_result: dict,
+        review_result: dict | None = None,
+        human_feedback: list[dict] | None = None,
     ) -> str:
         if not requirement_analysis.get("requirement_facts"):
             raise ValueError("requirement facts cannot be empty")
         if not current_test_points:
             raise ValueError("current test points cannot be empty")
-        if not review_result:
-            raise ValueError("review result cannot be empty")
-        return (
+        if not review_result and not human_feedback:
+            raise ValueError(
+                "review result or human feedback is required"
+            )
+        prompt = (
             "请根据评审结果定向修正测试点，并严格按照系统要求只返回 JSON。\n\n"
             "【结构化需求分析】\n"
             + json.dumps(
@@ -137,13 +140,26 @@ class PromptService:
                 ensure_ascii=False,
                 indent=2,
             )
-            + "\n\n【Reviewer评审结果】\n"
-            + json.dumps(
-                review_result,
-                ensure_ascii=False,
-                indent=2,
-            )
         )
+        if review_result:
+            prompt += (
+                "\n\n【Reviewer评审结果】\n"
+                + json.dumps(
+                    review_result,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        if human_feedback:
+            prompt += (
+                "\n\n【已确认的人工反馈】\n"
+                + json.dumps(
+                    human_feedback,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        return prompt
 
     @staticmethod
     def build_refine_prompt(

@@ -60,6 +60,7 @@ class TestAnalysisState:
     review_passed: bool | None = None
     review_threshold: int = 80
     revision_count: int = 0
+    human_feedback: list[dict[str, Any]] = field(default_factory=list)
     report: str = ""
     error_message: str | None = None
     events: list[AgentEvent] = field(default_factory=list)
@@ -191,6 +192,7 @@ class TestAnalysisState:
             "review_passed": self.review_passed,
             "review_threshold": self.review_threshold,
             "revision_count": self.revision_count,
+            "human_feedback": self.human_feedback,
             "report": self.report,
             "error_message": self.error_message,
             "events": [event.to_dict() for event in self.events],

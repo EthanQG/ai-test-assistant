@@ -128,6 +128,17 @@ class TestAnalysisStateTests(unittest.TestCase):
         state.review_result = {"overall_score": 88}
         state.review_passed = True
         state.revision_count = 1
+        state.human_feedback = [
+            {
+                "feedback_id": "feedback-1",
+                "action": "add",
+                "feedback_type": "test_suggestion",
+                "target": "订单异常",
+                "content": "增加弱网场景",
+                "reason": "线上经验",
+                "status": "ready",
+            }
+        ]
 
         payload = state.to_dict()
         serialized = json.dumps(payload, ensure_ascii=False)
@@ -152,6 +163,10 @@ class TestAnalysisStateTests(unittest.TestCase):
         self.assertTrue(payload["review_passed"])
         self.assertEqual(payload["review_threshold"], 80)
         self.assertEqual(payload["revision_count"], 1)
+        self.assertEqual(
+            payload["human_feedback"][0]["feedback_id"],
+            "feedback-1",
+        )
         self.assertIn("用户可以提交订单", serialized)
         self.assertIn("occurred_at", serialized)
 

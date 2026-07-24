@@ -2,6 +2,7 @@ from services.llm_service import LLMService
 from services.prompt_service import PromptService
 
 from .events import AgentStep
+from .human_feedback import HumanFeedbackHandler
 from .models import TestPointGenerationResult
 from .state import TestAnalysisState
 
@@ -33,6 +34,7 @@ class TestPointReviser:
 
         try:
             original_test_points = list(state.test_points)
+            ready_feedback = HumanFeedbackHandler.ready_feedback(state)
             system_prompt = self.prompt_service.load_system_prompt(
                 "test_point_revision"
             )
@@ -40,7 +42,11 @@ class TestPointReviser:
                 self.prompt_service.build_test_point_revision_prompt(
                     self._requirement_analysis_payload(state),
                     original_test_points,
-                    state.review_result or {},
+                    review_result=state.review_result,
+                    human_feedback=[
+                        feedback.to_dict()
+                        for feedback in ready_feedback
+                    ],
                 )
             )
             raw_response = self.llm_service.generate(
@@ -60,6 +66,9 @@ class TestPointReviser:
             state.test_points = revised_test_points
             state.revision_count += 1
             state.review_passed = None
+            applied_feedback_count = (
+                HumanFeedbackHandler.mark_ready_as_applied(state)
+            )
             state.complete_step(
                 AgentStep.REVISE_TEST_POINTS,
                 "测试点定向修正完成，等待重新评审",
@@ -71,6 +80,7 @@ class TestPointReviser:
                         state.review_result or {}
                     ).get("overall_score"),
                     "review_invalidated": True,
+                    "applied_feedback_count": applied_feedback_count,
                 },
             )
             return result
@@ -86,13 +96,21 @@ class TestPointReviser:
             raise TestPointRevisionError(
                 "structured test points must be generated first"
             )
-        if not state.review_result or state.review_passed is None:
-            raise TestPointRevisionError(
-                "a completed review is required before revision"
-            )
-        if state.review_passed:
+        ready_feedback = HumanFeedbackHandler.ready_feedback(state)
+        has_failed_review = (
+            bool(state.review_result)
+            and state.review_passed is False
+        )
+        if (
+            state.review_passed is True
+            and not ready_feedback
+        ):
             raise TestPointRevisionError(
                 "passing test points must not be revised automatically"
+            )
+        if not has_failed_review and not ready_feedback:
+            raise TestPointRevisionError(
+                "a failed review or ready human feedback is required"
             )
 
     @staticmethod

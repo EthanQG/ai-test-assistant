@@ -1,6 +1,14 @@
 """Core state models for the Test Analysis Agent."""
 
 from .events import AgentEvent, AgentEventType, AgentStep
+from .human_feedback import (
+    FeedbackAction,
+    FeedbackStatus,
+    FeedbackType,
+    HumanFeedback,
+    HumanFeedbackHandler,
+    HumanFeedbackValidationError,
+)
 from .knowledge_retriever import (
     KnowledgeRetrievalError,
     KnowledgeRetriever,
@@ -51,6 +59,12 @@ __all__ = [
     "AgentStatus",
     "AgentStep",
     "InferredRisk",
+    "FeedbackAction",
+    "FeedbackStatus",
+    "FeedbackType",
+    "HumanFeedback",
+    "HumanFeedbackHandler",
+    "HumanFeedbackValidationError",
     "KnowledgeRetrievalError",
     "KnowledgeRetrievalStatus",
     "KnowledgeRetriever",
