@@ -142,6 +142,10 @@ class TestAnalysisStateTests(unittest.TestCase):
                 "status": "ready",
             }
         ]
+        state.user_clarifications = [
+            {"question": "是否允许叠加？", "answer": "不允许"}
+        ]
+        state.deferred_questions = ["失效时间如何计算？"]
         state.final_result = {
             "requirement_summary": "订单提交",
             "test_point_count": 1,
@@ -179,6 +183,14 @@ class TestAnalysisStateTests(unittest.TestCase):
         self.assertEqual(
             payload["human_feedback"][0]["feedback_id"],
             "feedback-1",
+        )
+        self.assertEqual(
+            payload["user_clarifications"][0]["answer"],
+            "不允许",
+        )
+        self.assertEqual(
+            payload["deferred_questions"],
+            ["失效时间如何计算？"],
         )
         self.assertEqual(payload["final_result"]["test_point_count"], 1)
         self.assertIn("用户可以提交订单", serialized)

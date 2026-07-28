@@ -2,270 +2,119 @@
 
 更新时间：2026-07-28
 
-这是一份跨电脑、跨 Codex 任务的开发接力文档。开始工作时先阅读本文件；完成一个小阶段后，用最新事实覆盖更新，不在这里累积历史记录。
-
-相关文档：
-
-- [当前产品需求说明书 V2](product/PRD_AGENT_V2.md)
-- [项目文档导航](README.md)
-- [开发与复盘日志](DEVELOPMENT_LOG.md)
-- [代码学习与面试复盘](LEARNING_NOTES.md)
-- [Codex 协作规则](../AGENTS.md)
+本文件只保存最新接力信息。产品范围以
+[PRD_AGENT_V2.md](product/PRD_AGENT_V2.md) 为准，完整历史见
+[DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)，学习复盘见
+[LEARNING_NOTES.md](LEARNING_NOTES.md)。
 
 ## Git 基线
 
 - 分支：`main`
-- 本阶段提交前基线：`977aab9 功能：实现Agent最终结果整理节点`
-- 最新已提交功能：`977aab9 功能：实现Agent最终结果整理节点`
-- 核对时状态：`main` 与 `origin/main` 同步
-- 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
+- 阶段 2.11.2 已完成并纳入本地提交
+- 本地 `main` 领先 `origin/main` 1 个提交，尚未 Push
 
-切换电脑后先执行：
+## 当前阶段
+
+阶段 2.11.2：待确认问题、任务恢复与双栏工作台。
+
+已完成：
+
+- 页面调整为左侧需求工作台、右侧任务概览与结果区
+- 右侧概览保持在结果区上方，轨迹、测试点、评审和报告在固定高度容器内滚动
+- RequirementAnalyzer 每轮最多返回 3 个会阻塞核心业务判断的问题
+- 用户可以逐项回答，也可以选择“暂不确定”
+- 用户回答作为明确事实重新进入需求分析 Prompt
+- 暂不确定的问题不会重复追问，也不会被 Agent 自行假设
+- 暂不确定项会作为风险提示进入 Finalizer 报告
+- 重新分析后复用同一个 State，并由 Orchestrator 继续执行到下一个阻塞点或终态
+
+当前 Agent 主链路：
+
+```text
+Streamlit 输入
+  → TestAnalysisState
+  → 页面循环调用 AgentOrchestrator.run_next()
+  → RequirementAnalyzer / KnowledgeRetriever / Generator / Reviewer / Reviser
+  → Finalizer
+  → 页面展示结构化结果与 Markdown 报告
+```
+
+待确认恢复链路：
+
+```text
+open_questions（最多 3 个）
+  → waiting_for_user
+  → 用户回答或选择暂不确定
+  → 回答/暂缓项写入 State
+  → state.resume()
+  → RequirementAnalyzer 重新分析
+  → 页面继续逐节点调用 Orchestrator.run_next()
+```
+
+## 测试基线
+
+验证日期：2026-07-28
+
+```text
+119 tests passed
+```
+
+已额外使用 Streamlit AppTest 验证等待状态页面：
+
+- 页面无异常，且等待状态已纳入自动化测试
+- 两个问题对应两个“暂不确定”选项
+- 存在“提交补充并继续执行”按钮
+- 右侧显示任务暂停提示
+
+本阶段追加修复：
+
+- 恢复页面顶部安全间距，避免 Streamlit 顶栏遮挡标题图标
+- 左右两栏统一使用 760px 外层容器
+- 移除恢复执行时嵌套的动态 `st.status`，避免重跑时出现 React 渲染异常
+- 测试点生成单独使用 8192 的输出 token 上限，降低大型结构化 JSON 被截断的概率
+- 页面由一次执行完整链路改为每次执行一个节点，节点完成后自动刷新事件与决策
+- URL保存`task_id`，服务进程内任务缓存支持浏览器刷新后恢复当前任务
+- 概览卡片缩小字号，并将内部步骤名称转换为中文
+- 执行Spinner固定显示在左侧工作台底部
+- 右侧详细结果区使用固定高度填满下方空间
+- 左侧提示根据执行中、等待补充、失败和完成状态动态变化
+- 页面测试点分类显示为功能、边界、异常和非功能
+- 最终Markdown报告使用测试点表格，下载按钮位于报告内容上方
+
+单元测试不访问真实 DeepSeek、Milvus 或 Embedding 服务。
+
+## 下一步任务
+
+提交阶段 2.11.2 后进入阶段 2.11.3：把已经完成的
+`HumanFeedbackHandler` 接入页面。
+
+目标：
+
+- 对已生成测试点提交增加、删除、修改和优先级调整意见
+- 新业务规则必须二次确认后才能写入需求事实
+- 人工反馈驱动 Reviser，并重新经过 Reviewer
+- 页面展示反馈状态和修正结果
+
+本阶段继续使用 Streamlit，不进行前后端分离。
+
+## 当前限制
+
+- Agent 尚不能自主选择 Tool，节点仍由 Python Orchestrator 受控编排
+- 单个LLM节点执行期间仍是同步等待，节点完成后才会刷新页面
+- 达到自动修正上限后仍缺少页面人工处理入口
+- 当前任务只保存在Streamlit服务进程内，服务重启后任务会丢失
+- MySQL历史任务持久化尚未实现，计划在后续独立阶段设计
+- 知识资产上传与持久化尚未设计为独立知识库管理功能
+- Milvus 与 Embedding 地址仍在现有客户端中硬编码
+- 自动化用例生成和异常日志分析不在当前产品范围
+
+## 新电脑恢复方式
 
 ```powershell
 git pull --ff-only origin main
 git status -sb
 git log -5 --oneline --decorate
-```
-
-## 当前阶段
-
-阶段 2.11.1 已完成开发、尚未提交：Streamlit已接入Agent自动主路径，可创建State、执行Orchestrator并展示轨迹、测试点、质量结果和最终报告。
-
-产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
-
-## 已完成
-
-### 阶段 1：基础架构整理
-
-- 拆分 `LLMService`、`RAGService` 和 `DocumentService`
-- `TestAssistantManager` 支持依赖注入
-- 隐藏未完成的自动化用例与日志分析页面
-- 增加 README、`.env.example` 和基础测试
-
-### 阶段 1.5：Prompt 边界整理
-
-- 新增 `PromptService`
-- System Prompt 只保存稳定规则
-- User Prompt 承载当前需求和动态上下文
-- 移除未替换的 `{prd_content}`、`{bug_kb_content}`
-- 区分需求事实、推导风险和待确认项
-
-### 阶段 2.1/2.2：Agent 状态与事件
-
-- 新增 `TestAnalysisState`
-- 新增 `AgentStatus`、`AgentStep` 和 `AgentEvent`
-- 支持任务创建、步骤开始/完成、等待用户、恢复、完成和失败
-- 支持转换为可保存或通过 API 返回的字典/JSON
-- 已限制非法跳步、终态继续执行和等待用户时绕过恢复
-
-### 阶段 2.3：RequirementAnalyzer
-
-- 新增结构化需求分析结果与推导风险模型
-- 新增需求分析 System Prompt 和 User Prompt 构建方法
-- LLM 输出经过 JSON 解析、字段类型和未知字段校验
-- 分析结果写入 `TestAnalysisState`
-- 有待确认项时任务进入 `waiting_for_user`
-- LLM 超时或 JSON 无效时任务进入 `failed`
-- 使用 Fake LLM 覆盖成功、待确认和失败路径
-
-### 阶段 2.4：KnowledgeRetriever
-
-- 根据结构化需求分析结果构造历史资产检索查询
-- 将 RAG 上下文、最高相似度、命中数量写入 `TestAnalysisState`
-- 使用明确状态区分 `matched`、`no_match` 和 `degraded`
-- 无历史命中时记录结果并继续，不把正常空结果误判为故障
-- Milvus 或 Embedding 服务失败时记录降级原因，当前任务仍可继续
-- 记录 `retrieve_knowledge` 步骤的开始与完成事件
-- 保留旧 RAG 调用的兼容行为，Agent 调用使用严格错误模式
-
-### 阶段 2.5：TestPointGenerator
-
-- 新增结构化 `TestPoint` 和 `TestPointGenerationResult`
-- 支持 functional、boundary、exception、non_functional 四类测试点
-- 支持 P0、P1、P2 优先级
-- 记录 requirement、historical_asset、test_experience、user_feedback 来源及引用
-- 每条测试点包含场景、前置条件、步骤和可观察预期结果
-- LLM 返回 JSON 后由 Python 严格校验，非法字段和空数组会使任务失败
-- 检索无匹配或服务降级时仍可生成；未执行检索或存在待确认项时禁止生成
-- 合法测试点写入 `TestAnalysisState` 并记录数量、分类和优先级统计事件
-
-### 阶段 2.6：TestPointReviewer
-
-- 新增结构化评审结果、维度评分、需求覆盖和幻觉问题模型
-- 评审需求覆盖、边界异常、可执行性和来源可追踪性
-- 输出重复测试点组、缺失场景、幻觉问题和修正建议
-- Python 强制检查每条需求事实都被评审且不存在重复覆盖记录
-- 达标由代码计算：总分达到阈值、所有需求事实完全覆盖且无幻觉问题
-- LLM 不允许直接返回 passed 或 next_action
-- 评审结果、阈值和达标状态写入 `TestAnalysisState`
-
-### 阶段 2.7：TestPointReviser
-
-- 新增测试点定向修正 System Prompt 和动态 User Prompt
-- 输入需求分析、当前完整测试点和上一轮结构化评审结果
-- 只允许在 `review_passed=False` 时执行，已达标结果禁止自动改写
-- 返回完整修正后测试点集合并复用现有结构化校验
-- 空结果、非法字段和完全未变化的“假修正”都会使任务失败
-- 修正成功后增加 `revision_count`
-- 保留上一轮 `review_result`，将 `review_passed` 重置为 `None`，强制重新评审
-- Event记录修正前后数量、上一轮分数和评审失效状态
-
-### 阶段 2.8：HumanFeedback
-
-- 新增 add、remove、modify、update_priority 四类反馈动作
-- 区分 `test_suggestion` 测试建议和 `business_rule` 业务规则
-- 保存反馈目标、内容、原因、唯一ID和处理状态
-- 普通测试建议直接进入 `ready`
-- 新业务规则先进入 `pending_confirmation` 并让任务等待用户
-- 确认后的业务规则才写入 `state.business_rules`
-- Reviser可同时读取Reviewer结果和已确认人工反馈
-- 人工意见可以要求修改已经通过LLM Reviewer的测试点
-- 修正成功后反馈变为 `applied`，未确认反馈不能驱动修改
-
-### 阶段 2.9：AgentOrchestrator
-
-- 使用Python规则根据State选择唯一合法的下一节点
-- 自动串联RequirementAnalyzer、KnowledgeRetriever、Generator、Reviewer和Reviser
-- LLM不参与决定下一步或修正次数
-- 支持等待用户、准备最终化、达到修正上限和任务终态四类停止结果
-- 默认最多自动修正2次，达到上限后保留当前结果并停止循环
-- 增加最大总步骤数，防止异常节点导致无限空转
-- `review_history`保存每轮评分、达标结果和对应修正次数
-- `revision_history`保存修正前后测试点、评审依据和人工反馈ID
-- 人工反馈可覆盖自动评审通过分支，但同样受自动修正次数上限保护
-
-### 阶段 2.10：Finalizer
-
-- 新增结构化 `FinalizationResult`
-- 使用Python统计测试点分类、优先级、来源和需求覆盖情况
-- 汇总Reviewer评分、维度分、评审轮次和自动修正次数
-- 保留推导风险、RAG降级或无命中提示及Reviewer关注项
-- 生成统一Markdown测试分析报告
-- Finalizer不调用LLM，也不修改已通过评审的测试点
-- 只有评审通过且没有待处理人工反馈时才能最终化
-- 最终结果写入 `state.final_result`，报告写入 `state.report`
-- Orchestrator执行Finalizer后将任务更新为`completed`，下一轮返回`terminal`
-
-### 阶段 2.11.1：Streamlit Agent基础运行页面
-
-- 页面从旧 `TestAssistantManager` Workflow切换为 `TestAnalysisState + AgentOrchestrator`
-- 支持文本输入和TXT、Markdown、PDF、DOCX需求文档
-- 自动加载默认本地测试经验，并由Agent执行Milvus知识检索
-- 使用 `st.session_state` 保存当前State和Orchestrator决策记录
-- 展示任务状态、当前步骤、测试点数量、Reviewer评分和修正次数
-- 展示Orchestrator决策表与AgentEvent事件表
-- 展示结构化测试点、Reviewer维度评分和最终Markdown报告
-- 支持下载Finalizer报告
-- 明确展示等待用户、执行失败和达到修正上限三类非完成状态
-- 新增纯Python presenter与Streamlit页面冒烟测试
-- 清理Git中误跟踪的`utils/__pycache__`缓存文件，后续由`.gitignore`持续忽略
-- 结构化节点启用DeepSeek JSON Output并检查`finish_reason`
-- JSON或字段校验失败时最多重试一次，网络错误不盲目重试
-- JSON解析错误保留具体行列，终端输出校验失败与重试日志
-- 页面不再预先显示尚未真正执行的后续节点
-
-## 当前架构
-
-```text
-main.py / views/
-  Streamlit Agent工作台
-        ↓
-  TestAnalysisState + AgentOrchestrator
-        ↓
-agent/节点
-        ↓
-services/ LLM / RAG / Prompt / Document
-
-utils/TestAssistantManager
-  仅保留旧Workflow兼容实现，当前主页面不再直接调用
-
-agent/
-  TestAnalysisState
-  AgentEvent
-  AgentStatus
-  AgentStep
-  RequirementAnalysisResult
-  RequirementAnalyzer
-  KnowledgeRetriever
-  TestPointGenerator
-  TestPointReviewer
-  TestPointReviser
-  HumanFeedbackHandler
-  AgentOrchestrator
-  Finalizer
-  后续接入Streamlit页面
-```
-
-## 当前测试基线
-
-验证日期：2026-07-28
-
-```text
-110 tests passed
-```
-
-验证命令：
-
-```powershell
 python -m unittest discover -s tests -v
-python -m compileall -q agent services utils views tests main.py
 ```
 
-单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
-
-## 下一步任务：待确认问题与任务恢复
-
-阶段 2.11.1 提交后，进入阶段 2.11.2：让用户在页面回答RequirementAnalyzer产生的待确认问题，并恢复当前任务。
-
-目标流程：
-
-```text
-Agent识别open_questions
-  → State进入waiting_for_user
-  → 页面逐项展示问题并接收回答
-  → 将回答以明确结构写回State
-  → 更新需求上下文并使旧待确认项失效
-  → state.resume()
-  → Orchestrator继续执行到下一个阻塞点
-```
-
-阶段2.11.3再接入结构化人工反馈和业务规则确认。本阶段继续使用Streamlit，不进行前后端分离。
-
-## 当前限制
-
-- Agent 尚不能自主选择 Tool
-- 人工反馈内部能力已完成，但尚未接入新Agent页面
-- 页面可以展示待确认问题，但尚不能提交回答和恢复任务
-- 达到自动修正上限后仍需页面提供人工处理入口，不能自动最终化
-- 页面当前同步执行完整Agent链路，真实模型耗时较长时缺少逐节点实时刷新
-- 知识资产上传与持久化尚未设计为独立的知识库管理功能
-- Milvus 与 Embedding 地址仍在现有客户端中硬编码
-- 自动化用例生成和异常日志分析仍是未完成功能
-
-## 新电脑上的 Codex 启动提示
-
-在新电脑 Clone/Pull 后，可以向 Codex发送：
-
-```text
-请按照 AGENTS.md 初始化本次开发上下文。
-读取 README.md、docs/product/PRD_AGENT_V2.md、
-docs/CURRENT_STATUS.md 和
-docs/DEVELOPMENT_LOG.md、docs/LEARNING_NOTES.md 的最新阶段，
-检查 Git 状态和最近提交，
-运行现有测试，然后说明当前进度和下一步任务。
-暂时不要修改代码。
-```
-
-## 环境恢复提醒
-
-Git 不会同步 `.env` 和 `.venv`。新电脑需要执行：
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env
-```
-
-在 `.env` 中重新填写个人 API 配置，不要把真实密钥提交到 Git。
+然后让 Codex 按 `AGENTS.md` 初始化上下文，并读取本文件。

@@ -186,6 +186,10 @@ class Finalizer:
             f"评审仍建议关注：{scenario}"
             for scenario in review.missing_scenarios
         )
+        warnings.extend(
+            f"用户暂未确认：{question}"
+            for question in state.deferred_questions
+        )
         return warnings
 
     @staticmethod
@@ -214,30 +218,38 @@ class Finalizer:
             "",
             "## 结构化测试点",
             "",
+            (
+                "| 序号 | 标题 | 分类 | 优先级 | 场景 | 前置条件 | "
+                "执行步骤 | 预期结果 | 来源 | 来源依据 |"
+            ),
+            "|---:|---|---|---|---|---|---|---|---|---|",
         ]
         for index, test_point in enumerate(result.test_points, start=1):
-            lines.extend(
-                [
-                    f"### {index}. {test_point['title']}",
-                    "",
-                    (
-                        f"- 分类：{test_point['category']}；"
-                        f"优先级：{test_point['priority']}"
-                    ),
-                    f"- 场景：{test_point['scenario']}",
-                    "- 前置条件："
-                    + "；".join(test_point["preconditions"]),
-                    "- 执行步骤："
-                    + "；".join(test_point["steps"]),
-                    "- 预期结果："
-                    + "；".join(test_point["expected_results"]),
-                    "- 来源："
-                    + "、".join(test_point["sources"]),
-                    "- 来源引用："
-                    + "；".join(test_point["source_refs"]),
-                    "",
-                ]
+            category = {
+                "functional": "功能",
+                "boundary": "边界",
+                "exception": "异常",
+                "non_functional": "非功能",
+            }.get(test_point["category"], test_point["category"])
+            cells = [
+                str(index),
+                test_point["title"],
+                category,
+                test_point["priority"],
+                test_point["scenario"],
+                "<br>".join(test_point["preconditions"]),
+                "<br>".join(test_point["steps"]),
+                "<br>".join(test_point["expected_results"]),
+                "、".join(test_point["sources"]),
+                "<br>".join(test_point["source_refs"]),
+            ]
+            lines.append(
+                "| " + " | ".join(
+                    Finalizer._markdown_table_cell(cell)
+                    for cell in cells
+                ) + " |"
             )
+        lines.append("")
 
         if result.inferred_risks:
             lines.extend(["## 推导风险", ""])
@@ -253,3 +265,7 @@ class Finalizer:
             lines.append("")
 
         return "\n".join(lines).strip()
+
+    @staticmethod
+    def _markdown_table_cell(value: Any) -> str:
+        return str(value).replace("|", r"\|").replace("\n", "<br>")

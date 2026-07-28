@@ -45,6 +45,8 @@ class TestAnalysisState:
     state_transitions: list[str] = field(default_factory=list)
     inferred_risks: list[dict[str, str]] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
+    user_clarifications: list[dict[str, str]] = field(default_factory=list)
+    deferred_questions: list[str] = field(default_factory=list)
 
     local_bug_knowledge: str = ""
     rag_context: str = ""
@@ -183,6 +185,8 @@ class TestAnalysisState:
             "state_transitions": self.state_transitions,
             "inferred_risks": self.inferred_risks,
             "open_questions": self.open_questions,
+            "user_clarifications": self.user_clarifications,
+            "deferred_questions": self.deferred_questions,
             "local_bug_knowledge": self.local_bug_knowledge,
             "rag_context": self.rag_context,
             "rag_max_score": self.rag_max_score,

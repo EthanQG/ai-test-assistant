@@ -32,6 +32,165 @@
 
 ---
 
+## 二十三、阶段 2.11.2：待确认问题与任务恢复
+
+### 23.0 核心代码地图
+
+| 文件 | 本阶段职责 |
+|---|---|
+| `agent/requirement_analyzer.py` | 解析用户补充信息并重新生成结构化需求 |
+| `agent/state.py` | 保存回答、暂缓问题、运行状态、事件和最终结果 |
+| `agent/models.py` | 对最多 3 个待确认问题等结构化字段执行 Python 校验 |
+| `services/prompt_service.py` | 将原始需求、历史回答和暂缓项构造成 LLM 输入 |
+| `services/structured_output.py` | 清洗、校验并有限重试被截断或不合法的 JSON |
+| `views/tab_test_points.py` | 双栏页面、逐节点执行、补充表单和刷新恢复入口 |
+| `views/agent_presenter.py` | 将内部状态、步骤和分类转换为页面中文展示 |
+| `agent/finalizer.py` | 生成表格化 Markdown 报告并保留未确认风险 |
+
+### 23.1 为什么不能让 LLM 一次追问很多问题
+
+LLM 很容易把所有未知细节都列成问题，但用户未必知道技术实现，也不需要在开始测试分析前回答全部细节。本阶段只允许询问会阻塞核心业务结果判断的问题，并限制每轮最多 3 个。
+
+这个限制有两层：
+
+```text
+Prompt：告诉 LLM 合并同类问题并按重要性排序
+Python：校验 open_questions 数量不能超过 3
+```
+
+Prompt 提升正常输出质量，Python 保证错误输出不能进入 State。
+
+### 23.2 回答和“暂不确定”分别如何处理
+
+回答会保存到 `state.user_clarifications`，下一轮需求分析把它当作用户明确确认的事实。选择“暂不确定”的问题保存到 `state.deferred_questions`：
+
+- 不再次追问同一个问题
+- 不允许模型自行假设答案
+- 测试生成可以继续
+- Finalizer 将它写入报告注意事项
+
+这体现了 Agent 的一个重要原则：允许带着显式不确定性继续，但不能把未知内容伪装成事实。
+
+### 23.3 为什么要重新执行 RequirementAnalyzer
+
+用户回答可能改变业务规则、状态流转、风险和待确认项。只把答案追加到文本里而不更新结构化状态，会导致后续 Generator 仍然读取旧分析。因此恢复时先记录答案并把状态恢复为运行中，随后立即重新分析，再交还 Orchestrator：
+
+```text
+waiting_for_user
+  → 收集回答/暂缓项
+  → state.resume()
+  → RequirementAnalyzer 重新构建结构化需求
+  → Orchestrator 选择后续节点
+```
+
+### 23.4 页面为什么不自己决定下一个节点
+
+Streamlit 页面只负责输入、展示和触发。它调用
+`reanalyze_with_clarifications()` 后，通过受控页面循环逐次调用
+`run_next()`。每次调用仍由 Orchestrator 根据 State 决定唯一合法动作，
+页面不直接选择检索、生成、评审或最终化节点，避免页面和后端各维护一套
+if/else。
+
+### 23.5 左右布局的职责
+
+- 左侧是工作台：需求输入、文件上传、启动、清空和关键问题回答
+- 右侧是结果台：任务概览固定在上方，详细结果在固定高度容器中滚动
+
+右侧不是数据库意义上的“固定保存”。当前任务同时保存在
+`st.session_state` 和 `st.cache_resource` 进程内任务表中，URL 使用
+`task_id` 帮助刷新后恢复。Streamlit 服务重启后仍会丢失，真正的历史记忆
+需要后续接入 MySQL。
+
+### 23.6 面试问题与参考答案
+
+#### 问：限制 3 个问题为什么同时使用 Prompt 和 Python？
+
+答：
+
+> Prompt 是生成指导，不能作为可靠约束；Python 校验是系统边界，可以拒绝不合格输出并触发有限重试。两者结合既提高首次成功率，也保证非法数据不会污染 AgentState。
+
+#### 问：用户不知道答案时为什么不直接让 LLM 推测？
+
+答：
+
+> 推测可以作为带依据的风险，但不能作为需求事实。系统把暂不确定项显式保存并写入报告，使后续使用者知道测试结论依赖哪些未知条件，避免幻觉。
+
+#### 问：恢复任务时为什么还要重新分析需求？
+
+答：
+
+> 用户补充可能改变结构化需求的多个字段。重新运行 RequirementAnalyzer 可以让事实、规则、状态流转和风险保持一致，后续节点只消费更新后的 State。
+
+#### 问：双栏页面是否等于前后端分离？
+
+答：
+
+> 不是。它只是 Streamlit 页面布局变化。业务状态、节点和编排器仍在 Python 进程中，当前阶段没有引入 FastAPI 或独立前端。
+
+### 23.7 动手练习
+
+- [ ] 把问题上限临时改成 2，观察模型校验测试如何变化
+- [ ] 回答一个问题并检查 `user_clarifications`
+- [ ] 将一个问题选为暂不确定并检查最终报告 warnings
+- [ ] 说明页面、RequirementAnalyzer 和 Orchestrator 各自负责什么
+
+### 23.8 掌握检查
+
+- [ ] 能解释 Prompt 约束和 Python 校验的差别
+- [ ] 能说明回答与暂缓项写入 State 的不同字段
+- [ ] 能画出 waiting、resume、reanalyze、continue 的状态流
+- [ ] 能解释为什么页面不直接调用后续业务节点
+
+### 23.9 为什么页面看起来卡住但后端仍在运行
+
+原页面在一次Streamlit脚本运行中调用`run_until_blocked()`。它会连续执行多个耗时LLM节点，State里的事件虽然持续增加，但Streamlit只有等函数返回后才能重新渲染，所以用户只能看到旧画面。
+
+现在页面循环使用`run_next()`：
+
+```text
+渲染当前State
+→ 执行一个节点
+→ 保存State
+→ st.rerun()
+→ 展示刚完成节点的事件
+→ 再执行下一个节点
+```
+
+这不是后台异步任务。单个节点调用LLM时页面仍需等待，但节点之间的进度已经可见。
+
+### 23.10 为什么刷新后可以恢复但重启服务仍会丢失
+
+当前URL保存`task_id`，服务进程通过`st.cache_resource`维护任务对象。浏览器刷新建立新会话时，可以用`task_id`重新找到State。
+
+它属于进程内恢复，不是数据库持久化：
+
+- 浏览器刷新：可以恢复
+- 新开相同任务URL：可以恢复
+- 重启Streamlit：不能恢复
+- 换电脑：不能恢复
+
+真正的生产方案需要将`state.to_dict()`保存到数据库，并实现可靠的反序列化、并发控制和任务锁。
+
+### 23.11 页面展示值为什么不直接使用内部枚举
+
+内部使用`functional`、`boundary`等稳定英文枚举，便于代码比较、JSON传输和数据库存储；页面通过Presenter转换为“功能”“边界”等中文标签。这样不会为了修改文案而改变领域数据协议。
+
+Markdown报告也在Finalizer格式化阶段转换展示标签。State中仍保留原始英文枚举，因此后续接入MySQL或API时数据含义稳定。
+
+### 23.12 MySQL历史任务不能只保存最终报告
+
+如果只保存Markdown，历史页面可以阅读，但无法恢复Agent状态或分析每个节点。完整历史至少需要考虑：
+
+- 任务ID、原始需求、状态和当前节点
+- AgentState结构化快照
+- Orchestrator决策与Agent事件
+- 结构化测试点、Reviewer结果和最终报告
+- 创建、更新时间与错误信息
+
+数据库密码、服务器地址等配置只能放在本机`.env`或部署环境变量中，不能提交到GitHub。
+
+---
+
 ## 二、项目整体认识
 
 ### 2.1 项目解决什么问题
@@ -40,7 +199,7 @@
 
 ### 2.2 30 秒项目介绍参考答案
 
-> 我实现了一个面向测试工程师的智能测试分析助手。用户可以输入或上传 PRD，系统解析文档后，通过 Milvus 检索相似的历史测试资产，再结合本地 Bug 经验构造 Prompt，调用 DeepSeek 流式生成测试分析报告。为了从固定 Workflow 演进为 Agent，我把 LLM、RAG、Prompt 和文档解析拆成独立 Service，并加入 AgentState 和执行事件，为后续需求分析、工具调用、Reviewer 和自动修正循环做准备。
+> 我实现了一个面向测试工程师的测试分析 Agent。用户输入或上传 PRD 后，RequirementAnalyzer先提取需求事实、业务规则、风险和关键待确认项；信息不足时页面暂停并允许用户回答或选择暂不确定。随后Agent检索Milvus历史测试资产，生成结构化测试点，通过Reviewer评分并在受控次数内由Reviser修正，最后由Finalizer生成可下载的表格化Markdown报告。整个流程由Python Orchestrator根据AgentState逐节点编排，页面能够展示决策和事件轨迹。
 
 ### 2.3 当前真实执行链路
 
@@ -48,20 +207,16 @@
 用户输入文本或上传PRD
   → views/tab_test_points.py
   → DocumentService（上传文件时）
-  → TestAssistantManager
-      → RAGService.search()
-          → MilvusRAGManager
-          → Embedding服务
-          → Milvus相似度检索
-      → PromptService
-          → 读取System Prompt
-          → 构建User Prompt
-      → LLMService.generate_stream()
-          → DeepSeekClient.call_stream()
-          → DeepSeek Chat Completions API
-  → Streamlit逐段展示结果
-  → 用户修改或确认
-  → 确认后保存到Milvus
+  → TestAnalysisState
+  → 页面循环调用AgentOrchestrator.run_next()
+      → RequirementAnalyzer
+      → KnowledgeRetriever
+          → RAGService / Embedding / Milvus
+      → TestPointGenerator
+      → TestPointReviewer
+      → TestPointReviser（未达标且未达到上限时）
+      → Finalizer
+  → Streamlit展示状态、轨迹、测试点、评分和报告
 ```
 
 ### 2.4 当前还没有实现什么
@@ -69,9 +224,9 @@
 以下能力暂时不能写成“已经实现”：
 
 - Agent 自主选择工具
-- RequirementAnalyzer 结构化需求分析节点
-- Reviewer 自动质量评审
-- 自动反思与修正循环
+- 测试点生成后的页面人工反馈
+- MySQL历史任务持久化与跨服务重启恢复
+- 单个LLM响应的Token级流式展示
 - 多 Agent 协作
 - FastAPI + React/Vue 前后端分离
 - 经过评测证明的覆盖率提升

@@ -16,9 +16,9 @@ st.markdown("""
 }
 /* 主内容区宽度与间距 */
 .block-container {
-    padding-top: 4rem;
-    padding-bottom: 3rem;
-    max-width: 1200px;
+    padding-top: 3.75rem;
+    padding-bottom: 2rem;
+    max-width: 1600px;
 }
 /* 全局字体 */
 body {
@@ -83,6 +83,15 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 div[data-testid="stFileUploader"] {
     border-radius: 8px;
     transition: border-color 0.25s ease;
+}
+
+/* 概览卡片在窄列中保持可读，避免状态和步骤被截断 */
+div[data-testid="stMetricValue"] {
+    font-size: 1.45rem !important;
+    line-height: 1.25 !important;
+}
+div[data-testid="stMetricLabel"] {
+    font-size: 0.78rem !important;
 }
 
 /* ── Tab 标签美化 ── */

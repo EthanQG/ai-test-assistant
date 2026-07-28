@@ -45,14 +45,40 @@ class PromptService:
         return "\n\n".join(sections)
 
     @staticmethod
-    def build_requirement_analysis_prompt(requirement: str) -> str:
+    def build_requirement_analysis_prompt(
+        requirement: str,
+        user_clarifications: list[dict] | None = None,
+        deferred_questions: list[str] | None = None,
+    ) -> str:
         cleaned_requirement = requirement.strip()
         if not cleaned_requirement:
             raise ValueError("requirement cannot be empty")
-        return (
+        prompt = (
             "请对以下原始需求进行结构化分析，并严格按照系统要求只返回 JSON。\n\n"
             f"【原始需求】\n{cleaned_requirement}"
         )
+        if user_clarifications:
+            prompt += (
+                "\n\n【用户补充确认】\n"
+                + json.dumps(
+                    user_clarifications,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n补充确认属于当前需求事实，请与原始需求一起分析。"
+            )
+        if deferred_questions:
+            prompt += (
+                "\n\n【用户暂时无法确认的问题】\n"
+                + json.dumps(
+                    deferred_questions,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n这些问题不要再次放入open_questions，也不得自行假设答案；"
+                "请将相关不确定性作为推导风险处理。"
+            )
+        return prompt
 
     @staticmethod
     def build_structured_test_points_prompt(

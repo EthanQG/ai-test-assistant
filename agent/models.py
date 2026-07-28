@@ -140,6 +140,11 @@ class RequirementAnalysisResult:
             raise RequirementAnalysisValidationError(
                 "inferred_risks must be a list"
             )
+        open_questions = _string_list(payload, "open_questions")
+        if len(open_questions) > 3:
+            raise RequirementAnalysisValidationError(
+                "open_questions must contain at most 3 items"
+            )
 
         return cls(
             summary=_required_text(payload, "summary"),
@@ -156,7 +161,7 @@ class RequirementAnalysisResult:
             inferred_risks=[
                 InferredRisk.from_dict(item) for item in risk_payload
             ],
-            open_questions=_string_list(payload, "open_questions"),
+            open_questions=open_questions,
         )
 
     @staticmethod

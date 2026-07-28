@@ -57,6 +57,25 @@ class DeepSeekClientTests(unittest.TestCase):
         )
         self.assertEqual(post.call_args.kwargs["timeout"], 30)
 
+    @patch("utils.ai_client.requests.post")
+    def test_call_can_override_max_tokens_for_large_json(self, post):
+        post.return_value = FakeResponse(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": '{"ok": true}'},
+                    }
+                ]
+            }
+        )
+        client = client_without_environment()
+
+        client.call("返回较大的JSON", max_tokens=8192)
+
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["max_tokens"], 8192)
+
     def test_length_finish_reason_is_reported_as_truncation(self):
         result = {
             "choices": [

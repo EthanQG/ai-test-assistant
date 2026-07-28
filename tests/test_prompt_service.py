@@ -51,6 +51,23 @@ class PromptServiceTests(unittest.TestCase):
         ):
             PromptService.build_requirement_analysis_prompt("  ")
 
+    def test_requirement_analysis_prompt_contains_user_clarifications(self):
+        prompt = PromptService.build_requirement_analysis_prompt(
+            "用户可以使用优惠券",
+            user_clarifications=[
+                {
+                    "question": "优惠券是否允许叠加？",
+                    "answer": "不允许叠加",
+                }
+            ],
+            deferred_questions=["优惠券失效时间如何计算？"],
+        )
+
+        self.assertIn("用户补充确认", prompt)
+        self.assertIn("不允许叠加", prompt)
+        self.assertIn("用户暂时无法确认的问题", prompt)
+        self.assertIn("优惠券失效时间如何计算？", prompt)
+
     def test_structured_test_points_prompt_contains_context(self):
         prompt = PromptService.build_structured_test_points_prompt(
             {

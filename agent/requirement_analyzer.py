@@ -1,9 +1,11 @@
+from dataclasses import replace
+
 from services.llm_service import LLMService
 from services.prompt_service import PromptService
 
 from .events import AgentStep
 from .models import RequirementAnalysisResult
-from .state import TestAnalysisState
+from .state import AgentStatus, TestAnalysisState
 from .structured_output import generate_and_parse_json
 
 
@@ -37,7 +39,9 @@ class RequirementAnalyzer:
             )
             user_prompt = (
                 self.prompt_service.build_requirement_analysis_prompt(
-                    state.requirement
+                    state.requirement,
+                    user_clarifications=state.user_clarifications,
+                    deferred_questions=state.deferred_questions,
                 )
             )
             result = generate_and_parse_json(
@@ -46,6 +50,15 @@ class RequirementAnalyzer:
                 system_prompt,
                 RequirementAnalysisResult.from_json,
             )
+            if state.deferred_questions:
+                result = replace(
+                    result,
+                    open_questions=[
+                        question
+                        for question in result.open_questions
+                        if question not in state.deferred_questions
+                    ],
+                )
             self._apply_result(state, result)
 
             state.complete_step(
@@ -68,6 +81,35 @@ class RequirementAnalyzer:
             raise RequirementAnalysisError(
                 f"requirement analysis failed: {exc}"
             ) from exc
+
+    def reanalyze_with_clarifications(
+        self,
+        state: TestAnalysisState,
+        answers: dict[str, str | None],
+    ) -> RequirementAnalysisResult:
+        if state.status != AgentStatus.WAITING_FOR_USER:
+            raise RequirementAnalysisError(
+                "task must be waiting for user clarification"
+            )
+        expected_questions = list(state.open_questions)
+        if set(answers) != set(expected_questions):
+            raise RequirementAnalysisError(
+                "answers must match all current open questions"
+            )
+
+        for question in expected_questions:
+            raw_answer = answers[question]
+            answer = raw_answer.strip() if isinstance(raw_answer, str) else ""
+            if answer:
+                state.user_clarifications.append(
+                    {"question": question, "answer": answer}
+                )
+            elif question not in state.deferred_questions:
+                state.deferred_questions.append(question)
+
+        state.open_questions = []
+        state.resume()
+        return self.analyze(state)
 
     @staticmethod
     def _apply_result(

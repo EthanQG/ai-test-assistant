@@ -108,6 +108,18 @@ class RequirementAnalysisResultTests(unittest.TestCase):
                 json.dumps(payload, ensure_ascii=False)
             )
 
+    def test_more_than_three_open_questions_are_rejected(self):
+        payload = valid_analysis_payload()
+        payload["open_questions"] = ["问题一", "问题二", "问题三", "问题四"]
+
+        with self.assertRaisesRegex(
+            RequirementAnalysisValidationError,
+            "at most 3",
+        ):
+            RequirementAnalysisResult.from_json(
+                json.dumps(payload, ensure_ascii=False)
+            )
+
 
 class RequirementAnalyzerTests(unittest.TestCase):
     def test_successful_analysis_updates_state_and_events(self):
@@ -207,6 +219,68 @@ class RequirementAnalyzerTests(unittest.TestCase):
 
         self.assertEqual(state.status, AgentStatus.FAILED)
         self.assertIn("model timeout", state.error_message)
+
+    def test_waiting_task_can_be_reanalyzed_with_answers_and_deferred_items(self):
+        llm = FakeLLMService(
+            json.dumps(valid_analysis_payload(), ensure_ascii=False)
+        )
+        analyzer = RequirementAnalyzer(llm_service=llm)
+        state = TestAnalysisState(requirement="用户可以使用优惠券")
+        questions = ["优惠券是否允许叠加？", "优惠券失效时间如何计算？"]
+        state.wait_for_user(questions)
+
+        analyzer.reanalyze_with_clarifications(
+            state,
+            {
+                questions[0]: "不允许叠加",
+                questions[1]: None,
+            },
+        )
+
+        self.assertEqual(
+            state.user_clarifications,
+            [{"question": questions[0], "answer": "不允许叠加"}],
+        )
+        self.assertEqual(state.deferred_questions, [questions[1]])
+        self.assertEqual(state.open_questions, [])
+        self.assertEqual(state.status, AgentStatus.RUNNING)
+        self.assertIn("不允许叠加", llm.last_prompt)
+        self.assertIn(questions[1], llm.last_prompt)
+
+    def test_clarification_answers_must_match_current_questions(self):
+        analyzer = RequirementAnalyzer(
+            llm_service=FakeLLMService(
+                json.dumps(valid_analysis_payload(), ensure_ascii=False)
+            )
+        )
+        state = TestAnalysisState(requirement="用户可以使用优惠券")
+        state.wait_for_user(["优惠券是否允许叠加？"])
+
+        with self.assertRaisesRegex(
+            RequirementAnalysisError,
+            "must match all current open questions",
+        ):
+            analyzer.reanalyze_with_clarifications(
+                state,
+                {"另一个问题": "不允许"},
+            )
+
+    def test_deferred_question_is_not_asked_again(self):
+        payload = valid_analysis_payload()
+        payload["open_questions"] = ["优惠券失效时间如何计算？"]
+        analyzer = RequirementAnalyzer(
+            llm_service=FakeLLMService(
+                json.dumps(payload, ensure_ascii=False)
+            )
+        )
+        state = TestAnalysisState(requirement="用户可以使用优惠券")
+        state.deferred_questions = ["优惠券失效时间如何计算？"]
+
+        result = analyzer.analyze(state)
+
+        self.assertEqual(result.open_questions, [])
+        self.assertEqual(state.open_questions, [])
+        self.assertEqual(state.status, AgentStatus.RUNNING)
 
 
 if __name__ == "__main__":

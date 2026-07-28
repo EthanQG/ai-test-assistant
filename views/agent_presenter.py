@@ -12,6 +12,24 @@ STATUS_LABELS = {
     "failed": "执行失败",
 }
 
+STEP_LABELS = {
+    "initialize": "初始化",
+    "analyze_requirement": "需求分析",
+    "retrieve_knowledge": "知识检索",
+    "generate_test_points": "生成测试点",
+    "review_test_points": "质量评审",
+    "collect_human_feedback": "人工反馈",
+    "revise_test_points": "修正测试点",
+    "finalize": "整理报告",
+}
+
+CATEGORY_LABELS = {
+    "functional": "功能",
+    "boundary": "边界",
+    "exception": "异常",
+    "non_functional": "非功能",
+}
+
 
 def task_overview(state: TestAnalysisState) -> dict[str, Any]:
     final_result = state.final_result or {}
@@ -19,7 +37,7 @@ def task_overview(state: TestAnalysisState) -> dict[str, Any]:
     return {
         "status": state.status.value,
         "status_label": STATUS_LABELS[state.status.value],
-        "current_step": state.current_step.value,
+        "current_step": STEP_LABELS[state.current_step.value],
         "test_point_count": len(state.test_points),
         "overall_score": quality.get(
             "overall_score",
@@ -63,7 +81,10 @@ def test_point_rows(state: TestAnalysisState) -> list[dict[str, str]]:
         rows.append(
             {
                 "标题": str(test_point.get("title", "")),
-                "分类": str(test_point.get("category", "")),
+                "分类": CATEGORY_LABELS.get(
+                    str(test_point.get("category", "")),
+                    str(test_point.get("category", "")),
+                ),
                 "优先级": str(test_point.get("priority", "")),
                 "场景": str(test_point.get("scenario", "")),
                 "步骤": "\n".join(test_point.get("steps", [])),

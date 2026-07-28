@@ -17,11 +17,17 @@ class LLMService:
     def generate(self, prompt: str, system_prompt: str = "") -> str:
         return self._get_client().call(prompt, system_prompt)
 
-    def generate_json(self, prompt: str, system_prompt: str = "") -> str:
+    def generate_json(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        max_tokens: int | None = None,
+    ) -> str:
         return self._get_client().call(
             prompt,
             system_prompt,
             response_format={"type": "json_object"},
+            max_tokens=max_tokens,
         )
 
     def generate_stream(

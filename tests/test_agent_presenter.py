@@ -36,6 +36,7 @@ class AgentPresenterTests(unittest.TestCase):
         overview = task_overview(state)
 
         self.assertEqual(overview["status_label"], "已完成")
+        self.assertEqual(overview["current_step"], "整理报告")
         self.assertEqual(overview["test_point_count"], 1)
         self.assertEqual(overview["overall_score"], 92)
         self.assertEqual(overview["rag_status"], "matched")
@@ -73,6 +74,7 @@ class AgentPresenterTests(unittest.TestCase):
 
         rows = test_point_rows(state)
 
+        self.assertEqual(rows[0]["分类"], "异常")
         self.assertEqual(rows[0]["步骤"], "第一次提交\n再次提交")
         self.assertEqual(
             rows[0]["来源"],

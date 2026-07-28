@@ -48,3 +48,28 @@ class StructuredOutputTests(unittest.TestCase):
                 json.loads,
             )
         self.assertEqual(llm.calls, 1)
+
+    def test_custom_max_tokens_is_forwarded_to_json_generation(self):
+        class TokenAwareLLM:
+            received_max_tokens = None
+
+            def generate_json(
+                self,
+                prompt,
+                system_prompt,
+                max_tokens=None,
+            ):
+                self.received_max_tokens = max_tokens
+                return '{"ok": true}'
+
+        llm = TokenAwareLLM()
+        result = generate_and_parse_json(
+            llm,
+            "返回JSON",
+            "系统规则",
+            json.loads,
+            max_tokens=8192,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(llm.received_max_tokens, 8192)

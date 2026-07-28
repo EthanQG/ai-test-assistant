@@ -96,6 +96,12 @@ class FinalizerTests(unittest.TestCase):
         self.assertEqual(result.quality_summary["overall_score"], 92)
         self.assertEqual(state.final_result, result.to_dict())
         self.assertIn("# 测试分析报告", state.report)
+        self.assertIn(
+            "| 序号 | 标题 | 分类 | 优先级 | 场景 |",
+            state.report,
+        )
+        self.assertIn("| 1 | 库存充足时提交订单 | 功能 | P0 |", state.report)
+        self.assertNotIn("### 1. 库存充足时提交订单", state.report)
         self.assertIn("库存充足时提交订单", state.report)
         self.assertEqual(state.test_points, original_points)
         self.assertEqual(
@@ -114,6 +120,7 @@ class FinalizerTests(unittest.TestCase):
         )
         state.rag_error_message = "Milvus连接失败"
         state.review_result["missing_scenarios"] = ["关注批量提交"]
+        state.deferred_questions = ["批量提交的最大数量是多少？"]
 
         result = Finalizer().finalize(state)
 
@@ -123,6 +130,10 @@ class FinalizerTests(unittest.TestCase):
         )
         self.assertIn(
             "评审仍建议关注：关注批量提交",
+            result.warnings,
+        )
+        self.assertIn(
+            "用户暂未确认：批量提交的最大数量是多少？",
             result.warnings,
         )
         self.assertIn("## 注意事项", state.report)

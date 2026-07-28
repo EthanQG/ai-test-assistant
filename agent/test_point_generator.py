@@ -48,6 +48,7 @@ class TestPointGenerator:
                 user_prompt,
                 system_prompt,
                 TestPointGenerationResult.from_json,
+                max_tokens=8192,
             )
             state.test_points = [
                 test_point.to_dict()

@@ -19,6 +19,7 @@ class DeepSeekClient:
         prompt: str,
         system_prompt: str = "",
         response_format: dict[str, str] | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
@@ -33,7 +34,7 @@ class DeepSeekClient:
         payload = {
             "model": self.config.model,
             "messages": messages,
-            "max_tokens": self.config.max_tokens,
+            "max_tokens": max_tokens or self.config.max_tokens,
             "temperature": self.config.temperature,
             "stream": False
         }

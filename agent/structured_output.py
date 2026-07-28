@@ -13,6 +13,7 @@ def generate_and_parse_json(
     system_prompt: str,
     parser: Callable[[str], StructuredResult],
     max_attempts: int = 2,
+    max_tokens: int | None = None,
 ) -> StructuredResult:
     """Generate structured JSON with one bounded retry on validation failure."""
     if max_attempts <= 0:
@@ -30,7 +31,17 @@ def generate_and_parse_json(
 
         generate_json = getattr(llm_service, "generate_json", None)
         if callable(generate_json):
-            raw_response = generate_json(current_prompt, system_prompt)
+            if max_tokens is None:
+                raw_response = generate_json(
+                    current_prompt,
+                    system_prompt,
+                )
+            else:
+                raw_response = generate_json(
+                    current_prompt,
+                    system_prompt,
+                    max_tokens=max_tokens,
+                )
         else:
             raw_response = llm_service.generate(
                 current_prompt,
