@@ -142,6 +142,10 @@ class TestAnalysisStateTests(unittest.TestCase):
                 "status": "ready",
             }
         ]
+        state.final_result = {
+            "requirement_summary": "订单提交",
+            "test_point_count": 1,
+        }
 
         payload = state.to_dict()
         serialized = json.dumps(payload, ensure_ascii=False)
@@ -176,6 +180,7 @@ class TestAnalysisStateTests(unittest.TestCase):
             payload["human_feedback"][0]["feedback_id"],
             "feedback-1",
         )
+        self.assertEqual(payload["final_result"]["test_point_count"], 1)
         self.assertIn("用户可以提交订单", serialized)
         self.assertIn("occurred_at", serialized)
 

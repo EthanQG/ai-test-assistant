@@ -1,6 +1,7 @@
 """Core state models for the Test Analysis Agent."""
 
 from .events import AgentEvent, AgentEventType, AgentStep
+from .finalizer import FinalizationError, FinalizationResult, Finalizer
 from .human_feedback import (
     FeedbackAction,
     FeedbackStatus,
@@ -69,6 +70,9 @@ __all__ = [
     "FeedbackAction",
     "FeedbackStatus",
     "FeedbackType",
+    "FinalizationError",
+    "FinalizationResult",
+    "Finalizer",
     "HumanFeedback",
     "HumanFeedbackHandler",
     "HumanFeedbackValidationError",

@@ -64,6 +64,7 @@ class TestAnalysisState:
     max_revision_count: int = 2
     revision_history: list[dict[str, Any]] = field(default_factory=list)
     human_feedback: list[dict[str, Any]] = field(default_factory=list)
+    final_result: dict[str, Any] | None = None
     report: str = ""
     error_message: str | None = None
     events: list[AgentEvent] = field(default_factory=list)
@@ -199,6 +200,7 @@ class TestAnalysisState:
             "max_revision_count": self.max_revision_count,
             "revision_history": self.revision_history,
             "human_feedback": self.human_feedback,
+            "final_result": self.final_result,
             "report": self.report,
             "error_message": self.error_message,
             "events": [event.to_dict() for event in self.events],

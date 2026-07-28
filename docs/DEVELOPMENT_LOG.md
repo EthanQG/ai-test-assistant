@@ -918,3 +918,65 @@ LLM负责各节点内部的语义任务，但不返回 `next_action`。是否等
 ### 影响范围
 
 本次只校正后续开发计划，不改变阶段2.9已经实现的Orchestrator行为。下一阶段实现Finalizer时，再把当前的 `ready_for_finalization` 停止结果扩展为可执行的最终化节点。
+
+---
+
+## 阶段 2.10：Finalizer最终结果整理节点
+
+### 本阶段目标
+
+补齐Agent内部最后一个节点，把已经通过质量门禁的结构化测试点整理成稳定的页面数据和Markdown报告，并让Orchestrator真正完成任务。
+
+### 修改内容
+
+- 新增 `FinalizationResult` 和 `Finalizer`
+- State新增 `final_result`
+- 统计测试点分类、优先级和来源
+- 汇总需求覆盖、Reviewer质量结果、评审轮次和修正次数
+- 保留推导风险、RAG降级/无命中提示和Reviewer关注项
+- 生成确定性的Markdown测试分析报告
+- Orchestrator新增 `finalize` 动作并执行Finalizer
+- Finalizer完成后任务进入`completed`，下一轮决策返回`terminal`
+- 增加Finalizer、State序列化和完整编排闭环测试
+
+### 核心流程
+
+```text
+review_passed=True
+  → Orchestrator选择finalize
+  → Finalizer校验测试点和完整Reviewer结果
+  → Python生成final_result和Markdown report
+  → status=completed
+  → Orchestrator下一轮返回terminal
+```
+
+### 关键设计
+
+Finalizer不调用LLM。测试点在Reviewer通过后已经成为当前有效版本，如果Finalizer再次让模型改写内容，新的内容就没有经过评审。因此本节点只做统计、复制、格式化和风险提示。
+
+`final_result`服务于程序和后续页面，保留结构化字段；`report`服务于用户阅读和Markdown下载。两者来自同一份已校验数据，避免页面重新解析Markdown。
+
+达到修正上限仍不进入Finalizer。`revision_limit_reached`表示自动方式未达到质量门槛，应保留当前结果等待人工处理，不能伪装为成功完成。
+
+### 验证结果
+
+- 新增4个Finalizer单元测试
+- 全量101个单元测试通过
+- 覆盖成功最终化、统计和报告、降级警告、未通过评审阻断、非法输入阻断、Orchestrator终态闭环及最后允许步骤完成任务
+- Finalizer不访问LLM、Milvus或Embedding服务
+
+### 当前边界
+
+- Finalizer只接受Reviewer通过的结果，尚未设计“达到上限后人工强制确认”的状态
+- Markdown报告暂未接入Streamlit下载入口
+- 页面尚未展示`final_result`、事件轨迹和人工反馈
+
+### 建议提交信息
+
+```text
+功能：实现Agent最终结果整理节点
+```
+
+### 下一步
+
+进入阶段2.11，将AgentState、Orchestrator、执行轨迹、人工反馈和Finalizer结果接入Streamlit页面。

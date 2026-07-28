@@ -42,6 +42,7 @@ class RecordingNode:
     generate = _run
     review = _run
     revise = _run
+    finalize = _run
 
 
 class AgentOrchestratorDecisionTests(unittest.TestCase):
@@ -78,14 +79,14 @@ class AgentOrchestratorDecisionTests(unittest.TestCase):
             OrchestratorAction.REVIEW_TEST_POINTS,
         )
 
-    def test_passing_task_is_ready_for_finalization(self):
+    def test_passing_task_is_finalized(self):
         state = generated_state()
         state.review_result = {"overall_score": 90}
         state.review_passed = True
         decision = self.orchestrator.decide_next(state)
         self.assertEqual(
             decision.action,
-            OrchestratorAction.READY_FOR_FINALIZATION,
+            OrchestratorAction.FINALIZE,
         )
 
     def test_failed_review_revises_below_limit(self):
@@ -188,12 +189,16 @@ class AgentOrchestratorExecutionTests(unittest.TestCase):
             state.review_passed = None
 
         reviser = RecordingNode(revise_callback)
+        finalizer = RecordingNode(
+            lambda state, _: state.complete("最终测试分析报告")
+        )
         orchestrator = AgentOrchestrator(
             requirement_analyzer=analyzer,
             knowledge_retriever=retriever,
             test_point_generator=generator,
             test_point_reviewer=reviewer,
             test_point_reviser=reviser,
+            finalizer=finalizer,
             max_revision_count=2,
         )
         state = TestAnalysisState("订单需求")
@@ -209,12 +214,15 @@ class AgentOrchestratorExecutionTests(unittest.TestCase):
                 OrchestratorAction.REVIEW_TEST_POINTS,
                 OrchestratorAction.REVISE_TEST_POINTS,
                 OrchestratorAction.REVIEW_TEST_POINTS,
-                OrchestratorAction.READY_FOR_FINALIZATION,
+                OrchestratorAction.FINALIZE,
+                OrchestratorAction.TERMINAL,
             ],
         )
         self.assertEqual(reviewer.calls, 2)
         self.assertEqual(reviser.calls, 1)
+        self.assertEqual(finalizer.calls, 1)
         self.assertEqual(state.max_revision_count, 2)
+        self.assertEqual(state.status, AgentStatus.COMPLETED)
 
     def test_max_steps_fails_runaway_orchestration(self):
         reviewer = RecordingNode()
@@ -235,6 +243,32 @@ class AgentOrchestratorExecutionTests(unittest.TestCase):
         self.assertEqual(state.status, AgentStatus.FAILED)
         self.assertEqual(reviewer.calls, 2)
 
+    def test_finalization_on_last_allowed_step_is_not_runaway(self):
+        node = RecordingNode()
+        finalizer = RecordingNode(
+            lambda state, _: state.complete("最终测试分析报告")
+        )
+        orchestrator = AgentOrchestrator(
+            requirement_analyzer=node,
+            knowledge_retriever=node,
+            test_point_generator=node,
+            test_point_reviewer=node,
+            test_point_reviser=node,
+            finalizer=finalizer,
+            max_steps=1,
+        )
+        state = generated_state()
+        state.review_result = {"overall_score": 90}
+        state.review_passed = True
+
+        decisions = orchestrator.run_until_blocked(state)
+
+        self.assertEqual(
+            [decision.action for decision in decisions],
+            [OrchestratorAction.FINALIZE],
+        )
+        self.assertEqual(state.status, AgentStatus.COMPLETED)
+
     def test_invalid_limits_are_rejected(self):
         node = RecordingNode()
         dependencies = {
@@ -243,6 +277,7 @@ class AgentOrchestratorExecutionTests(unittest.TestCase):
             "test_point_generator": node,
             "test_point_reviewer": node,
             "test_point_reviser": node,
+            "finalizer": node,
         }
         with self.assertRaisesRegex(ValueError, "cannot be negative"):
             AgentOrchestrator(

@@ -1,6 +1,6 @@
 # Test Analysis Agent 当前开发状态
 
-更新时间：2026-07-24
+更新时间：2026-07-28
 
 这是一份跨电脑、跨 Codex 任务的开发接力文档。开始工作时先阅读本文件；完成一个小阶段后，用最新事实覆盖更新，不在这里累积历史记录。
 
@@ -15,8 +15,8 @@
 ## Git 基线
 
 - 分支：`main`
-- 本阶段提交前基线：`aefec4c 功能：实现Agent结构化人工反馈`
-- 最新已提交功能：`aefec4c 功能：实现Agent结构化人工反馈`
+- 本阶段提交前基线：`719a0ad 文档：调整Finalizer与页面开发顺序`
+- 最新已提交功能：`719a0ad 文档：调整Finalizer与页面开发顺序`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
 
@@ -30,7 +30,7 @@ git log -5 --oneline --decorate
 
 ## 当前阶段
 
-阶段 2.9 已完成：已经实现受控Python `AgentOrchestrator`、最大修正次数和评审/修正历史。
+阶段 2.10 已完成开发、尚未提交：已经实现确定性 `Finalizer`、统一最终结果模型、Markdown报告和Orchestrator最终化闭环。
 
 产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
 
@@ -135,6 +135,18 @@ git log -5 --oneline --decorate
 - `revision_history`保存修正前后测试点、评审依据和人工反馈ID
 - 人工反馈可覆盖自动评审通过分支，但同样受自动修正次数上限保护
 
+### 阶段 2.10：Finalizer
+
+- 新增结构化 `FinalizationResult`
+- 使用Python统计测试点分类、优先级、来源和需求覆盖情况
+- 汇总Reviewer评分、维度分、评审轮次和自动修正次数
+- 保留推导风险、RAG降级或无命中提示及Reviewer关注项
+- 生成统一Markdown测试分析报告
+- Finalizer不调用LLM，也不修改已通过评审的测试点
+- 只有评审通过且没有待处理人工反馈时才能最终化
+- 最终结果写入 `state.final_result`，报告写入 `state.report`
+- Orchestrator执行Finalizer后将任务更新为`completed`，下一轮返回`terminal`
+
 ## 当前架构
 
 ```text
@@ -160,15 +172,16 @@ agent/
   TestPointReviser
   HumanFeedbackHandler
   AgentOrchestrator
-  后续实现Finalizer，再接入Streamlit页面
+  Finalizer
+  后续接入Streamlit页面
 ```
 
 ## 当前测试基线
 
-验证日期：2026-07-24
+验证日期：2026-07-28
 
 ```text
-96 tests passed
+101 tests passed
 ```
 
 验证命令：
@@ -180,22 +193,22 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：Finalizer最终结果整理节点
+## 下一步任务：Streamlit接入Agent
 
-阶段 2.9 提交后，进入阶段 2.10：实现 `Finalizer`，先补齐Agent内部从结构化测试点到最终交付结果的闭环，再进行页面集成。
+阶段 2.10 提交后，进入阶段 2.11：把完整Agent主链路接入Streamlit，逐步替换页面对旧Workflow的直接调用。
 
 目标流程：
 
 ```text
-Reviewer评审通过或结果被人工确认
-  → Orchestrator选择Finalizer
-  → Finalizer汇总测试点、覆盖情况、质量结果、来源和风险
-  → 将统一最终结果写入TestAnalysisState
-  → 任务状态更新为completed
-  → Orchestrator返回terminal
+用户输入PRD
+  → 页面创建并保存TestAnalysisState
+  → 调用Orchestrator执行到阻塞点
+  → 展示AgentEvent、节点状态和结构化测试点
+  → 支持待确认问题与人工反馈
+  → 展示Finalizer最终结果并下载Markdown报告
 ```
 
-阶段2.11再把完整Agent链路接入Streamlit，展示执行轨迹、结构化测试点、Reviewer结果、人工反馈和最终报告。阶段2.12建立离线评测与演示材料。本阶段不进行前后端分离。
+阶段2.11继续使用Streamlit，不进行前后端分离。阶段2.12再建立离线评测与演示材料。
 
 ## 当前限制
 
@@ -204,6 +217,7 @@ Reviewer评审通过或结果被人工确认
 - Orchestrator已完成，但尚未由Streamlit页面调用
 - 人工反馈内部能力已完成，但尚未接入新Agent页面
 - 现有 Streamlit 页面仍使用旧 Workflow 的 Markdown 报告，尚未展示 Agent 内部结构化测试点
+- 达到自动修正上限后仍需页面提供人工处理入口，不能自动最终化
 - Milvus 与 Embedding 地址仍在现有客户端中硬编码
 - 自动化用例生成和异常日志分析仍是未完成功能
 

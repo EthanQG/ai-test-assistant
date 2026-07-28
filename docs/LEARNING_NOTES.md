@@ -2062,3 +2062,115 @@ revision_limit_reached
 - [ ] 能解释决策顺序的重要性
 - [ ] 能区分修正次数上限与总步骤上限
 - [ ] 能解释为什么达到修正上限不等于任务失败
+
+---
+
+## 二十一、阶段 2.10：Finalizer最终结果整理节点
+
+### 21.1 Finalizer负责什么
+
+Finalizer是Agent内部的交付整理节点。它接收已经通过Reviewer的结构化测试点，生成两份同源结果：
+
+```text
+final_result
+  给程序和页面使用的结构化字典
+
+report
+  给用户阅读和下载的Markdown文本
+```
+
+它会统计分类、优先级、来源和需求覆盖，汇总评分、修正次数、推导风险与降级提示，但不会生成新的测试点。
+
+### 21.2 为什么Finalizer不使用LLM
+
+Reviewer评审的是当前测试点版本。如果评审通过后再让LLM润色或改写测试点，实际交付内容就与被评审内容不同。
+
+```text
+已评审版本
+  → LLM再次改写
+  → 新版本没有经过Reviewer
+```
+
+因此Finalizer使用Python进行确定性统计和Markdown格式化，保证相同State得到相同语义结果，也更容易测试。
+
+### 21.3 final_result与report的区别
+
+`final_result`保留字段和类型，页面可以直接显示测试点表格、评分卡片和数量统计。`report`适合阅读和下载，但不应该再被程序反向解析。
+
+这延续了项目的结构化原则：
+
+```text
+结构化数据是事实来源
+Markdown是展示结果
+```
+
+### 21.4 为什么达到修正上限不能Finalizer
+
+达到上限只表示系统停止自动修改，不表示质量已经合格。如果`review_passed=False`仍然生成完成报告，会把“停止尝试”误写成“任务成功”。
+
+当前规则是：
+
+```text
+review_passed=True
+→ Finalizer
+
+review_passed=False且达到上限
+→ revision_limit_reached
+→ 等待人工处理
+```
+
+### 21.5 Finalizer如何更新State
+
+执行成功后依次发生：
+
+```text
+start_step(finalize)
+→ 写入final_result
+→ complete_step(finalize)
+→ complete(report)
+→ status=completed
+```
+
+Orchestrator再次读取State时发现它已经是终态，因此返回`terminal`。
+
+### 21.6 面试问题与参考答案
+
+#### 问：Finalizer也是一个LLM节点吗？
+
+答：
+
+> 不是。Finalizer负责对已评审数据做确定性汇总和格式化。它不调用LLM，也不改写测试点，避免评审通过后产生未重新评审的新内容。
+
+#### 问：为什么同时保存final_result和report？
+
+答：
+
+> final_result是页面和API可以直接消费的结构化契约，report是面向用户的Markdown交付物。页面不需要解析Markdown，下载报告也不需要重新调用模型。
+
+#### 问：Finalizer怎样保证不会交付未通过结果？
+
+答：
+
+> 节点会校验review_passed必须为True、Reviewer结果必须完整、测试点必须通过结构化模型校验，而且不能存在尚未应用的人工反馈。Orchestrator也只在这些前置状态满足时选择finalize。
+
+### 21.7 当前限制
+
+- 尚未接入Streamlit页面
+- 尚未提供达到修正上限后的人工强制确认机制
+- 报告目前只支持Markdown
+- 最终结果尚未持久化到数据库
+
+### 21.8 动手练习
+
+- [ ] 修改一个测试点分类并观察category_counts
+- [ ] 将RAG状态改为degraded并检查warnings
+- [ ] 将review_passed改为False并观察FinalizationError
+- [ ] 对比final_result与report分别适合哪些页面组件
+
+### 21.9 掌握检查
+
+- [ ] 能解释Finalizer为什么不调用LLM
+- [ ] 能区分final_result与report
+- [ ] 能说清最终化的前置条件
+- [ ] 能解释为什么修正上限不等于评审通过
+- [ ] 能描述completed到terminal的关系

@@ -19,6 +19,7 @@
 - 内部已实现测试点定向修正节点，可根据Reviewer问题修正并强制重新评审
 - 内部已实现结构化人工反馈，可区分测试建议与需确认的业务规则并驱动Reviser
 - 内部已实现受控Python编排器，可自动串联节点、限制修正次数并保留每轮变化
+- 内部已实现Finalizer，可确定性汇总覆盖、质量、来源、风险和最终Markdown报告
 
 ## 项目结构
 
@@ -81,7 +82,6 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 
 ## 后续计划
 
-1. 实现Finalizer，将结构化测试点整理为统一的最终结果和可下载报告
-2. 将Agent状态、执行轨迹、人工审核和最终确认接入Streamlit页面
-3. 建立离线评测集，量化 RAG 和 Reviewer 带来的覆盖率提升
-4. Agent 核心稳定后，再评估 FastAPI + React/Vue 前后端分离
+1. 将Agent状态、执行轨迹、人工审核和最终结果接入Streamlit页面
+2. 建立离线评测集，量化 RAG 和 Reviewer 带来的覆盖率提升
+3. Agent 核心稳定后，再评估 FastAPI + React/Vue 前后端分离
