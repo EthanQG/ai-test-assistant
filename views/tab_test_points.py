@@ -8,6 +8,7 @@ from agent import (
     FeedbackStatus,
     HumanFeedbackHandler,
     OrchestratorAction,
+    OrchestratorDecision,
     RequirementAnalyzer,
     TestAnalysisState,
 )
@@ -15,9 +16,11 @@ from services.document_service import DocumentService
 from utils.knowledge_base import KnowledgeBaseManager
 
 from .agent_presenter import (
+    action_progress_message,
     decision_rows,
     event_rows,
     feedback_rows,
+    static_table_html,
     task_overview,
     test_point_rows,
 )
@@ -28,6 +31,8 @@ DECISIONS_KEY = "agent_decisions"
 AUTO_RUN_KEY = "agent_auto_run"
 PENDING_CLARIFICATIONS_KEY = "agent_pending_clarifications"
 EXECUTION_STEPS_KEY = "agent_execution_steps"
+FEEDBACK_FORM_VERSION_KEY = "agent_feedback_form_version"
+FEEDBACK_NOTICE_KEY = "agent_feedback_notice"
 MAX_PAGE_STEPS = 20
 
 
@@ -59,6 +64,8 @@ def _initialize_session() -> None:
     st.session_state.setdefault(AUTO_RUN_KEY, False)
     st.session_state.setdefault(PENDING_CLARIFICATIONS_KEY, None)
     st.session_state.setdefault(EXECUTION_STEPS_KEY, 0)
+    st.session_state.setdefault(FEEDBACK_FORM_VERSION_KEY, 0)
+    st.session_state.setdefault(FEEDBACK_NOTICE_KEY, None)
 
     if st.session_state[STATE_KEY] is not None:
         return
@@ -155,6 +162,9 @@ def _render_workbench():
         st.rerun()
 
     state = st.session_state.get(STATE_KEY)
+    feedback_notice = st.session_state.pop(FEEDBACK_NOTICE_KEY, None)
+    if feedback_notice:
+        st.success(feedback_notice)
     pending_business_feedback = (
         HumanFeedbackHandler.pending_confirmation_feedback(state)
         if state is not None
@@ -271,6 +281,7 @@ def _render_clarification_form(state: TestAnalysisState) -> None:
 
 
 def _render_human_feedback_form(state: TestAnalysisState) -> None:
+    form_version = st.session_state[FEEDBACK_FORM_VERSION_KEY]
     st.subheader("人工反馈")
     st.info(
         "测试建议会直接进入修正；新增或修改业务规则需要再次确认，"
@@ -281,7 +292,7 @@ def _render_human_feedback_form(state: TestAnalysisState) -> None:
         "反馈类型",
         ["测试建议", "业务规则"],
         horizontal=True,
-        key=f"feedback_type_{state.task_id}",
+        key=f"feedback_type_{state.task_id}_{form_version}",
     )
     feedback_type = (
         "test_suggestion"
@@ -296,7 +307,10 @@ def _render_human_feedback_form(state: TestAnalysisState) -> None:
     action_label = st.selectbox(
         "希望 Agent 如何处理",
         action_labels,
-        key=f"feedback_action_{state.task_id}_{feedback_type}",
+        key=(
+            f"feedback_action_{state.task_id}_{form_version}_"
+            f"{feedback_type}"
+        ),
     )
     action = {
         "新增": "add",
@@ -330,7 +344,7 @@ def _render_human_feedback_form(state: TestAnalysisState) -> None:
             target_options,
             key=(
                 f"feedback_target_{state.task_id}_"
-                f"{feedback_type}_{action}"
+                f"{form_version}_{feedback_type}_{action}"
             ),
         )
 
@@ -338,7 +352,7 @@ def _render_human_feedback_form(state: TestAnalysisState) -> None:
         priority = st.selectbox(
             "调整后的优先级",
             ["P0", "P1", "P2"],
-            key=f"feedback_priority_{state.task_id}",
+            key=f"feedback_priority_{state.task_id}_{form_version}",
         )
         content = f"将测试点优先级调整为 {priority}"
     elif action == "remove":
@@ -352,7 +366,7 @@ def _render_human_feedback_form(state: TestAnalysisState) -> None:
             ),
             key=(
                 f"feedback_content_{state.task_id}_"
-                f"{feedback_type}_{action}"
+                f"{form_version}_{feedback_type}_{action}"
             ),
         ).strip()
 
@@ -360,14 +374,14 @@ def _render_human_feedback_form(state: TestAnalysisState) -> None:
         "原因或依据",
         height=70,
         placeholder="例如：需求原文、线上问题、遗漏风险或评审结论。",
-        key=f"feedback_reason_{state.task_id}",
+        key=f"feedback_reason_{state.task_id}_{form_version}",
     ).strip()
     submitted = st.button(
         "提交人工反馈",
         type="primary",
         use_container_width=True,
         disabled=target_unavailable,
-        key=f"submit_feedback_{state.task_id}",
+        key=f"submit_feedback_{state.task_id}_{form_version}",
     )
     if not submitted:
         return
@@ -391,6 +405,11 @@ def _render_human_feedback_form(state: TestAnalysisState) -> None:
         )
         st.session_state[PENDING_CLARIFICATIONS_KEY] = None
         st.session_state[EXECUTION_STEPS_KEY] = 0
+        st.session_state[FEEDBACK_FORM_VERSION_KEY] += 1
+        st.session_state[FEEDBACK_NOTICE_KEY] = (
+            "人工反馈已接收。Agent 将按“修正测试点 → 重新评审 → "
+            "更新报告”继续执行。"
+        )
         _persist_task()
         st.rerun()
     except Exception as exc:
@@ -451,6 +470,8 @@ def _create_agent_task(requirement_text: str, uploaded_prd) -> None:
         st.session_state[AUTO_RUN_KEY] = True
         st.session_state[PENDING_CLARIFICATIONS_KEY] = None
         st.session_state[EXECUTION_STEPS_KEY] = 0
+        st.session_state[FEEDBACK_FORM_VERSION_KEY] = 0
+        st.session_state[FEEDBACK_NOTICE_KEY] = None
         _persist_task()
     except Exception as exc:
         _show_execution_error(exc, "Agent 启动失败")
@@ -463,8 +484,10 @@ def _process_agent_step(execution_placeholder) -> None:
 
     stored = _task_store().get(state.task_id, {})
     if stored.get("in_progress"):
-        time.sleep(1)
-        st.rerun()
+        execution_placeholder.info(
+            "当前 Agent 节点仍在执行，请等待完成后再操作。"
+        )
+        return
     if stored:
         st.session_state[DECISIONS_KEY] = stored["decisions"]
         st.session_state[AUTO_RUN_KEY] = stored["auto_run"]
@@ -484,12 +507,27 @@ def _process_agent_step(execution_placeholder) -> None:
     _task_store()[state.task_id] = stored
     try:
         if pending_answers is not None:
-            with execution_placeholder.container():
-                with st.spinner("正在结合补充信息重新分析需求..."):
-                    RequirementAnalyzer().reanalyze_with_clarifications(
-                        state,
-                        pending_answers,
-                    )
+            progress_message = (
+                "正在执行：需求重新分析。模型响应通常需要 1–2 分钟，"
+                "请勿重复点击。"
+            )
+            execution_placeholder.info(progress_message)
+            started_at = time.perf_counter()
+            RequirementAnalyzer().reanalyze_with_clarifications(
+                state,
+                pending_answers,
+            )
+            st.session_state[DECISIONS_KEY].append(
+                OrchestratorDecision(
+                    action=OrchestratorAction.ANALYZE_REQUIREMENT,
+                    reason="已收到用户补充信息，重新执行结构化需求分析",
+                    duration_seconds=round(
+                        time.perf_counter() - started_at,
+                        2,
+                    ),
+                )
+            )
+            st.session_state[EXECUTION_STEPS_KEY] += 1
             st.session_state[PENDING_CLARIFICATIONS_KEY] = None
             st.session_state[AUTO_RUN_KEY] = (
                 state.status == AgentStatus.RUNNING
@@ -522,9 +560,13 @@ def _execute_next_orchestrator_node(
         st.session_state[AUTO_RUN_KEY] = False
         return
 
-    with execution_placeholder.container():
-        with st.spinner("正在执行下一个 Agent 节点..."):
-            decision = AgentOrchestrator().run_next(state)
+    orchestrator = AgentOrchestrator()
+    next_decision = orchestrator.decide_next(state)
+    progress_message = action_progress_message(
+        next_decision.action.value
+    )
+    execution_placeholder.info(progress_message)
+    decision = orchestrator.run_next(state)
     st.session_state[DECISIONS_KEY].append(decision)
     st.session_state[EXECUTION_STEPS_KEY] += 1
 
@@ -606,16 +648,14 @@ def _render_result_panel(state: TestAnalysisState | None) -> None:
             decisions = st.session_state.get(DECISIONS_KEY, [])
             if decisions:
                 st.markdown("#### Orchestrator 决策")
-                st.dataframe(
-                    decision_rows(decisions),
-                    use_container_width=True,
-                    hide_index=True,
+                st.markdown(
+                    static_table_html(decision_rows(decisions)),
+                    unsafe_allow_html=True,
                 )
             st.markdown("#### Agent 事件")
-            st.dataframe(
-                event_rows(state),
-                use_container_width=True,
-                hide_index=True,
+            st.markdown(
+                static_table_html(event_rows(state)),
+                unsafe_allow_html=True,
             )
 
         with points_tab:
@@ -728,6 +768,8 @@ def _reset_session() -> None:
             AUTO_RUN_KEY,
             PENDING_CLARIFICATIONS_KEY,
             EXECUTION_STEPS_KEY,
+            FEEDBACK_FORM_VERSION_KEY,
+            FEEDBACK_NOTICE_KEY,
             "agent_requirement_input",
             "agent_prd_uploader",
         } or key.startswith(

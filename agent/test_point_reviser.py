@@ -4,8 +4,15 @@ from services.llm_service import LLMService
 from services.prompt_service import PromptService
 
 from .events import AgentStep
-from .human_feedback import HumanFeedbackHandler
-from .models import TestPointGenerationResult
+from .human_feedback import (
+    FeedbackAction,
+    HumanFeedback,
+    HumanFeedbackHandler,
+)
+from .models import (
+    TestPointGenerationResult,
+    TestPointRevisionPlan,
+)
 from .state import TestAnalysisState
 from .structured_output import (
     LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
@@ -41,6 +48,9 @@ class TestPointReviser:
         try:
             original_test_points = list(state.test_points)
             ready_feedback = HumanFeedbackHandler.ready_feedback(state)
+            allowed_actions, max_operations = self._revision_scope(
+                ready_feedback
+            )
             system_prompt = self.prompt_service.load_system_prompt(
                 "test_point_revision"
             )
@@ -48,28 +58,43 @@ class TestPointReviser:
                 self.prompt_service.build_test_point_revision_prompt(
                     self._requirement_analysis_payload(state),
                     original_test_points,
-                    review_result=state.review_result,
+                    review_result=(
+                        None
+                        if ready_feedback
+                        else state.review_result
+                    ),
                     human_feedback=[
                         feedback.to_dict()
                         for feedback in ready_feedback
                     ],
+                    allowed_actions=allowed_actions,
+                    max_operations=max_operations,
                 )
             )
-            result = generate_and_parse_json(
+
+            def parse_revision_plan(
+                raw_response: str,
+            ) -> TestPointRevisionPlan:
+                plan = TestPointRevisionPlan.from_json(raw_response)
+                self._validate_revision_scope(
+                    plan,
+                    allowed_actions,
+                    max_operations,
+                )
+                return plan
+
+            revision_plan = generate_and_parse_json(
                 self.llm_service,
                 user_prompt,
                 system_prompt,
-                TestPointGenerationResult.from_json,
+                parse_revision_plan,
                 max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
             )
+            result = revision_plan.apply_to(original_test_points)
             revised_test_points = [
                 test_point.to_dict()
                 for test_point in result.test_points
             ]
-            if revised_test_points == original_test_points:
-                raise ValueError(
-                    "revision did not change any test point"
-                )
 
             state.test_points = revised_test_points
             state.revision_count += 1
@@ -118,6 +143,9 @@ class TestPointReviser:
                     ).get("overall_score"),
                     "review_invalidated": True,
                     "applied_feedback_count": applied_feedback_count,
+                    "operation_count": len(
+                        revision_plan.operations
+                    ),
                 },
             )
             return result
@@ -162,3 +190,47 @@ class TestPointReviser:
             "state_transitions": list(state.state_transitions),
             "inferred_risks": list(state.inferred_risks),
         }
+
+    @staticmethod
+    def _revision_scope(
+        ready_feedback: list[HumanFeedback],
+    ) -> tuple[set[str], int]:
+        if not ready_feedback:
+            return {"add", "replace", "remove"}, 20
+
+        action_mapping = {
+            FeedbackAction.ADD: {"add", "replace"},
+            FeedbackAction.REMOVE: {"remove"},
+            FeedbackAction.MODIFY: {"replace"},
+            FeedbackAction.UPDATE_PRIORITY: {"replace"},
+        }
+        allowed_actions: set[str] = set()
+        max_operations = 0
+        for feedback in ready_feedback:
+            allowed_actions.update(action_mapping[feedback.action])
+            max_operations += (
+                3 if feedback.action == FeedbackAction.ADD else 1
+            )
+        return allowed_actions, min(max_operations, 6)
+
+    @staticmethod
+    def _validate_revision_scope(
+        plan: TestPointRevisionPlan,
+        allowed_actions: set[str],
+        max_operations: int,
+    ) -> None:
+        if len(plan.operations) > max_operations:
+            raise ValueError(
+                "revision operation count exceeds the allowed scope: "
+                f"{len(plan.operations)} > {max_operations}"
+            )
+        unexpected_actions = {
+            operation.action
+            for operation in plan.operations
+            if operation.action not in allowed_actions
+        }
+        if unexpected_actions:
+            raise ValueError(
+                "revision contains actions outside the feedback scope: "
+                + ", ".join(sorted(unexpected_actions))
+            )

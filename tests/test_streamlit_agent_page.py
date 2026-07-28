@@ -1,8 +1,15 @@
 import unittest
 
 from agent import AgentStatus, HumanFeedbackHandler, TestAnalysisState
+from agent.orchestrator import (
+    OrchestratorAction,
+    OrchestratorDecision,
+)
 from streamlit.testing.v1 import AppTest
-from views.tab_test_points import _task_store
+from views.tab_test_points import (
+    FEEDBACK_FORM_VERSION_KEY,
+    _task_store,
+)
 
 
 class StreamlitAgentPageTests(unittest.TestCase):
@@ -104,6 +111,56 @@ class StreamlitAgentPageTests(unittest.TestCase):
             )
         )
 
+    def test_timeline_uses_static_tables(self):
+        state = TestAnalysisState("用户可以使用优惠券")
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = [
+            OrchestratorDecision(
+                action=OrchestratorAction.ANALYZE_REQUIREMENT,
+                reason="尚未完成结构化需求分析",
+                duration_seconds=1.5,
+            )
+        ]
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.table), 0)
+        self.assertTrue(
+            any(
+                "agent-static-table" in markdown.value
+                for markdown in app.markdown
+            )
+        )
+
+    def test_in_progress_task_does_not_start_duplicate_polling(self):
+        state = TestAnalysisState("用户可以使用优惠券")
+        _task_store()[state.task_id] = {
+            "state": state,
+            "decisions": [],
+            "auto_run": True,
+            "pending_clarifications": None,
+            "execution_steps": 1,
+            "in_progress": True,
+        }
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        try:
+            app.run(timeout=10)
+
+            self.assertFalse(app.exception)
+            self.assertTrue(
+                any(
+                    "当前 Agent 节点仍在执行" in info.value
+                    for info in app.info
+                )
+            )
+        finally:
+            _task_store().pop(state.task_id, None)
+
     def test_pending_business_rule_renders_confirmation_actions(self):
         state = TestAnalysisState("用户可以使用优惠券")
         state.test_points = [{"title": "正常使用优惠券"}]
@@ -130,6 +187,56 @@ class StreamlitAgentPageTests(unittest.TestCase):
         self.assertIn(
             "任务已暂停，请在左侧确认或取消新增业务规则。",
             [warning.value for warning in app.warning],
+        )
+
+    def test_submitted_feedback_advances_form_version(self):
+        state = TestAnalysisState("用户可以使用优惠券")
+        state.test_points = [{"title": "正常使用优惠券"}]
+        state.review_result = {"overall_score": 90}
+        state.review_passed = True
+        state.status = AgentStatus.COMPLETED
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+        app.radio[0].set_value("业务规则")
+        app.run(timeout=10)
+        feedback_content = next(
+            item
+            for item in app.text_area
+            if item.label == "反馈内容"
+        )
+        feedback_reason = next(
+            item
+            for item in app.text_area
+            if item.label == "原因或依据"
+        )
+        feedback_content.set_value("优惠券最多叠加两张")
+        feedback_reason.set_value("用户补充业务规则")
+        next(
+            button
+            for button in app.button
+            if button.label == "提交人工反馈"
+        ).click()
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            app.session_state[FEEDBACK_FORM_VERSION_KEY],
+            1,
+        )
+        self.assertEqual(len(state.human_feedback), 1)
+        self.assertEqual(
+            state.human_feedback[0]["status"],
+            "pending_confirmation",
+        )
+        self.assertTrue(
+            any(
+                "人工反馈已接收" in success.value
+                for success in app.success
+            )
         )
 
 

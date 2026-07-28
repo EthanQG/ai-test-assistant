@@ -134,6 +134,7 @@ class PromptServiceTests(unittest.TestCase):
         self.assertIn("库存不足时提交", prompt)
         self.assertIn("补充库存不变预期", prompt)
         self.assertIn("【Reviewer评审结果】", prompt)
+        self.assertIn("不要重写完整测试点集合", prompt)
 
     def test_revision_prompt_rejects_empty_review(self):
         with self.assertRaisesRegex(
@@ -145,6 +146,27 @@ class PromptServiceTests(unittest.TestCase):
                 [{"title": "测试点"}],
                 {},
             )
+
+    def test_human_revision_prompt_contains_hard_scope(self):
+        prompt = PromptService.build_test_point_revision_prompt(
+            {
+                "summary": "订单库存",
+                "requirement_facts": ["库存不足时不能提交"],
+            },
+            [{"title": "库存不足时提交"}],
+            human_feedback=[
+                {
+                    "action": "add",
+                    "content": "增加并发提交场景",
+                }
+            ],
+            allowed_actions={"add", "replace"},
+            max_operations=3,
+        )
+
+        self.assertIn("operations 最多返回 3 项", prompt)
+        self.assertIn("action 只能使用：add、replace", prompt)
+        self.assertIn("不要顺带重写其他测试点", prompt)
 
     def test_custom_prompt_directory_can_be_used(self):
         with tempfile.TemporaryDirectory() as temp_dir:

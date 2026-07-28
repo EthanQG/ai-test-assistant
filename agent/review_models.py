@@ -37,6 +37,26 @@ def _string_list(
     return cleaned
 
 
+def _optional_issue_list(
+    payload: dict[str, Any],
+    field_name: str,
+) -> list[str]:
+    value = payload.get(field_name)
+    if not isinstance(value, list):
+        raise TestPointReviewValidationError(
+            f"{field_name} must be a list"
+        )
+    cleaned = []
+    for item in value:
+        if not isinstance(item, str):
+            raise TestPointReviewValidationError(
+                f"{field_name} must contain strings"
+            )
+        if item.strip():
+            cleaned.append(item.strip())
+    return cleaned
+
+
 def _score(payload: dict[str, Any], field_name: str) -> int:
     value = payload.get(field_name)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -266,7 +286,7 @@ class TestPointReviewResult:
                 RequirementCoverage.from_dict(item)
                 for item in raw_coverage
             ],
-            missing_scenarios=_string_list(
+            missing_scenarios=_optional_issue_list(
                 payload,
                 "missing_scenarios",
             ),
@@ -275,7 +295,7 @@ class TestPointReviewResult:
                 HallucinationIssue.from_dict(item)
                 for item in raw_hallucinations
             ],
-            revision_suggestions=_string_list(
+            revision_suggestions=_optional_issue_list(
                 payload,
                 "revision_suggestions",
             ),

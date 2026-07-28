@@ -49,11 +49,15 @@ def ready_state() -> TestAnalysisState:
 def revised_response() -> str:
     return json.dumps(
         {
-            "test_points": [
-                test_point(
-                    "库存不足时提交订单",
-                    ["订单提交失败", "商品库存保持为0"],
-                )
+            "operations": [
+                {
+                    "action": "replace",
+                    "target_title": "库存不足时提交订单",
+                    "test_point": test_point(
+                        "库存不足时提交订单",
+                        ["订单提交失败", "商品库存保持为0"],
+                    ),
+                }
             ]
         },
         ensure_ascii=False,
@@ -113,6 +117,10 @@ class TestPointReviserTests(unittest.TestCase):
         self.assertTrue(
             state.events[-1].data["review_invalidated"]
         )
+        self.assertEqual(
+            state.events[-1].data["operation_count"],
+            1,
+        )
         self.assertEqual(len(state.revision_history), 1)
         self.assertEqual(
             state.revision_history[0]["before_test_points"][0][
@@ -152,7 +160,17 @@ class TestPointReviserTests(unittest.TestCase):
     def test_unchanged_response_fails_task(self):
         state = ready_state()
         llm = FakeLLMService(
-            json.dumps({"test_points": state.test_points})
+            json.dumps(
+                {
+                    "operations": [
+                        {
+                            "action": "replace",
+                            "target_title": "库存不足时提交订单",
+                            "test_point": state.test_points[0],
+                        }
+                    ]
+                }
+            )
         )
 
         with self.assertRaises(TestPointRevisionError):
@@ -163,7 +181,7 @@ class TestPointReviserTests(unittest.TestCase):
         self.assertEqual(state.revision_count, 0)
 
     def test_invalid_response_fails_without_replacing_points(self):
-        llm = FakeLLMService('{"test_points": []}')
+        llm = FakeLLMService('{"operations": []}')
         state = ready_state()
         original = list(state.test_points)
 
@@ -176,6 +194,45 @@ class TestPointReviserTests(unittest.TestCase):
             state.events[-1].event_type,
             AgentEventType.TASK_FAILED,
         )
+
+    def test_delta_revision_preserves_untouched_points(self):
+        state = ready_state()
+        state.test_points.append(
+            test_point("库存充足时提交订单", ["订单提交成功"])
+        )
+
+        TestPointReviser(
+            llm_service=FakeLLMService(revised_response())
+        ).revise(state)
+
+        self.assertEqual(len(state.test_points), 2)
+        self.assertEqual(
+            state.test_points[1]["title"],
+            "库存充足时提交订单",
+        )
+
+    def test_invalid_target_fails_atomically(self):
+        state = ready_state()
+        original = json.loads(json.dumps(state.test_points))
+        response = json.dumps(
+            {
+                "operations": [
+                    {
+                        "action": "remove",
+                        "target_title": "不存在的测试点",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+
+        with self.assertRaises(TestPointRevisionError):
+            TestPointReviser(
+                llm_service=FakeLLMService(response)
+            ).revise(state)
+
+        self.assertEqual(state.test_points, original)
+        self.assertEqual(state.revision_count, 0)
 
     def test_llm_error_fails_task(self):
         llm = FakeLLMService(error=TimeoutError("修正模型超时"))
@@ -205,6 +262,8 @@ class TestPointReviserTests(unittest.TestCase):
         TestPointReviser(llm_service=llm).revise(state)
 
         self.assertIn("补充库存保持不变的预期", llm.calls[0][0])
+        self.assertNotIn("补充库存不被扣减的预期", llm.calls[0][0])
+        self.assertIn("operations 最多返回 1 项", llm.calls[0][0])
         self.assertEqual(state.automatic_revision_count, 0)
         self.assertEqual(state.human_revision_count, 1)
         self.assertEqual(
@@ -215,6 +274,29 @@ class TestPointReviserTests(unittest.TestCase):
             state.events[-1].data["applied_feedback_count"],
             1,
         )
+
+    def test_human_feedback_cannot_expand_revision_scope(self):
+        state = ready_state()
+        state.review_passed = True
+        HumanFeedbackHandler().submit(
+            state,
+            {
+                "action": "remove",
+                "feedback_type": "test_suggestion",
+                "target": "库存不足时提交订单",
+                "content": "删除这个测试点",
+                "reason": "该场景不再适用",
+            },
+        )
+        original = json.loads(json.dumps(state.test_points))
+
+        with self.assertRaises(TestPointRevisionError):
+            TestPointReviser(
+                llm_service=FakeLLMService(revised_response())
+            ).revise(state)
+
+        self.assertEqual(state.test_points, original)
+        self.assertEqual(state.revision_count, 0)
 
     def test_unconfirmed_business_rule_cannot_trigger_revision(self):
         llm = FakeLLMService(revised_response())

@@ -12,7 +12,7 @@
 - 对每条 requirement_fact 输出 covered、partial 或 missing。
 - duplicate_groups 只列出确实重复或高度相似的测试点标题，每组至少两个标题。
 - hallucination_issues 只标记没有需求、风险依据或合法历史思路支持的业务断言。
-- 没有问题时，对应问题数组返回空数组。
+- 没有问题时，对应问题数组必须返回真正的空数组 []，不得返回 [""]、["无"] 或占位文字。
 
 只返回一个 JSON 对象，不要输出 Markdown、代码围栏或解释文字，字段必须严格如下：
 

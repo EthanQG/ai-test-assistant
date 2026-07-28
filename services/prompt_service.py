@@ -143,6 +143,8 @@ class PromptService:
         current_test_points: list[dict],
         review_result: dict | None = None,
         human_feedback: list[dict] | None = None,
+        allowed_actions: set[str] | None = None,
+        max_operations: int = 20,
     ) -> str:
         if not requirement_analysis.get("requirement_facts"):
             raise ValueError("requirement facts cannot be empty")
@@ -152,8 +154,11 @@ class PromptService:
             raise ValueError(
                 "review result or human feedback is required"
             )
+        if max_operations <= 0:
+            raise ValueError("max_operations must be positive")
         prompt = (
-            "请根据评审结果定向修正测试点，并严格按照系统要求只返回 JSON。\n\n"
+            "请根据评审结果生成最小化的测试点增删改操作，"
+            "不要重写完整测试点集合，并严格按照系统要求只返回 JSON。\n\n"
             "【结构化需求分析】\n"
             + json.dumps(
                 requirement_analysis,
@@ -184,6 +189,16 @@ class PromptService:
                     ensure_ascii=False,
                     indent=2,
                 )
+            )
+        if allowed_actions:
+            prompt += (
+                "\n\n【本次修正硬约束】\n"
+                f"- operations 最多返回 {max_operations} 项。\n"
+                "- action 只能使用："
+                + "、".join(sorted(allowed_actions))
+                + "。\n"
+                "- 只处理本次输入中的人工反馈，不要顺带重写其他测试点。\n"
+                "- 没有变化的测试点不得出现在响应中。"
             )
         return prompt
 

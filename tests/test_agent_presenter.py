@@ -11,15 +11,24 @@ from agent.state import (
     TestAnalysisState,
 )
 from views.agent_presenter import (
+    action_progress_message,
     decision_rows,
     event_rows,
     feedback_rows,
+    static_table_html,
     task_overview,
     test_point_rows,
 )
 
 
 class AgentPresenterTests(unittest.TestCase):
+    def test_llm_action_progress_message_sets_waiting_expectation(self):
+        message = action_progress_message("revise_test_points")
+
+        self.assertIn("修正测试点", message)
+        self.assertIn("1–2 分钟", message)
+        self.assertIn("请勿重复点击", message)
+
     def test_task_overview_prefers_final_quality_summary(self):
         state = TestAnalysisState("订单需求")
         state.status = AgentStatus.COMPLETED
@@ -51,6 +60,7 @@ class AgentPresenterTests(unittest.TestCase):
             OrchestratorDecision(
                 OrchestratorAction.ANALYZE_REQUIREMENT,
                 "尚未分析需求",
+                duration_seconds=1.25,
             )
         ]
 
@@ -58,9 +68,22 @@ class AgentPresenterTests(unittest.TestCase):
         decision_data = decision_rows(decisions)
 
         self.assertEqual(events[0]["事件"], "task_created")
+        self.assertEqual(events[0]["序号"], "1")
         self.assertEqual(events[0]["步骤"], "initialize")
         self.assertEqual(decision_data[0]["序号"], "1")
-        self.assertEqual(decision_data[0]["动作"], "analyze_requirement")
+        self.assertEqual(decision_data[0]["动作"], "需求分析")
+        self.assertEqual(decision_data[0]["耗时"], "1.25 秒")
+
+    def test_static_table_has_no_index_and_escapes_content(self):
+        html = static_table_html(
+            [{"序号": "1", "说明": "<script>alert(1)</script>"}]
+        )
+
+        self.assertIn("<th", html)
+        self.assertIn(">序号</th>", html)
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertNotIn("<th></th>", html)
 
     def test_test_point_rows_flatten_list_fields(self):
         state = TestAnalysisState("订单需求")

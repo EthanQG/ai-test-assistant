@@ -6,6 +6,7 @@ from agent.models import (
     TestPointCategory,
     TestPointGenerationResult,
     TestPointPriority,
+    TestPointRevisionPlan,
     TestPointValidationError,
 )
 from agent.state import AgentStatus, KnowledgeRetrievalStatus, TestAnalysisState
@@ -107,6 +108,69 @@ class TestPointGenerationResultTests(unittest.TestCase):
             "steps must be a non-empty list",
         ):
             TestPointGenerationResult.from_json(json.dumps(payload))
+
+
+class TestPointRevisionPlanTests(unittest.TestCase):
+    def test_add_replace_and_remove_are_applied_in_order(self):
+        current = json.loads(valid_response())["test_points"]
+        replacement = dict(current[0])
+        replacement["expected_results"] = [
+            "订单提交成功",
+            "库存只扣减一次",
+        ]
+        added = dict(current[0])
+        added["title"] = "重复提交订单"
+        plan = TestPointRevisionPlan.from_json(
+            json.dumps(
+                {
+                    "operations": [
+                        {
+                            "action": "replace",
+                            "target_title": "库存充足时提交订单",
+                            "test_point": replacement,
+                        },
+                        {
+                            "action": "add",
+                            "test_point": added,
+                        },
+                        {
+                            "action": "remove",
+                            "target_title": "重复提交订单",
+                        },
+                    ]
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = plan.apply_to(current)
+
+        self.assertEqual(len(result.test_points), 1)
+        self.assertEqual(
+            result.test_points[0].expected_results,
+            ["订单提交成功", "库存只扣减一次"],
+        )
+
+    def test_unknown_operation_field_is_rejected(self):
+        current = json.loads(valid_response())["test_points"][0]
+        response = json.dumps(
+            {
+                "operations": [
+                    {
+                        "action": "add",
+                        "target_title": "不应出现",
+                        "test_point": current,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+
+        with self.assertRaisesRegex(
+            TestPointValidationError,
+            "add operation must contain only",
+        ):
+            TestPointRevisionPlan.from_json(response)
 
 
 class TestPointGeneratorTests(unittest.TestCase):

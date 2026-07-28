@@ -124,6 +124,21 @@ class TestPointReviewResultTests(unittest.TestCase):
         ):
             TestPointReviewResult.from_json(json.dumps(payload))
 
+    def test_blank_optional_issue_items_are_normalized(self):
+        payload = review_payload()
+        payload["missing_scenarios"] = ["", "  "]
+        payload["revision_suggestions"] = ["", "补充边界场景"]
+
+        result = TestPointReviewResult.from_json(
+            json.dumps(payload, ensure_ascii=False)
+        )
+
+        self.assertEqual(result.missing_scenarios, [])
+        self.assertEqual(
+            result.revision_suggestions,
+            ["补充边界场景"],
+        )
+
 
 class TestPointReviewerTests(unittest.TestCase):
     def test_passing_review_updates_state_and_event(self):

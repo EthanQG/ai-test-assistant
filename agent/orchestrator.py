@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from time import perf_counter
 
 from .finalizer import Finalizer
 from .human_feedback import HumanFeedbackHandler
@@ -38,6 +39,7 @@ STOP_ACTIONS = {
 class OrchestratorDecision:
     action: OrchestratorAction
     reason: str
+    duration_seconds: float | None = None
 
 
 class OrchestrationError(RuntimeError):
@@ -153,6 +155,7 @@ class AgentOrchestrator:
         state.max_revision_count = self.max_revision_count
         decision = self.decide_next(state)
         action = decision.action
+        started_at = perf_counter()
 
         if action == OrchestratorAction.ANALYZE_REQUIREMENT:
             self.requirement_analyzer.analyze(state)
@@ -166,7 +169,11 @@ class AgentOrchestrator:
             self.test_point_reviser.revise(state)
         elif action == OrchestratorAction.FINALIZE:
             self.finalizer.finalize(state)
-        return decision
+        return OrchestratorDecision(
+            action=decision.action,
+            reason=decision.reason,
+            duration_seconds=round(perf_counter() - started_at, 2),
+        )
 
     def run_until_blocked(
         self,

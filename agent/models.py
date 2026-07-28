@@ -349,3 +349,165 @@ class TestPointGenerationResult:
                 test_point.to_dict() for test_point in self.test_points
             ]
         }
+
+
+@dataclass(frozen=True)
+class TestPointRevisionOperation:
+    action: str
+    target_title: str | None = None
+    test_point: TestPoint | None = None
+
+    @classmethod
+    def from_dict(
+        cls,
+        payload: dict[str, Any],
+    ) -> "TestPointRevisionOperation":
+        if not isinstance(payload, dict):
+            raise TestPointValidationError(
+                "each revision operation must be an object"
+            )
+
+        action = payload.get("action")
+        if action not in {"add", "replace", "remove"}:
+            raise TestPointValidationError(
+                "revision action must be add, replace, or remove"
+            )
+
+        expected_fields = {
+            "add": {"action", "test_point"},
+            "replace": {"action", "target_title", "test_point"},
+            "remove": {"action", "target_title"},
+        }[action]
+        if set(payload) != expected_fields:
+            raise TestPointValidationError(
+                f"{action} operation must contain only "
+                + ", ".join(sorted(expected_fields))
+            )
+
+        target_title = payload.get("target_title")
+        if action in {"replace", "remove"}:
+            if not isinstance(target_title, str) or not target_title.strip():
+                raise TestPointValidationError(
+                    "target_title must be a non-empty string"
+                )
+            target_title = target_title.strip()
+
+        raw_test_point = payload.get("test_point")
+        test_point = None
+        if action in {"add", "replace"}:
+            test_point = TestPoint.from_dict(raw_test_point)
+
+        return cls(
+            action=action,
+            target_title=target_title,
+            test_point=test_point,
+        )
+
+
+@dataclass(frozen=True)
+class TestPointRevisionPlan:
+    operations: list[TestPointRevisionOperation]
+
+    @classmethod
+    def from_json(cls, raw_response: str) -> "TestPointRevisionPlan":
+        cleaned_response = RequirementAnalysisResult._strip_code_fence(
+            raw_response
+        )
+        try:
+            payload = json.loads(cleaned_response)
+        except json.JSONDecodeError as exc:
+            raise TestPointValidationError(
+                "LLM response is not valid JSON: "
+                f"{exc.msg} (line {exc.lineno}, column {exc.colno})"
+            ) from exc
+
+        if not isinstance(payload, dict) or set(payload) != {"operations"}:
+            raise TestPointValidationError(
+                "top-level JSON must contain only operations"
+            )
+        raw_operations = payload["operations"]
+        if not isinstance(raw_operations, list) or not raw_operations:
+            raise TestPointValidationError(
+                "operations must be a non-empty list"
+            )
+        if len(raw_operations) > 20:
+            raise TestPointValidationError(
+                "operations must contain at most 20 items"
+            )
+        return cls(
+            operations=[
+                TestPointRevisionOperation.from_dict(item)
+                for item in raw_operations
+            ]
+        )
+
+    def apply_to(
+        self,
+        current_test_points: list[dict[str, Any]],
+    ) -> TestPointGenerationResult:
+        original = [
+            TestPoint.from_dict(item) for item in current_test_points
+        ]
+        revised = list(original)
+
+        for operation in self.operations:
+            titles = [point.title for point in revised]
+            if operation.action == "add":
+                if operation.test_point is None:
+                    raise TestPointValidationError(
+                        "add operation requires test_point"
+                    )
+                if operation.test_point.title in titles:
+                    raise TestPointValidationError(
+                        "add operation creates a duplicate title: "
+                        + operation.test_point.title
+                    )
+                revised.append(operation.test_point)
+                continue
+
+            if operation.target_title is None:
+                raise TestPointValidationError(
+                    f"{operation.action} operation requires target_title"
+                )
+            matches = [
+                index
+                for index, title in enumerate(titles)
+                if title == operation.target_title
+            ]
+            if len(matches) != 1:
+                raise TestPointValidationError(
+                    "target_title must match exactly one test point: "
+                    + operation.target_title
+                )
+            target_index = matches[0]
+
+            if operation.action == "remove":
+                revised.pop(target_index)
+                continue
+
+            if operation.test_point is None:
+                raise TestPointValidationError(
+                    "replace operation requires test_point"
+                )
+            duplicate_titles = [
+                title
+                for index, title in enumerate(titles)
+                if index != target_index
+                and title == operation.test_point.title
+            ]
+            if duplicate_titles:
+                raise TestPointValidationError(
+                    "replace operation creates a duplicate title: "
+                    + operation.test_point.title
+                )
+            revised[target_index] = operation.test_point
+
+        if not revised:
+            raise TestPointValidationError(
+                "revision must keep at least one test point"
+            )
+        if revised == original:
+            raise TestPointValidationError(
+                "revision did not change any test point"
+            )
+        return TestPointGenerationResult(test_points=revised)

@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from agent.human_feedback import HumanFeedbackHandler
 from agent.orchestrator import (
@@ -174,6 +175,25 @@ class AgentOrchestratorDecisionTests(unittest.TestCase):
 
 
 class AgentOrchestratorExecutionTests(unittest.TestCase):
+    def test_run_next_records_node_duration(self):
+        analyzer = RecordingNode()
+        orchestrator = AgentOrchestrator(
+            requirement_analyzer=analyzer,
+        )
+        state = TestAnalysisState("订单需求")
+
+        with patch(
+            "agent.orchestrator.perf_counter",
+            side_effect=[10.0, 12.345],
+        ):
+            decision = orchestrator.run_next(state)
+
+        self.assertEqual(
+            decision.action,
+            OrchestratorAction.ANALYZE_REQUIREMENT,
+        )
+        self.assertEqual(decision.duration_seconds, 2.35)
+
     def test_completed_task_feedback_runs_revision_review_and_finalization(self):
         state = generated_state()
         state.review_result = {"overall_score": 90}

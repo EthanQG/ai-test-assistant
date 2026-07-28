@@ -1,3 +1,4 @@
+from html import escape
 from typing import Any
 
 from agent.orchestrator import OrchestratorDecision
@@ -49,6 +50,39 @@ FEEDBACK_STATUS_LABELS = {
     "rejected": "已取消",
 }
 
+ACTION_LABELS = {
+    "analyze_requirement": "需求分析",
+    "retrieve_knowledge": "知识检索",
+    "generate_test_points": "生成测试点",
+    "review_test_points": "质量评审",
+    "revise_test_points": "修正测试点",
+    "finalize": "整理报告",
+    "wait_for_user": "等待用户",
+    "revision_limit_reached": "达到修正上限",
+    "terminal": "任务结束",
+}
+
+
+def action_label(action: str) -> str:
+    return ACTION_LABELS.get(action, action)
+
+
+def action_progress_message(action: str) -> str:
+    label = action_label(action)
+    if action in {
+        "analyze_requirement",
+        "generate_test_points",
+        "review_test_points",
+        "revise_test_points",
+    }:
+        return f"正在执行：{label}。模型响应通常需要 1–2 分钟，请勿重复点击。"
+    if action == "retrieve_knowledge":
+        return (
+            "正在执行：知识检索。外部检索服务较慢或不可用时，"
+            "Agent 会记录降级并继续。"
+        )
+    return f"正在执行：{label}。"
+
 
 def task_overview(state: TestAnalysisState) -> dict[str, Any]:
     final_result = state.final_result or {}
@@ -72,6 +106,7 @@ def task_overview(state: TestAnalysisState) -> dict[str, Any]:
 def event_rows(state: TestAnalysisState) -> list[dict[str, Any]]:
     return [
         {
+            "序号": str(index),
             "时间": event.occurred_at.astimezone().strftime(
                 "%Y-%m-%d %H:%M:%S"
             ),
@@ -79,7 +114,7 @@ def event_rows(state: TestAnalysisState) -> list[dict[str, Any]]:
             "事件": event.event_type.value,
             "说明": event.message,
         }
-        for event in state.events
+        for index, event in enumerate(state.events, start=1)
     ]
 
 
@@ -89,11 +124,59 @@ def decision_rows(
     return [
         {
             "序号": str(index),
-            "动作": decision.action.value,
+            "动作": action_label(decision.action.value),
             "原因": decision.reason,
+            "耗时": (
+                f"{duration_seconds:.2f} 秒"
+                if (
+                    duration_seconds := getattr(
+                        decision,
+                        "duration_seconds",
+                        None,
+                    )
+                )
+                is not None
+                else "-"
+            ),
         }
         for index, decision in enumerate(decisions, start=1)
     ]
+
+
+def static_table_html(rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return ""
+
+    headers = list(rows[0])
+    header_cells = "".join(
+        (
+            '<th style="padding:8px;border:1px solid #dfe3ea;'
+            'background:#f7f8fa;text-align:left;white-space:nowrap;">'
+            f"{escape(str(header))}</th>"
+        )
+        for header in headers
+    )
+    body_rows = []
+    for row in rows:
+        cells = "".join(
+            (
+                '<td style="padding:8px;border:1px solid #dfe3ea;'
+                'text-align:left;vertical-align:top;">'
+                f"{escape(str(row.get(header, ''))).replace(chr(10), '<br>')}"
+                "</td>"
+            )
+            for header in headers
+        )
+        body_rows.append(f"<tr>{cells}</tr>")
+
+    return (
+        '<div style="width:100%;overflow-x:auto;">'
+        '<table class="agent-static-table" '
+        'style="width:100%;border-collapse:collapse;font-size:14px;">'
+        f"<thead><tr>{header_cells}</tr></thead>"
+        f"<tbody>{''.join(body_rows)}</tbody>"
+        "</table></div>"
+    )
 
 
 def test_point_rows(state: TestAnalysisState) -> list[dict[str, str]]:
