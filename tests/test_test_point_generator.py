@@ -41,12 +41,22 @@ class FakeLLMService:
         self.response = response
         self.error = error
         self.calls = []
+        self.received_max_tokens = []
 
     def generate(self, prompt: str, system_prompt: str) -> str:
         self.calls.append((prompt, system_prompt))
         if self.error:
             raise self.error
         return self.response
+
+    def generate_json(
+        self,
+        prompt: str,
+        system_prompt: str,
+        max_tokens: int | None = None,
+    ) -> str:
+        self.received_max_tokens.append(max_tokens)
+        return self.generate(prompt, system_prompt)
 
 
 def ready_state() -> TestAnalysisState:
@@ -112,6 +122,7 @@ class TestPointGeneratorTests(unittest.TestCase):
         self.assertIn("订单提交与库存扣减", llm.calls[0][0])
         self.assertIn("历史资产中的重复扣减防范思路", llm.calls[0][0])
         self.assertTrue(llm.calls[0][1])
+        self.assertEqual(llm.received_max_tokens, [8192])
         self.assertEqual(state.events[-1].event_type, AgentEventType.STEP_COMPLETED)
         self.assertEqual(
             state.events[-1].data["category_counts"],

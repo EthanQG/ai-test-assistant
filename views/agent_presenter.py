@@ -30,6 +30,25 @@ CATEGORY_LABELS = {
     "non_functional": "非功能",
 }
 
+FEEDBACK_ACTION_LABELS = {
+    "add": "新增",
+    "remove": "删除",
+    "modify": "修改",
+    "update_priority": "调整优先级",
+}
+
+FEEDBACK_TYPE_LABELS = {
+    "test_suggestion": "测试建议",
+    "business_rule": "业务规则",
+}
+
+FEEDBACK_STATUS_LABELS = {
+    "pending_confirmation": "待确认",
+    "ready": "待处理",
+    "applied": "已应用",
+    "rejected": "已取消",
+}
+
 
 def task_overview(state: TestAnalysisState) -> dict[str, Any]:
     final_result = state.final_result or {}
@@ -44,6 +63,8 @@ def task_overview(state: TestAnalysisState) -> dict[str, Any]:
             (state.review_result or {}).get("overall_score"),
         ),
         "revision_count": state.revision_count,
+        "automatic_revision_count": state.automatic_revision_count,
+        "human_revision_count": state.human_revision_count,
         "rag_status": state.knowledge_retrieval_status.value,
     }
 
@@ -95,3 +116,26 @@ def test_point_rows(state: TestAnalysisState) -> list[dict[str, str]]:
             }
         )
     return rows
+
+
+def feedback_rows(state: TestAnalysisState) -> list[dict[str, str]]:
+    return [
+        {
+            "类型": FEEDBACK_TYPE_LABELS.get(
+                str(item.get("feedback_type", "")),
+                str(item.get("feedback_type", "")),
+            ),
+            "动作": FEEDBACK_ACTION_LABELS.get(
+                str(item.get("action", "")),
+                str(item.get("action", "")),
+            ),
+            "目标": str(item.get("target", "")),
+            "反馈内容": str(item.get("content", "")),
+            "原因": str(item.get("reason", "")),
+            "状态": FEEDBACK_STATUS_LABELS.get(
+                str(item.get("status", "")),
+                str(item.get("status", "")),
+            ),
+        }
+        for item in state.human_feedback
+    ]

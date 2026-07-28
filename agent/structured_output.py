@@ -5,6 +5,7 @@ from typing import TypeVar
 
 StructuredResult = TypeVar("StructuredResult")
 logger = logging.getLogger(__name__)
+LARGE_STRUCTURED_OUTPUT_MAX_TOKENS = 8192
 
 
 def generate_and_parse_json(

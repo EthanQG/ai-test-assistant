@@ -75,6 +75,7 @@ def finalizable_state() -> TestAnalysisState:
     state.review_threshold = 80
     state.review_history = [{"review_round": 1, "passed": True}]
     state.revision_count = 1
+    state.automatic_revision_count = 1
     return state
 
 
@@ -96,6 +97,8 @@ class FinalizerTests(unittest.TestCase):
         self.assertEqual(result.quality_summary["overall_score"], 92)
         self.assertEqual(state.final_result, result.to_dict())
         self.assertIn("# 测试分析报告", state.report)
+        self.assertIn("自动修正次数：1", state.report)
+        self.assertIn("人工反馈修正次数：0", state.report)
         self.assertIn(
             "| 序号 | 标题 | 分类 | 优先级 | 场景 |",
             state.report,

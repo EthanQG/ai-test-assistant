@@ -100,6 +100,27 @@ class TestAnalysisStateTests(unittest.TestCase):
                 "重新评审",
             )
 
+    def test_completed_task_can_be_reopened_for_human_feedback(self):
+        state = TestAnalysisState(requirement="用户可以提交订单")
+        state.test_points = [{"title": "正常提交订单"}]
+        state.review_result = {"overall_score": 90}
+        state.final_result = {"test_point_count": 1}
+        state.complete("最终测试分析报告")
+
+        event = state.reopen_for_feedback()
+
+        self.assertEqual(state.status, AgentStatus.RUNNING)
+        self.assertEqual(
+            state.current_step,
+            AgentStep.COLLECT_HUMAN_FEEDBACK,
+        )
+        self.assertIsNone(state.final_result)
+        self.assertEqual(state.report, "")
+        self.assertEqual(
+            event.message,
+            "已重新打开任务，等待处理人工反馈",
+        )
+
     def test_failed_task_records_error(self):
         state = TestAnalysisState(requirement="用户可以提交订单")
         state.start_step(AgentStep.RETRIEVE_KNOWLEDGE, "检索知识")
@@ -128,6 +149,8 @@ class TestAnalysisStateTests(unittest.TestCase):
         state.review_result = {"overall_score": 88}
         state.review_passed = True
         state.revision_count = 1
+        state.automatic_revision_count = 1
+        state.human_revision_count = 0
         state.max_revision_count = 2
         state.review_history = [{"review_round": 1, "passed": True}]
         state.revision_history = [{"revision_count": 1}]
@@ -174,6 +197,8 @@ class TestAnalysisStateTests(unittest.TestCase):
         self.assertTrue(payload["review_passed"])
         self.assertEqual(payload["review_threshold"], 80)
         self.assertEqual(payload["revision_count"], 1)
+        self.assertEqual(payload["automatic_revision_count"], 1)
+        self.assertEqual(payload["human_revision_count"], 0)
         self.assertEqual(payload["max_revision_count"], 2)
         self.assertTrue(payload["review_history"][0]["passed"])
         self.assertEqual(

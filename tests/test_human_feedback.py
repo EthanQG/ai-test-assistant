@@ -113,6 +113,23 @@ class HumanFeedbackHandlerTests(unittest.TestCase):
             AgentEventType.STEP_COMPLETED,
         )
 
+    def test_completed_task_reopens_when_feedback_is_submitted(self):
+        state = state_with_test_points()
+        state.review_result = {"overall_score": 90}
+        state.review_passed = True
+        state.final_result = {"test_point_count": 1}
+        state.complete("已完成报告")
+
+        feedback = HumanFeedbackHandler().submit(
+            state,
+            feedback_payload(),
+        )
+
+        self.assertEqual(state.status, AgentStatus.RUNNING)
+        self.assertEqual(feedback.status, FeedbackStatus.READY)
+        self.assertEqual(state.report, "")
+        self.assertIsNone(state.final_result)
+
     def test_business_rule_waits_for_confirmation(self):
         state = state_with_test_points()
 
@@ -134,6 +151,10 @@ class HumanFeedbackHandlerTests(unittest.TestCase):
             HumanFeedbackHandler.ready_feedback(state),
             [],
         )
+        self.assertEqual(
+            state.events[-1].message,
+            "需要用户确认人工补充的业务规则",
+        )
 
     def test_confirmed_business_rule_updates_requirement_state(self):
         state = state_with_test_points()
@@ -152,6 +173,27 @@ class HumanFeedbackHandlerTests(unittest.TestCase):
         self.assertEqual(state.open_questions, [])
         self.assertIn(confirmed.content, state.business_rules)
         self.assertEqual(state.human_feedback[0]["status"], "ready")
+
+    def test_business_rule_can_be_rejected_without_updating_requirement(self):
+        state = state_with_test_points()
+        feedback = HumanFeedbackHandler().submit(
+            state,
+            feedback_payload(feedback_type="business_rule"),
+        )
+
+        rejected = HumanFeedbackHandler().reject_business_rule(
+            state,
+            feedback.feedback_id,
+        )
+
+        self.assertEqual(rejected.status, FeedbackStatus.REJECTED)
+        self.assertEqual(state.status, AgentStatus.RUNNING)
+        self.assertEqual(state.open_questions, [])
+        self.assertNotIn(rejected.content, state.business_rules)
+        self.assertEqual(
+            HumanFeedbackHandler.pending_confirmation_feedback(state),
+            [],
+        )
 
     def test_feedback_requires_existing_test_points(self):
         state = TestAnalysisState("支付需求")

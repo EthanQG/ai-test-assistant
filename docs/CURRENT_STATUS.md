@@ -10,45 +10,38 @@
 ## Git 基线
 
 - 分支：`main`
-- 阶段 2.11.2 已完成并纳入本地提交
-- 本地 `main` 领先 `origin/main` 1 个提交，尚未 Push
+- 最新提交：`ea8d39f 文档：修正开发日志阶段顺序与索引`
+- 本地 `main` 与 `origin/main` 已同步
+- 阶段 2.11.3 已完成开发，当前尚未提交
 
 ## 当前阶段
 
-阶段 2.11.2：待确认问题、任务恢复与双栏工作台。
+阶段 2.11.3：结构化人工反馈页面闭环。
 
 已完成：
 
-- 页面调整为左侧需求工作台、右侧任务概览与结果区
-- 右侧概览保持在结果区上方，轨迹、测试点、评审和报告在固定高度容器内滚动
-- RequirementAnalyzer 每轮最多返回 3 个会阻塞核心业务判断的问题
-- 用户可以逐项回答，也可以选择“暂不确定”
-- 用户回答作为明确事实重新进入需求分析 Prompt
-- 暂不确定的问题不会重复追问，也不会被 Agent 自行假设
-- 暂不确定项会作为风险提示进入 Finalizer 报告
-- 重新分析后复用同一个 State，并由 Orchestrator 继续执行到下一个阻塞点或终态
+- 已完成任务和达到自动修正上限的任务可以提交人工反馈
+- 测试建议支持新增、修改、删除测试点和调整优先级
+- 业务规则反馈进入 `pending_confirmation`，用户确认后才写入需求事实
+- 用户取消的业务规则标记为 `rejected`，不会进入需求事实或驱动Reviser
+- 已完成任务收到反馈后通过 `reopen_for_feedback()` 重新进入运行状态
+- 人工反馈驱动Reviser修改测试点、Reviewer重新评审、Finalizer更新报告
+- 页面新增“人工反馈”结果标签，展示反馈类型、动作、内容、原因和状态
+- 自动修正次数与人工反馈修正次数分别记录和展示
+- 人工反馈本身不受自动修正次数上限阻断，后续自动修正仍受独立上限控制
+- Generator、Reviewer、Reviser统一使用8192的结构化输出预算，修复Reviser返回完整测试点集合时沿用默认4096而被截断的问题
 
-当前 Agent 主链路：
+人工反馈闭环：
 
 ```text
-Streamlit 输入
-  → TestAnalysisState
-  → 页面循环调用 AgentOrchestrator.run_next()
-  → RequirementAnalyzer / KnowledgeRetriever / Generator / Reviewer / Reviser
+completed / revision_limit_reached
+  → 页面提交 HumanFeedback
+  → 测试建议直接进入 ready
+  → 业务规则等待用户确认或取消
+  → TestPointReviser
+  → TestPointReviewer
   → Finalizer
-  → 页面展示结构化结果与 Markdown 报告
-```
-
-待确认恢复链路：
-
-```text
-open_questions（最多 3 个）
-  → waiting_for_user
-  → 用户回答或选择暂不确定
-  → 回答/暂缓项写入 State
-  → state.resume()
-  → RequirementAnalyzer 重新分析
-  → 页面继续逐节点调用 Orchestrator.run_next()
+  → 更新结构化结果与 Markdown 报告
 ```
 
 ## 测试基线
@@ -56,44 +49,37 @@ open_questions（最多 3 个）
 验证日期：2026-07-28
 
 ```text
-119 tests passed
+127 tests passed
 ```
 
-已额外使用 Streamlit AppTest 验证等待状态页面：
+已额外使用 Streamlit AppTest 验证：
 
-- 页面无异常，且等待状态已纳入自动化测试
-- 两个问题对应两个“暂不确定”选项
-- 存在“提交补充并继续执行”按钮
-- 右侧显示任务暂停提示
+- 已完成任务显示结构化人工反馈表单
+- 业务规则反馈显示“确认规则并继续”和“取消该规则”
+- 右侧人工反馈标签能够显示中文状态
+- 原有需求补充、刷新恢复和双栏页面测试继续通过
 
-本阶段追加修复：
+本阶段领域规则：
 
-- 恢复页面顶部安全间距，避免 Streamlit 顶栏遮挡标题图标
-- 左右两栏统一使用 760px 外层容器
-- 移除恢复执行时嵌套的动态 `st.status`，避免重跑时出现 React 渲染异常
-- 测试点生成单独使用 8192 的输出 token 上限，降低大型结构化 JSON 被截断的概率
-- 页面由一次执行完整链路改为每次执行一个节点，节点完成后自动刷新事件与决策
-- URL保存`task_id`，服务进程内任务缓存支持浏览器刷新后恢复当前任务
-- 概览卡片缩小字号，并将内部步骤名称转换为中文
-- 执行Spinner固定显示在左侧工作台底部
-- 右侧详细结果区使用固定高度填满下方空间
-- 左侧提示根据执行中、等待补充、失败和完成状态动态变化
-- 页面测试点分类显示为功能、边界、异常和非功能
-- 最终Markdown报告使用测试点表格，下载按钮位于报告内容上方
+- `revision_count`记录总修正次数
+- `automatic_revision_count`只记录Reviewer驱动的自动修正
+- `human_revision_count`只记录人工反馈驱动的修正
+- `max_revision_count=2`只限制自动修正，不阻止新的人工反馈
+- 大体量结构化节点的输出预算由`LARGE_STRUCTURED_OUTPUT_MAX_TOKENS`统一定义，节点测试会校验预算是否正确传递
 
 单元测试不访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
 ## 下一步任务
 
-提交阶段 2.11.2 后进入阶段 2.11.3：把已经完成的
-`HumanFeedbackHandler` 接入页面。
+提交阶段 2.11.3 后，先设计MySQL历史任务持久化方案，再开始编码。
 
 目标：
 
-- 对已生成测试点提交增加、删除、修改和优先级调整意见
-- 新业务规则必须二次确认后才能写入需求事实
-- 人工反馈驱动 Reviser，并重新经过 Reviewer
-- 页面展示反馈状态和修正结果
+- 明确任务主表、State快照、事件、决策和最终报告的数据模型
+- 数据库连接只通过`.env`或部署环境变量配置
+- 支持服务重启后按`task_id`恢复任务
+- 设计写入失败时不影响当前Agent执行的降级策略
+- 增加历史任务列表与查看入口
 
 本阶段继续使用 Streamlit，不进行前后端分离。
 
@@ -101,7 +87,6 @@ open_questions（最多 3 个）
 
 - Agent 尚不能自主选择 Tool，节点仍由 Python Orchestrator 受控编排
 - 单个LLM节点执行期间仍是同步等待，节点完成后才会刷新页面
-- 达到自动修正上限后仍缺少页面人工处理入口
 - 当前任务只保存在Streamlit服务进程内，服务重启后任务会丢失
 - MySQL历史任务持久化尚未实现，计划在后续独立阶段设计
 - 知识资产上传与持久化尚未设计为独立知识库管理功能

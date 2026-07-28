@@ -4,7 +4,10 @@ from services.prompt_service import PromptService
 from .events import AgentStep
 from .review_models import TestPointReviewResult
 from .state import TestAnalysisState
-from .structured_output import generate_and_parse_json
+from .structured_output import (
+    LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
+    generate_and_parse_json,
+)
 
 
 class TestPointReviewError(RuntimeError):
@@ -46,6 +49,7 @@ class TestPointReviewer:
                 user_prompt,
                 system_prompt,
                 TestPointReviewResult.from_json,
+                max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
             )
             self._validate_coverage(state, result)
             passed = self._is_passing(result)
@@ -57,6 +61,10 @@ class TestPointReviewer:
                 {
                     "review_round": len(state.review_history) + 1,
                     "revision_count": state.revision_count,
+                    "automatic_revision_count": (
+                        state.automatic_revision_count
+                    ),
+                    "human_revision_count": state.human_revision_count,
                     "passed": passed,
                     "result": result.to_dict(),
                 }

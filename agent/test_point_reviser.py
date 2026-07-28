@@ -7,7 +7,10 @@ from .events import AgentStep
 from .human_feedback import HumanFeedbackHandler
 from .models import TestPointGenerationResult
 from .state import TestAnalysisState
-from .structured_output import generate_and_parse_json
+from .structured_output import (
+    LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
+    generate_and_parse_json,
+)
 
 
 class TestPointRevisionError(RuntimeError):
@@ -57,6 +60,7 @@ class TestPointReviser:
                 user_prompt,
                 system_prompt,
                 TestPointGenerationResult.from_json,
+                max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
             )
             revised_test_points = [
                 test_point.to_dict()
@@ -69,9 +73,17 @@ class TestPointReviser:
 
             state.test_points = revised_test_points
             state.revision_count += 1
+            revision_source = (
+                "human_feedback" if ready_feedback else "automatic_review"
+            )
+            if ready_feedback:
+                state.human_revision_count += 1
+            else:
+                state.automatic_revision_count += 1
             state.revision_history.append(
                 {
                     "revision_count": state.revision_count,
+                    "revision_source": revision_source,
                     "before_test_points": deepcopy(
                         original_test_points
                     ),
@@ -94,6 +106,11 @@ class TestPointReviser:
                 "测试点定向修正完成，等待重新评审",
                 {
                     "revision_count": state.revision_count,
+                    "automatic_revision_count": (
+                        state.automatic_revision_count
+                    ),
+                    "human_revision_count": state.human_revision_count,
+                    "revision_source": revision_source,
                     "before_count": len(original_test_points),
                     "after_count": len(revised_test_points),
                     "previous_review_score": (

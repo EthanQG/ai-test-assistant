@@ -27,6 +27,7 @@ class FeedbackStatus(str, Enum):
     PENDING_CONFIRMATION = "pending_confirmation"
     READY = "ready"
     APPLIED = "applied"
+    REJECTED = "rejected"
 
 
 def _required_text(payload: dict[str, Any], field_name: str) -> str:
@@ -168,6 +169,8 @@ class HumanFeedbackHandler:
                 "test points must exist before feedback"
             )
         feedback = HumanFeedback.from_dict(payload)
+        if state.status == AgentStatus.COMPLETED:
+            state.reopen_for_feedback()
         state.start_step(
             AgentStep.COLLECT_HUMAN_FEEDBACK,
             "正在记录人工测试反馈",
@@ -188,7 +191,8 @@ class HumanFeedbackHandler:
                 [
                     "请确认以下内容是否作为正式业务规则："
                     + feedback.content
-                ]
+                ],
+                message="需要用户确认人工补充的业务规则",
             )
         return feedback
 
@@ -212,6 +216,30 @@ class HumanFeedbackHandler:
             },
         )
         return confirmed
+
+    def reject_business_rule(
+        self,
+        state: TestAnalysisState,
+        feedback_id: str,
+    ) -> HumanFeedback:
+        index, feedback = self._find_feedback(state, feedback_id)
+        if (
+            feedback.feedback_type != FeedbackType.BUSINESS_RULE
+            or feedback.status != FeedbackStatus.PENDING_CONFIRMATION
+        ):
+            raise HumanFeedbackValidationError(
+                "feedback is not a pending business rule"
+            )
+        rejected = replace(feedback, status=FeedbackStatus.REJECTED)
+        state.human_feedback[index] = rejected.to_dict()
+        if state.status == AgentStatus.WAITING_FOR_USER:
+            state.resume()
+            state.open_questions = []
+        state.add_information(
+            "用户取消了业务规则补充",
+            {"feedback_id": rejected.feedback_id},
+        )
+        return rejected
 
     @staticmethod
     def _apply_business_rule(
@@ -241,6 +269,19 @@ class HumanFeedbackHandler:
                 feedback := HumanFeedback.from_state_dict(payload)
             ).status
             == FeedbackStatus.READY
+        ]
+
+    @staticmethod
+    def pending_confirmation_feedback(
+        state: TestAnalysisState,
+    ) -> list[HumanFeedback]:
+        return [
+            feedback
+            for payload in state.human_feedback
+            if (
+                feedback := HumanFeedback.from_state_dict(payload)
+            ).status
+            == FeedbackStatus.PENDING_CONFIRMATION
         ]
 
     @staticmethod

@@ -63,6 +63,8 @@ class TestAnalysisState:
     review_threshold: int = 80
     review_history: list[dict[str, Any]] = field(default_factory=list)
     revision_count: int = 0
+    automatic_revision_count: int = 0
+    human_revision_count: int = 0
     max_revision_count: int = 2
     revision_history: list[dict[str, Any]] = field(default_factory=list)
     human_feedback: list[dict[str, Any]] = field(default_factory=list)
@@ -125,14 +127,18 @@ class TestAnalysisState:
             data,
         )
 
-    def wait_for_user(self, questions: list[str]) -> AgentEvent:
+    def wait_for_user(
+        self,
+        questions: list[str],
+        message: str = "需要用户补充需求信息",
+    ) -> AgentEvent:
         self._ensure_active()
         self.open_questions = list(questions)
         self.status = AgentStatus.WAITING_FOR_USER
         return self._append_event(
             AgentEventType.INFORMATION,
             self.current_step,
-            "需要用户补充需求信息",
+            message,
             {"questions": self.open_questions},
         )
 
@@ -144,6 +150,26 @@ class TestAnalysisState:
             AgentEventType.INFORMATION,
             self.current_step,
             "已收到补充信息，继续执行任务",
+        )
+
+    def reopen_for_feedback(self) -> AgentEvent:
+        if self.status != AgentStatus.COMPLETED:
+            raise ValueError(
+                "only a completed task can be reopened for feedback"
+            )
+        if not self.test_points or not self.review_result:
+            raise ValueError(
+                "completed task must keep test points and review result"
+            )
+        self.status = AgentStatus.RUNNING
+        self.current_step = AgentStep.COLLECT_HUMAN_FEEDBACK
+        self.final_result = None
+        self.report = ""
+        self.error_message = None
+        return self._append_event(
+            AgentEventType.INFORMATION,
+            AgentStep.COLLECT_HUMAN_FEEDBACK,
+            "已重新打开任务，等待处理人工反馈",
         )
 
     def complete(self, report: str) -> AgentEvent:
@@ -201,6 +227,8 @@ class TestAnalysisState:
             "review_threshold": self.review_threshold,
             "review_history": self.review_history,
             "revision_count": self.revision_count,
+            "automatic_revision_count": self.automatic_revision_count,
+            "human_revision_count": self.human_revision_count,
             "max_revision_count": self.max_revision_count,
             "revision_history": self.revision_history,
             "human_feedback": self.human_feedback,

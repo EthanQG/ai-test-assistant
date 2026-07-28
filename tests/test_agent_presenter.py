@@ -13,6 +13,7 @@ from agent.state import (
 from views.agent_presenter import (
     decision_rows,
     event_rows,
+    feedback_rows,
     task_overview,
     test_point_rows,
 )
@@ -29,6 +30,7 @@ class AgentPresenterTests(unittest.TestCase):
             "quality_summary": {"overall_score": 92}
         }
         state.revision_count = 1
+        state.automatic_revision_count = 1
         state.knowledge_retrieval_status = (
             KnowledgeRetrievalStatus.MATCHED
         )
@@ -39,6 +41,8 @@ class AgentPresenterTests(unittest.TestCase):
         self.assertEqual(overview["current_step"], "整理报告")
         self.assertEqual(overview["test_point_count"], 1)
         self.assertEqual(overview["overall_score"], 92)
+        self.assertEqual(overview["automatic_revision_count"], 1)
+        self.assertEqual(overview["human_revision_count"], 0)
         self.assertEqual(overview["rag_status"], "matched")
 
     def test_event_and_decision_rows_are_display_ready(self):
@@ -80,6 +84,26 @@ class AgentPresenterTests(unittest.TestCase):
             rows[0]["来源"],
             "requirement, test_experience",
         )
+
+    def test_feedback_rows_translate_internal_values(self):
+        state = TestAnalysisState("订单需求")
+        state.human_feedback = [
+            {
+                "feedback_id": "feedback-1",
+                "action": "update_priority",
+                "feedback_type": "test_suggestion",
+                "target": "重复提交",
+                "content": "将测试点优先级调整为 P0",
+                "reason": "属于资金风险",
+                "status": "applied",
+            }
+        ]
+
+        rows = feedback_rows(state)
+
+        self.assertEqual(rows[0]["类型"], "测试建议")
+        self.assertEqual(rows[0]["动作"], "调整优先级")
+        self.assertEqual(rows[0]["状态"], "已应用")
 
 
 if __name__ == "__main__":

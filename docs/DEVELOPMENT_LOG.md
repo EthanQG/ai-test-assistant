@@ -38,6 +38,7 @@
 | 阶段 2.10 | 已完成 | Finalizer最终结果整理节点 | `977aab9` |
 | 阶段 2.11.1 | 已完成 | Streamlit Agent基础运行页面 | `a66a561` |
 | 阶段 2.11.2 | 已完成 | 待确认恢复、逐节点刷新与双栏工作台 | `e9441c6` |
+| 阶段 2.11.3 | 已完成待提交 | 结构化人工反馈、业务规则确认与重新评审 | 本阶段提交 |
 
 ---
 
@@ -1140,3 +1141,120 @@ e9441c6 功能：实现待确认恢复与双栏Agent工作台
 ### 下一步
 
 阶段 2.11.3：将结构化人工反馈、业务规则确认和 Reviser 重新评审链路接入页面。
+
+---
+
+## 阶段 2.11.3：结构化人工反馈页面闭环
+
+### 本阶段目标
+
+把已经完成的 `HumanFeedbackHandler` 接入 Streamlit 页面，让用户可以在报告生成后提交结构化意见，并由 Agent 重新修正、评审和整理报告。
+
+### 页面交互
+
+- 已完成任务和达到自动修正上限的任务显示人工反馈入口
+- 测试建议支持新增、修改、删除测试点和调整 P0/P1/P2 优先级
+- 修改、删除和优先级调整从当前测试点标题中选择目标，减少手工输入错误
+- 业务规则支持新增、修改和删除，并与普通测试建议明确区分
+- 右侧新增“人工反馈”标签，显示类型、动作、目标、内容、原因和处理状态
+- 页面清空任务时同步清理人工反馈组件状态
+
+### 业务规则二次确认
+
+业务规则不是普通测试建议，因为它会改变后续测试预期。页面提交业务规则后：
+
+```text
+HumanFeedback.status=pending_confirmation
+  → State进入waiting_for_user
+  → 页面展示规则内容与依据
+  → 用户确认：写入business_rules并进入ready
+  → 用户取消：标记rejected且不修改需求事实
+```
+
+确认或取消都由 `HumanFeedbackHandler` 处理，页面不直接修改 `business_rules`。
+
+### 已完成任务重新打开
+
+Finalizer完成后State原本属于终态，不能继续启动节点。本阶段新增 `state.reopen_for_feedback()`：
+
+- 只允许已完成且仍保留测试点和评审结果的任务重新打开
+- 将状态恢复为`running`并进入`collect_human_feedback`
+- 清空旧`final_result`和`report`，避免页面继续展示已经过期的报告
+- 保留需求分析、测试点、历史评审、事件和任务ID
+
+普通测试建议进入以下闭环：
+
+```text
+completed
+  → reopen_for_feedback
+  → HumanFeedback ready
+  → Reviser
+  → Reviewer
+  → Finalizer
+  → completed（新报告）
+```
+
+### 修正次数拆分
+
+原有`revision_count`同时承担总次数展示和自动上限判断。接入人工反馈后会导致人工修正错误占用自动额度。本阶段拆分为：
+
+- `revision_count`：全部修正的总次数
+- `automatic_revision_count`：Reviewer未达标触发的自动修正次数
+- `human_revision_count`：人工反馈触发的修正次数
+- `max_revision_count`：只约束`automatic_revision_count`
+
+人工反馈可以在自动修正达到上限后继续提交，但人工修改重新评审后，如果仍不达标，后续自动修正仍受剩余额度控制。
+
+### 大体量结构化输出预算修复
+
+阶段2.11.2曾为首次生成测试点的`TestPointGenerator`单独配置8192输出
+token，但`TestPointReviewer`和`TestPointReviser`仍使用默认4096。Reviser需要返回
+修正后的完整测试点集合，真实任务包含约10个测试点时可能触发
+`finish_reason=length`，导致JSON被截断并使任务失败。
+
+本阶段将8192收口为`LARGE_STRUCTURED_OUTPUT_MAX_TOKENS`，由以下节点共同使用：
+
+- `TestPointGenerator`：返回首次生成的完整测试点集合
+- `TestPointReviewer`：返回每条需求事实的覆盖结果和质量问题
+- `TestPointReviser`：返回修正后的完整测试点集合
+
+RequirementAnalyzer的响应体相对较小，仍使用默认预算。节点单元测试直接断言
+`max_tokens=8192`已传给`LLMService.generate_json()`，避免以后新增或重构节点时再次遗漏。
+
+### 主要文件
+
+- `agent/state.py`
+- `agent/human_feedback.py`
+- `agent/orchestrator.py`
+- `agent/test_point_reviser.py`
+- `agent/test_point_reviewer.py`
+- `agent/finalizer.py`
+- `views/tab_test_points.py`
+- `views/agent_presenter.py`
+- 对应Agent、Presenter和Streamlit页面测试
+
+### 验证结果
+
+- 127项单元测试通过
+- 覆盖已完成任务重新打开、业务规则确认与取消、人工反馈超过自动上限仍可执行
+- 覆盖“人工反馈→Reviser→Reviewer→Finalizer→新报告”的完整受控编排
+- Streamlit AppTest覆盖人工反馈表单和业务规则确认入口
+- 覆盖Generator、Reviewer和Reviser统一传递8192结构化输出预算
+- 测试不调用真实DeepSeek、Milvus或Embedding服务
+
+### 当前边界
+
+- 人工反馈仍依赖LLM Reviser，不提供页面直接编辑整张测试点表格
+- 当前一次提交一条反馈，不支持批量草稿后统一提交
+- 历史任务和反馈只保存在Streamlit服务进程内，服务重启后仍会丢失
+- MySQL持久化和历史任务列表尚未实现
+
+### 建议提交信息
+
+```text
+功能：接入结构化人工反馈与重新评审闭环
+```
+
+### 下一步
+
+先设计MySQL历史任务持久化的数据模型、配置边界、恢复流程和失败降级，再进入实现阶段。

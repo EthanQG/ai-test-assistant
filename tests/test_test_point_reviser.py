@@ -65,12 +65,22 @@ class FakeLLMService:
         self.response = response
         self.error = error
         self.calls = []
+        self.received_max_tokens = []
 
     def generate(self, prompt: str, system_prompt: str) -> str:
         self.calls.append((prompt, system_prompt))
         if self.error:
             raise self.error
         return self.response
+
+    def generate_json(
+        self,
+        prompt: str,
+        system_prompt: str,
+        max_tokens: int | None = None,
+    ) -> str:
+        self.received_max_tokens.append(max_tokens)
+        return self.generate(prompt, system_prompt)
 
 
 class TestPointReviserTests(unittest.TestCase):
@@ -86,6 +96,8 @@ class TestPointReviserTests(unittest.TestCase):
             state.test_points[0]["expected_results"],
         )
         self.assertEqual(state.revision_count, 1)
+        self.assertEqual(state.automatic_revision_count, 1)
+        self.assertEqual(state.human_revision_count, 0)
         self.assertIsNone(state.review_passed)
         self.assertEqual(state.review_result["overall_score"], 70)
         self.assertEqual(state.current_step, AgentStep.REVISE_TEST_POINTS)
@@ -93,6 +105,7 @@ class TestPointReviserTests(unittest.TestCase):
         self.assertIn("补充库存不被扣减的预期", llm.calls[0][0])
         self.assertIn("库存不足时提交订单", llm.calls[0][0])
         self.assertTrue(llm.calls[0][1])
+        self.assertEqual(llm.received_max_tokens, [8192])
         self.assertEqual(
             state.events[-1].event_type,
             AgentEventType.STEP_COMPLETED,
@@ -192,6 +205,8 @@ class TestPointReviserTests(unittest.TestCase):
         TestPointReviser(llm_service=llm).revise(state)
 
         self.assertIn("补充库存保持不变的预期", llm.calls[0][0])
+        self.assertEqual(state.automatic_revision_count, 0)
+        self.assertEqual(state.human_revision_count, 1)
         self.assertEqual(
             state.human_feedback[0]["status"],
             "applied",

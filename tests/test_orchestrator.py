@@ -104,6 +104,7 @@ class AgentOrchestratorDecisionTests(unittest.TestCase):
         state.review_result = {"overall_score": 70}
         state.review_passed = False
         state.revision_count = 2
+        state.automatic_revision_count = 2
         decision = self.orchestrator.decide_next(state)
         self.assertEqual(
             decision.action,
@@ -147,8 +148,84 @@ class AgentOrchestratorDecisionTests(unittest.TestCase):
             OrchestratorAction.REVISE_TEST_POINTS,
         )
 
+    def test_ready_human_feedback_can_run_after_automatic_limit(self):
+        state = generated_state()
+        state.review_result = {"overall_score": 70}
+        state.review_passed = False
+        state.revision_count = 2
+        state.automatic_revision_count = 2
+        HumanFeedbackHandler().submit(
+            state,
+            {
+                "action": "add",
+                "feedback_type": "test_suggestion",
+                "target": "订单异常",
+                "content": "增加重复提交场景",
+                "reason": "人工评审发现遗漏",
+            },
+        )
+
+        decision = self.orchestrator.decide_next(state)
+
+        self.assertEqual(
+            decision.action,
+            OrchestratorAction.REVISE_TEST_POINTS,
+        )
+
 
 class AgentOrchestratorExecutionTests(unittest.TestCase):
+    def test_completed_task_feedback_runs_revision_review_and_finalization(self):
+        state = generated_state()
+        state.review_result = {"overall_score": 90}
+        state.review_passed = True
+        state.complete("旧报告")
+        HumanFeedbackHandler().submit(
+            state,
+            {
+                "action": "add",
+                "feedback_type": "test_suggestion",
+                "target": "订单异常",
+                "content": "增加重复提交场景",
+                "reason": "人工评审发现遗漏",
+            },
+        )
+
+        def revise_callback(current_state, _):
+            HumanFeedbackHandler.mark_ready_as_applied(current_state)
+            current_state.revision_count += 1
+            current_state.human_revision_count += 1
+            current_state.review_passed = None
+
+        def review_callback(current_state, _):
+            current_state.review_result = {"overall_score": 92}
+            current_state.review_passed = True
+
+        reviser = RecordingNode(revise_callback)
+        reviewer = RecordingNode(review_callback)
+        finalizer = RecordingNode(
+            lambda current_state, _: current_state.complete("新报告")
+        )
+        orchestrator = AgentOrchestrator(
+            test_point_reviser=reviser,
+            test_point_reviewer=reviewer,
+            finalizer=finalizer,
+        )
+
+        decisions = orchestrator.run_until_blocked(state)
+
+        self.assertEqual(
+            [decision.action for decision in decisions],
+            [
+                OrchestratorAction.REVISE_TEST_POINTS,
+                OrchestratorAction.REVIEW_TEST_POINTS,
+                OrchestratorAction.FINALIZE,
+                OrchestratorAction.TERMINAL,
+            ],
+        )
+        self.assertEqual(state.status, AgentStatus.COMPLETED)
+        self.assertEqual(state.report, "新报告")
+        self.assertEqual(state.human_feedback[0]["status"], "applied")
+
     def test_run_until_blocked_executes_controlled_loop(self):
         analyzer = RecordingNode(
             lambda state, _: (

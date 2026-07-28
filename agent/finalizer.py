@@ -154,6 +154,10 @@ class Finalizer:
                 "dimension_scores": review.dimension_scores.to_dict(),
                 "review_rounds": len(state.review_history),
                 "revision_count": state.revision_count,
+                "automatic_revision_count": (
+                    state.automatic_revision_count
+                ),
+                "human_revision_count": state.human_revision_count,
             },
             inferred_risks=[
                 dict(risk) for risk in state.inferred_risks
@@ -214,7 +218,14 @@ class Finalizer:
                 f"{result.coverage_summary['covered']}"
                 f"/{result.coverage_summary['total']}"
             ),
-            f"- 自动修正次数：{result.quality_summary['revision_count']}",
+            (
+                "- 自动修正次数："
+                f"{result.quality_summary['automatic_revision_count']}"
+            ),
+            (
+                "- 人工反馈修正次数："
+                f"{result.quality_summary['human_revision_count']}"
+            ),
             "",
             "## 结构化测试点",
             "",

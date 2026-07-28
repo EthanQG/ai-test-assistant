@@ -5,6 +5,8 @@ import streamlit as st
 from agent import (
     AgentOrchestrator,
     AgentStatus,
+    FeedbackStatus,
+    HumanFeedbackHandler,
     OrchestratorAction,
     RequirementAnalyzer,
     TestAnalysisState,
@@ -15,6 +17,7 @@ from utils.knowledge_base import KnowledgeBaseManager
 from .agent_presenter import (
     decision_rows,
     event_rows,
+    feedback_rows,
     task_overview,
     test_point_rows,
 )
@@ -152,7 +155,22 @@ def _render_workbench():
         st.rerun()
 
     state = st.session_state.get(STATE_KEY)
+    pending_business_feedback = (
+        HumanFeedbackHandler.pending_confirmation_feedback(state)
+        if state is not None
+        else []
+    )
     if (
+        state is not None
+        and state.status == AgentStatus.WAITING_FOR_USER
+        and pending_business_feedback
+    ):
+        st.divider()
+        _render_business_rule_confirmation(
+            state,
+            pending_business_feedback[0],
+        )
+    elif (
         state is not None
         and state.status == AgentStatus.WAITING_FOR_USER
         and state.open_questions
@@ -162,6 +180,9 @@ def _render_workbench():
             _render_clarification_form(state)
         else:
             st.success("补充信息已提交，正在重新分析需求。")
+    elif state is not None and _can_collect_feedback(state):
+        st.divider()
+        _render_human_feedback_form(state)
     elif state is not None:
         st.divider()
 
@@ -173,12 +194,26 @@ def _render_workbench():
 
 def _task_hint(state: TestAnalysisState) -> str:
     if state.status == AgentStatus.COMPLETED:
-        return "本次分析已完成。请在右侧查看或下载报告；分析新需求时可清空当前任务。"
+        return "本次分析已完成。可在上方提交人工反馈，或在右侧查看和下载报告。"
     if state.status == AgentStatus.FAILED:
         return "本次分析执行失败。请查看右侧错误信息，确认原因后重新发起任务。"
     if state.status == AgentStatus.WAITING_FOR_USER:
         return "任务正在等待补充信息，请完成上方关键问题后继续。"
     return "Agent 正在执行，节点完成后右侧轨迹会自动更新，请耐心等待。"
+
+
+def _can_collect_feedback(state: TestAnalysisState) -> bool:
+    if not state.test_points:
+        return False
+    if state.status == AgentStatus.COMPLETED:
+        return True
+    decisions = st.session_state.get(DECISIONS_KEY, [])
+    return bool(
+        state.status == AgentStatus.RUNNING
+        and decisions
+        and decisions[-1].action
+        == OrchestratorAction.REVISION_LIMIT_REACHED
+    )
 
 
 def _render_clarification_form(state: TestAnalysisState) -> None:
@@ -233,6 +268,174 @@ def _render_clarification_form(state: TestAnalysisState) -> None:
     st.session_state[AUTO_RUN_KEY] = False
     _persist_task()
     st.rerun()
+
+
+def _render_human_feedback_form(state: TestAnalysisState) -> None:
+    st.subheader("人工反馈")
+    st.info(
+        "测试建议会直接进入修正；新增或修改业务规则需要再次确认，"
+        "确认前不会写入需求事实。"
+    )
+
+    feedback_type_label = st.radio(
+        "反馈类型",
+        ["测试建议", "业务规则"],
+        horizontal=True,
+        key=f"feedback_type_{state.task_id}",
+    )
+    feedback_type = (
+        "test_suggestion"
+        if feedback_type_label == "测试建议"
+        else "business_rule"
+    )
+    action_labels = (
+        ["新增", "修改", "删除", "调整优先级"]
+        if feedback_type == "test_suggestion"
+        else ["新增", "修改", "删除"]
+    )
+    action_label = st.selectbox(
+        "希望 Agent 如何处理",
+        action_labels,
+        key=f"feedback_action_{state.task_id}_{feedback_type}",
+    )
+    action = {
+        "新增": "add",
+        "修改": "modify",
+        "删除": "remove",
+        "调整优先级": "update_priority",
+    }[action_label]
+
+    target_options = (
+        [
+            str(test_point.get("title", "")).strip()
+            for test_point in state.test_points
+            if str(test_point.get("title", "")).strip()
+        ]
+        if feedback_type == "test_suggestion"
+        else list(state.business_rules)
+    )
+    target_unavailable = action != "add" and not target_options
+    if action == "add":
+        target = (
+            "新增测试点"
+            if feedback_type == "test_suggestion"
+            else "新增业务规则"
+        )
+    elif target_unavailable:
+        target = ""
+        st.warning("当前没有可供修改或删除的目标，请改为“新增”。")
+    else:
+        target = st.selectbox(
+            "选择目标",
+            target_options,
+            key=(
+                f"feedback_target_{state.task_id}_"
+                f"{feedback_type}_{action}"
+            ),
+        )
+
+    if action == "update_priority":
+        priority = st.selectbox(
+            "调整后的优先级",
+            ["P0", "P1", "P2"],
+            key=f"feedback_priority_{state.task_id}",
+        )
+        content = f"将测试点优先级调整为 {priority}"
+    elif action == "remove":
+        content = f"删除：{target}" if target else ""
+    else:
+        content = st.text_area(
+            "反馈内容",
+            height=90,
+            placeholder=(
+                "请说明希望新增或修改的场景、步骤、预期结果或业务规则。"
+            ),
+            key=(
+                f"feedback_content_{state.task_id}_"
+                f"{feedback_type}_{action}"
+            ),
+        ).strip()
+
+    reason = st.text_area(
+        "原因或依据",
+        height=70,
+        placeholder="例如：需求原文、线上问题、遗漏风险或评审结论。",
+        key=f"feedback_reason_{state.task_id}",
+    ).strip()
+    submitted = st.button(
+        "提交人工反馈",
+        type="primary",
+        use_container_width=True,
+        disabled=target_unavailable,
+        key=f"submit_feedback_{state.task_id}",
+    )
+    if not submitted:
+        return
+    if not content or not reason:
+        st.error("请填写反馈内容及原因或依据。")
+        return
+
+    try:
+        feedback = HumanFeedbackHandler().submit(
+            state,
+            {
+                "action": action,
+                "feedback_type": feedback_type,
+                "target": target,
+                "content": content,
+                "reason": reason,
+            },
+        )
+        st.session_state[AUTO_RUN_KEY] = (
+            feedback.status == FeedbackStatus.READY
+        )
+        st.session_state[PENDING_CLARIFICATIONS_KEY] = None
+        st.session_state[EXECUTION_STEPS_KEY] = 0
+        _persist_task()
+        st.rerun()
+    except Exception as exc:
+        st.error(f"人工反馈提交失败：{exc}")
+
+
+def _render_business_rule_confirmation(state, feedback) -> None:
+    st.subheader("确认业务规则")
+    st.warning(
+        "下面的内容会改变正式需求事实。只有确认后，Agent 才会据此修改测试点。"
+    )
+    st.markdown(f"**操作：** {feedback.action.value}")
+    st.markdown(f"**目标：** {feedback.target}")
+    st.markdown(f"**规则内容：** {feedback.content}")
+    st.markdown(f"**依据：** {feedback.reason}")
+
+    confirm_col, reject_col = st.columns(2)
+    with confirm_col:
+        confirmed = st.button(
+            "确认规则并继续",
+            type="primary",
+            use_container_width=True,
+            key=f"confirm_business_rule_{feedback.feedback_id}",
+        )
+    with reject_col:
+        rejected = st.button(
+            "取消该规则",
+            use_container_width=True,
+            key=f"reject_business_rule_{feedback.feedback_id}",
+        )
+    if not confirmed and not rejected:
+        return
+
+    try:
+        handler = HumanFeedbackHandler()
+        if confirmed:
+            handler.confirm_business_rule(state, feedback.feedback_id)
+        else:
+            handler.reject_business_rule(state, feedback.feedback_id)
+        st.session_state[AUTO_RUN_KEY] = True
+        st.session_state[EXECUTION_STEPS_KEY] = 0
+        _persist_task()
+        st.rerun()
+    except Exception as exc:
+        st.error(f"业务规则确认失败：{exc}")
 
 
 def _create_agent_task(requirement_text: str, uploaded_prd) -> None:
@@ -374,14 +577,30 @@ def _render_result_panel(state: TestAnalysisState | None) -> None:
             else "待评审",
         )
         metric_columns[4].metric(
-            "自动修正",
-            f"{overview['revision_count']}/{state.max_revision_count}",
+            "自动/人工修正",
+            (
+                f"{overview['automatic_revision_count']}"
+                f"/{state.max_revision_count}"
+                f" · {overview['human_revision_count']}"
+            ),
         )
         _render_blocked_state(state)
 
     with st.container(height=580, border=True):
-        timeline_tab, points_tab, quality_tab, report_tab = st.tabs(
-            ["执行轨迹", "结构化测试点", "质量评审", "最终报告"]
+        (
+            timeline_tab,
+            points_tab,
+            quality_tab,
+            feedback_tab,
+            report_tab,
+        ) = st.tabs(
+            [
+                "执行轨迹",
+                "结构化测试点",
+                "质量评审",
+                "人工反馈",
+                "最终报告",
+            ]
         )
         with timeline_tab:
             decisions = st.session_state.get(DECISIONS_KEY, [])
@@ -413,6 +632,17 @@ def _render_result_panel(state: TestAnalysisState | None) -> None:
         with quality_tab:
             _render_quality(state)
 
+        with feedback_tab:
+            rows = feedback_rows(state)
+            if rows:
+                st.dataframe(
+                    rows,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.caption("当前尚未提交人工反馈。")
+
         with report_tab:
             if state.report:
                 st.download_button(
@@ -429,7 +659,13 @@ def _render_result_panel(state: TestAnalysisState | None) -> None:
 
 def _render_blocked_state(state: TestAnalysisState) -> None:
     if state.status == AgentStatus.WAITING_FOR_USER:
-        st.warning("任务已暂停，请在左侧工作台回答关键问题后继续。")
+        pending_feedback = (
+            HumanFeedbackHandler.pending_confirmation_feedback(state)
+        )
+        if pending_feedback:
+            st.warning("任务已暂停，请在左侧确认或取消新增业务规则。")
+        else:
+            st.warning("任务已暂停，请在左侧工作台回答关键问题后继续。")
     elif state.status == AgentStatus.FAILED:
         st.error(state.error_message or "Agent 执行失败")
     else:
@@ -494,5 +730,13 @@ def _reset_session() -> None:
             EXECUTION_STEPS_KEY,
             "agent_requirement_input",
             "agent_prd_uploader",
-        } or key.startswith("clarification_"):
+        } or key.startswith(
+            (
+                "clarification_",
+                "feedback_",
+                "submit_feedback_",
+                "confirm_business_rule_",
+                "reject_business_rule_",
+            )
+        ):
             st.session_state.pop(key, None)

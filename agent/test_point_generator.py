@@ -4,7 +4,10 @@ from services.prompt_service import PromptService
 from .events import AgentStep
 from .models import TestPointGenerationResult
 from .state import KnowledgeRetrievalStatus, TestAnalysisState
-from .structured_output import generate_and_parse_json
+from .structured_output import (
+    LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
+    generate_and_parse_json,
+)
 
 
 class TestPointGenerationError(RuntimeError):
@@ -48,7 +51,7 @@ class TestPointGenerator:
                 user_prompt,
                 system_prompt,
                 TestPointGenerationResult.from_json,
-                max_tokens=8192,
+                max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
             )
             state.test_points = [
                 test_point.to_dict()

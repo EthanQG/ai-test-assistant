@@ -121,14 +121,9 @@ class AgentOrchestrator:
 
         ready_feedback = HumanFeedbackHandler.ready_feedback(state)
         if ready_feedback:
-            if state.revision_count >= self.max_revision_count:
-                return OrchestratorDecision(
-                    OrchestratorAction.REVISION_LIMIT_REACHED,
-                    "已达到自动修正次数上限，人工反馈尚未应用",
-                )
             return OrchestratorDecision(
                 OrchestratorAction.REVISE_TEST_POINTS,
-                "存在已确认、尚未应用的人工反馈",
+                "存在已确认、尚未应用的人工反馈；人工反馈不受自动修正次数限制",
             )
 
         if state.review_passed is None:
@@ -141,7 +136,7 @@ class AgentOrchestrator:
                 OrchestratorAction.FINALIZE,
                 "当前测试点已通过质量评审",
             )
-        if state.revision_count >= self.max_revision_count:
+        if state.automatic_revision_count >= self.max_revision_count:
             return OrchestratorDecision(
                 OrchestratorAction.REVISION_LIMIT_REACHED,
                 "评审未通过且已达到自动修正次数上限",
