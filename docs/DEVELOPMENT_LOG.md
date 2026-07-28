@@ -980,3 +980,75 @@ Finalizer不调用LLM。测试点在Reviewer通过后已经成为当前有效版
 ### 下一步
 
 进入阶段2.11，将AgentState、Orchestrator、执行轨迹、人工反馈和Finalizer结果接入Streamlit页面。
+
+---
+
+## 阶段 2.11.1：Streamlit Agent基础运行页面
+
+### 本阶段目标
+
+把已完成的Agent后端主链路接入当前Streamlit页面，先支持信息完整的需求自动运行到Finalizer完成，并让用户能够看到Agent如何决策和产生结果。
+
+### 修改内容
+
+- 主页面停止直接调用旧 `TestAssistantManager` Workflow
+- 页面创建 `TestAnalysisState` 并调用 `AgentOrchestrator.run_until_blocked()`
+- State和决策记录保存在 `st.session_state`
+- 支持需求文本和需求文档输入；默认测试经验与Milvus检索由Agent自动使用
+- 新增任务概览、Orchestrator决策、Agent事件、结构化测试点、质量评审和最终报告四类展示
+- 支持Finalizer Markdown报告下载
+- 展示等待用户、任务失败和达到修正上限状态
+- 新增 `agent_presenter`，将State转换成页面表格数据
+- 增加presenter单元测试和Streamlit AppTest冒烟测试
+- 取消Git对两个`utils/__pycache__/*.pyc`缓存文件的跟踪
+- 结构化LLM调用启用`response_format={"type": "json_object"}`
+- 检查`finish_reason=length`并将其明确报告为JSON截断
+- 对JSON解析或字段校验失败最多受控重试一次
+- 页面移除预先写死的后续步骤提示，只展示真实决策和事件
+
+### 页面调用链
+
+```text
+Streamlit输入
+  → TestAnalysisState
+  → AgentOrchestrator.run_until_blocked()
+  → State与decisions写入session_state
+  → presenter转换展示数据
+  → 页面展示轨迹、测试点、评分和报告
+```
+
+### 关键设计
+
+`st.session_state`只负责保存当前浏览器会话中的任务对象，Agent业务规则仍然位于State、节点和Orchestrator中。页面不重新判断下一步，也不直接修改评审结果。
+
+本阶段没有复用旧页面的自然语言“整篇报告重写”，因为新Agent已经使用结构化测试点和HumanFeedback模型。后续人工交互必须接入结构化反馈，避免页面再次绕过Reviewer和Reviser。
+
+临时测试经验上传不放在每次任务的主页面。当前自动加载项目默认经验，后续如需上传、更新和删除知识资产，应设计独立知识库管理功能并持久化到合适的数据库，避免用户每次分析都重复上传。
+
+真实页面调试发现RequirementAnalyzer可能收到未闭合JSON。根因诊断能力不足：旧客户端没有启用JSON Output、没有检查`finish_reason`，解析异常也丢失了行列位置。修复后所有结构化节点统一使用JSON Output，校验失败只重试一次，传输错误不盲目重试；终端日志不记录API Key和完整需求原文。
+
+### 验证结果
+
+- 全量110个单元测试通过
+- Streamlit AppTest确认首页无异常、空输入禁用启动按钮、有效输入启用按钮
+- presenter测试覆盖任务概览、决策/事件表和测试点字段展平
+- Python编译与差异格式检查通过
+- 使用真实DeepSeek验证RequirementAnalyzer成功返回结构化结果
+- 使用Streamlit AppTest真实点击启动，页面无异常并正确展示等待用户状态
+
+### 当前边界
+
+- 页面只能展示待确认问题，尚不能回答并恢复
+- 尚未提供结构化人工反馈表单
+- 达到修正上限后尚未提供人工决策入口
+- Agent同步执行，页面不能在每个真实节点完成后立即刷新
+
+### 建议提交信息
+
+```text
+功能：接入Streamlit Agent基础运行页面
+```
+
+### 下一步
+
+进入阶段2.11.2，实现待确认问题回答、需求上下文更新和任务恢复。

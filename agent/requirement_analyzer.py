@@ -4,6 +4,7 @@ from services.prompt_service import PromptService
 from .events import AgentStep
 from .models import RequirementAnalysisResult
 from .state import TestAnalysisState
+from .structured_output import generate_and_parse_json
 
 
 class RequirementAnalysisError(RuntimeError):
@@ -39,11 +40,12 @@ class RequirementAnalyzer:
                     state.requirement
                 )
             )
-            raw_response = self.llm_service.generate(
+            result = generate_and_parse_json(
+                self.llm_service,
                 user_prompt,
                 system_prompt,
+                RequirementAnalysisResult.from_json,
             )
-            result = RequirementAnalysisResult.from_json(raw_response)
             self._apply_result(state, result)
 
             state.complete_step(

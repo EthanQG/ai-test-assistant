@@ -2174,3 +2174,139 @@ Orchestrator再次读取State时发现它已经是终态，因此返回`terminal
 - [ ] 能说清最终化的前置条件
 - [ ] 能解释为什么修正上限不等于评审通过
 - [ ] 能描述completed到terminal的关系
+
+---
+
+## 二十二、阶段 2.11.1：Streamlit接入Agent主路径
+
+### 22.1 页面现在调用什么
+
+旧页面直接调用 `TestAssistantManager` 生成一整篇Markdown。现在页面创建领域State并启动编排器：
+
+```text
+页面输入
+→ TestAnalysisState
+→ AgentOrchestrator
+→ 各Agent节点更新State
+→ 页面读取State
+```
+
+因此页面不负责分析需求、评审测试点或决定下一节点，只负责输入、触发和展示。
+
+### 22.2 session_state与AgentState的区别
+
+`st.session_state`是Streamlit的浏览器会话容器，用来让页面重新执行后仍能找到当前任务。`TestAnalysisState`是业务领域状态，保存Agent进度与结果。
+
+```text
+session_state
+  保存当前页面会话中的TestAnalysisState对象
+
+TestAnalysisState
+  保存任务本身的事实、步骤、评审和报告
+```
+
+不能把业务字段全部散落在session_state里，否则将来迁移API或后台任务时需要重写流程。
+
+### 22.3 为什么增加presenter
+
+State中的字段适合业务处理，不一定适合直接显示。例如测试步骤是数组，页面表格需要换行文本；事件时间也需要格式化。
+
+`agent_presenter`只负责：
+
+- 状态标签转换
+- 事件和决策表格行生成
+- 测试点列表字段展平
+- 概览指标提取
+
+它不修改State，也不决定流程，因此可以脱离Streamlit做普通单元测试。
+
+### 22.4 为什么没有保留旧的报告微调
+
+旧功能把用户一句话和整篇Markdown再次交给LLM重写，可能绕过结构化测试点、Reviewer和修正次数限制。
+
+新流程应该是：
+
+```text
+人工意见
+→ HumanFeedbackHandler
+→ TestPointReviser
+→ Reviewer重新评审
+→ Finalizer重新整理
+```
+
+所以本阶段先移除页面对旧微调入口的依赖，后续再接入已经实现的结构化人工反馈。
+
+### 22.5 当前页面为何还不算完整
+
+`run_until_blocked()`可能停在：
+
+- `waiting_for_user`
+- `revision_limit_reached`
+- `failed`
+- `completed`
+
+本阶段能显示这些状态，但只能完整处理`completed`。下一阶段需要让用户回答待确认问题并恢复同一个State。
+
+### 22.6 为什么移除每次任务的本地经验上传
+
+临时上传只对当前任务生效，会与Agent自动执行的Milvus检索产生理解和功能重叠，也要求用户重复操作。主工作台现在只负责输入PRD，默认经验由后端自动加载。
+
+后续知识上传应作为独立的知识库管理能力：
+
+```text
+上传脱敏知识
+→ 文档解析与切分
+→ 向量化并持久化
+→ Agent在不同任务中自动检索复用
+```
+
+### 22.7 面试问题与参考答案
+
+#### 问：为什么不把Agent状态直接拆成很多session_state变量？
+
+答：
+
+> session_state属于UI框架，TestAnalysisState属于领域模型。页面只保存一个完整State对象，业务节点仍读取和更新领域状态，这样单元测试、后续API化和任务持久化都不依赖Streamlit。
+
+#### 问：页面为什么不自己根据状态调用某个节点？
+
+答：
+
+> 节点选择属于Orchestrator职责。如果页面也写一套if/else，会形成两份流程规则，导致单元测试通过但页面路径不同。页面只调用run_until_blocked并展示决策结果。
+
+### 22.8 当前限制
+
+- 尚未实现待确认问题提交和恢复
+- 尚未接入人工反馈
+- 同步执行时无法逐节点实时刷新
+- session_state不是持久化存储，浏览器会话丢失后任务也会丢失
+- 尚未实现独立的知识库上传和管理页面
+
+### 22.9 掌握检查
+
+- [ ] 能区分session_state与TestAnalysisState
+- [ ] 能解释页面、presenter和Orchestrator的职责
+- [ ] 能说明旧微调入口为什么不能直接复用
+- [ ] 能列出run_until_blocked的四类页面结果
+
+### 22.10 结构化JSON为什么仍可能失败
+
+Prompt中写“只返回JSON”属于自然语言约束，模型仍可能返回未闭合字符串或被输出长度截断。结构化节点现在同时使用三层保护：
+
+```text
+API JSON Output
+→ finish_reason与空内容检查
+→ Python字段模型校验
+```
+
+如果JSON或字段校验失败，系统最多重新生成一次；网络错误不会盲目重试。`finish_reason=length`会明确提示`max_tokens`导致JSON截断。
+
+#### 问：为什么不直接用字符串补全残缺JSON？
+
+答：
+
+> 自动补引号或括号只能让语法看似合法，无法证明被截断的业务含义完整。测试分析涉及需求事实，应该重新生成并再次完整校验，而不是修补不可信的半成品。
+
+#### 如何从本地定位错误
+
+页面展示面向用户的任务错误和AgentEvent；启动Streamlit的PowerShell窗口展示结构化校验的尝试次数、具体行列和重试原因。日志不应打印API Key或完整敏感需求。

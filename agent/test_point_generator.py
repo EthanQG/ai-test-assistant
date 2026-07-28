@@ -4,6 +4,7 @@ from services.prompt_service import PromptService
 from .events import AgentStep
 from .models import TestPointGenerationResult
 from .state import KnowledgeRetrievalStatus, TestAnalysisState
+from .structured_output import generate_and_parse_json
 
 
 class TestPointGenerationError(RuntimeError):
@@ -42,11 +43,12 @@ class TestPointGenerator:
                     rag_context=state.rag_context,
                 )
             )
-            raw_response = self.llm_service.generate(
+            result = generate_and_parse_json(
+                self.llm_service,
                 user_prompt,
                 system_prompt,
+                TestPointGenerationResult.from_json,
             )
-            result = TestPointGenerationResult.from_json(raw_response)
             state.test_points = [
                 test_point.to_dict()
                 for test_point in result.test_points

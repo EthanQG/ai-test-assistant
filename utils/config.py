@@ -19,6 +19,7 @@ class ConfigManager:
         self.knowledge_base_path = os.getenv("KNOWLEDGE_BASE_PATH", "./knowledge/bug_experience.txt")
         self.max_tokens = int(os.getenv("MAX_TOKENS", 4096))
         self.temperature = float(os.getenv("TEMPERATURE", 0.7))
+        self.request_timeout = int(os.getenv("REQUEST_TIMEOUT", 120))
 
     @property
     def is_api_configured(self) -> bool:

@@ -205,7 +205,8 @@ class TestPointReviewResult:
             payload = json.loads(cleaned)
         except json.JSONDecodeError as exc:
             raise TestPointReviewValidationError(
-                f"LLM response is not valid JSON: {exc.msg}"
+                "LLM response is not valid JSON: "
+                f"{exc.msg} (line {exc.lineno}, column {exc.colno})"
             ) from exc
         if not isinstance(payload, dict):
             raise TestPointReviewValidationError(

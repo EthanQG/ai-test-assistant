@@ -15,8 +15,8 @@
 ## Git 基线
 
 - 分支：`main`
-- 本阶段提交前基线：`719a0ad 文档：调整Finalizer与页面开发顺序`
-- 最新已提交功能：`719a0ad 文档：调整Finalizer与页面开发顺序`
+- 本阶段提交前基线：`977aab9 功能：实现Agent最终结果整理节点`
+- 最新已提交功能：`977aab9 功能：实现Agent最终结果整理节点`
 - 核对时状态：`main` 与 `origin/main` 同步
 - 远程仓库：`https://github.com/EthanQG/ai-test-assistant.git`
 
@@ -30,7 +30,7 @@ git log -5 --oneline --decorate
 
 ## 当前阶段
 
-阶段 2.10 已完成开发、尚未提交：已经实现确定性 `Finalizer`、统一最终结果模型、Markdown报告和Orchestrator最终化闭环。
+阶段 2.11.1 已完成开发、尚未提交：Streamlit已接入Agent自动主路径，可创建State、执行Orchestrator并展示轨迹、测试点、质量结果和最终报告。
 
 产品范围已按 V2 PRD 收敛为测试分析 Agent。旧版三模块 Workflow PRD 已归档，不再作为当前需求依据。
 
@@ -147,17 +147,38 @@ git log -5 --oneline --decorate
 - 最终结果写入 `state.final_result`，报告写入 `state.report`
 - Orchestrator执行Finalizer后将任务更新为`completed`，下一轮返回`terminal`
 
+### 阶段 2.11.1：Streamlit Agent基础运行页面
+
+- 页面从旧 `TestAssistantManager` Workflow切换为 `TestAnalysisState + AgentOrchestrator`
+- 支持文本输入和TXT、Markdown、PDF、DOCX需求文档
+- 自动加载默认本地测试经验，并由Agent执行Milvus知识检索
+- 使用 `st.session_state` 保存当前State和Orchestrator决策记录
+- 展示任务状态、当前步骤、测试点数量、Reviewer评分和修正次数
+- 展示Orchestrator决策表与AgentEvent事件表
+- 展示结构化测试点、Reviewer维度评分和最终Markdown报告
+- 支持下载Finalizer报告
+- 明确展示等待用户、执行失败和达到修正上限三类非完成状态
+- 新增纯Python presenter与Streamlit页面冒烟测试
+- 清理Git中误跟踪的`utils/__pycache__`缓存文件，后续由`.gitignore`持续忽略
+- 结构化节点启用DeepSeek JSON Output并检查`finish_reason`
+- JSON或字段校验失败时最多重试一次，网络错误不盲目重试
+- JSON解析错误保留具体行列，终端输出校验失败与重试日志
+- 页面不再预先显示尚未真正执行的后续节点
+
 ## 当前架构
 
 ```text
 main.py / views/
-  Streamlit 页面
+  Streamlit Agent工作台
         ↓
+  TestAnalysisState + AgentOrchestrator
+        ↓
+agent/节点
+        ↓
+services/ LLM / RAG / Prompt / Document
+
 utils/TestAssistantManager
-  现有 Workflow 兼容入口
-        ↓
-services/
-  LLM / RAG / Prompt / Document
+  仅保留旧Workflow兼容实现，当前主页面不再直接调用
 
 agent/
   TestAnalysisState
@@ -181,7 +202,7 @@ agent/
 验证日期：2026-07-28
 
 ```text
-101 tests passed
+110 tests passed
 ```
 
 验证命令：
@@ -193,31 +214,32 @@ python -m compileall -q agent services utils views tests main.py
 
 单元测试不得访问真实 DeepSeek、Milvus 或 Embedding 服务。
 
-## 下一步任务：Streamlit接入Agent
+## 下一步任务：待确认问题与任务恢复
 
-阶段 2.10 提交后，进入阶段 2.11：把完整Agent主链路接入Streamlit，逐步替换页面对旧Workflow的直接调用。
+阶段 2.11.1 提交后，进入阶段 2.11.2：让用户在页面回答RequirementAnalyzer产生的待确认问题，并恢复当前任务。
 
 目标流程：
 
 ```text
-用户输入PRD
-  → 页面创建并保存TestAnalysisState
-  → 调用Orchestrator执行到阻塞点
-  → 展示AgentEvent、节点状态和结构化测试点
-  → 支持待确认问题与人工反馈
-  → 展示Finalizer最终结果并下载Markdown报告
+Agent识别open_questions
+  → State进入waiting_for_user
+  → 页面逐项展示问题并接收回答
+  → 将回答以明确结构写回State
+  → 更新需求上下文并使旧待确认项失效
+  → state.resume()
+  → Orchestrator继续执行到下一个阻塞点
 ```
 
-阶段2.11继续使用Streamlit，不进行前后端分离。阶段2.12再建立离线评测与演示材料。
+阶段2.11.3再接入结构化人工反馈和业务规则确认。本阶段继续使用Streamlit，不进行前后端分离。
 
 ## 当前限制
 
-- 现有 Streamlit 页面尚未使用 `TestAnalysisState`
 - Agent 尚不能自主选择 Tool
-- Orchestrator已完成，但尚未由Streamlit页面调用
 - 人工反馈内部能力已完成，但尚未接入新Agent页面
-- 现有 Streamlit 页面仍使用旧 Workflow 的 Markdown 报告，尚未展示 Agent 内部结构化测试点
+- 页面可以展示待确认问题，但尚不能提交回答和恢复任务
 - 达到自动修正上限后仍需页面提供人工处理入口，不能自动最终化
+- 页面当前同步执行完整Agent链路，真实模型耗时较长时缺少逐节点实时刷新
+- 知识资产上传与持久化尚未设计为独立的知识库管理功能
 - Milvus 与 Embedding 地址仍在现有客户端中硬编码
 - 自动化用例生成和异常日志分析仍是未完成功能
 

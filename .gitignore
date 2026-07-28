@@ -17,6 +17,7 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+streamlit-debug.*.log
 
 # Generated artifacts
 knowledge/history_points/

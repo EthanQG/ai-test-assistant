@@ -104,7 +104,8 @@ class RequirementAnalysisResult:
             payload = json.loads(cleaned_response)
         except json.JSONDecodeError as exc:
             raise RequirementAnalysisValidationError(
-                f"LLM response is not valid JSON: {exc.msg}"
+                "LLM response is not valid JSON: "
+                f"{exc.msg} (line {exc.lineno}, column {exc.colno})"
             ) from exc
 
         if not isinstance(payload, dict):
@@ -313,7 +314,8 @@ class TestPointGenerationResult:
             payload = json.loads(cleaned_response)
         except json.JSONDecodeError as exc:
             raise TestPointValidationError(
-                f"LLM response is not valid JSON: {exc.msg}"
+                "LLM response is not valid JSON: "
+                f"{exc.msg} (line {exc.lineno}, column {exc.colno})"
             ) from exc
 
         if not isinstance(payload, dict):

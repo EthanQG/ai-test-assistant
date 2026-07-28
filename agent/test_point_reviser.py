@@ -7,6 +7,7 @@ from .events import AgentStep
 from .human_feedback import HumanFeedbackHandler
 from .models import TestPointGenerationResult
 from .state import TestAnalysisState
+from .structured_output import generate_and_parse_json
 
 
 class TestPointRevisionError(RuntimeError):
@@ -51,11 +52,12 @@ class TestPointReviser:
                     ],
                 )
             )
-            raw_response = self.llm_service.generate(
+            result = generate_and_parse_json(
+                self.llm_service,
                 user_prompt,
                 system_prompt,
+                TestPointGenerationResult.from_json,
             )
-            result = TestPointGenerationResult.from_json(raw_response)
             revised_test_points = [
                 test_point.to_dict()
                 for test_point in result.test_points

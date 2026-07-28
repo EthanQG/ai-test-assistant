@@ -4,6 +4,7 @@ from services.prompt_service import PromptService
 from .events import AgentStep
 from .review_models import TestPointReviewResult
 from .state import TestAnalysisState
+from .structured_output import generate_and_parse_json
 
 
 class TestPointReviewError(RuntimeError):
@@ -40,11 +41,12 @@ class TestPointReviewer:
                 self._requirement_analysis_payload(state),
                 state.test_points,
             )
-            raw_response = self.llm_service.generate(
+            result = generate_and_parse_json(
+                self.llm_service,
                 user_prompt,
                 system_prompt,
+                TestPointReviewResult.from_json,
             )
-            result = TestPointReviewResult.from_json(raw_response)
             self._validate_coverage(state, result)
             passed = self._is_passing(result)
 
