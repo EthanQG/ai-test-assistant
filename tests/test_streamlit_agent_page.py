@@ -1,4 +1,5 @@
 import unittest
+from copy import deepcopy
 
 from agent import (
     AgentStatus,
@@ -13,8 +14,28 @@ from agent.orchestrator import (
 from streamlit.testing.v1 import AppTest
 from views.tab_test_points import (
     FEEDBACK_FORM_VERSION_KEY,
+    PAGINATION_TASK_ID_KEY,
+    RESULT_ACTIVE_TAB_KEY,
+    TEST_POINT_EXPANDED_KEY,
+    TEST_POINT_PAGE_KEY,
     _task_store,
 )
+
+
+def _build_test_points(count: int) -> list[dict]:
+    return [
+        {
+            "title": f"测试点{i}",
+            "category": "functional",
+            "priority": "P0",
+            "scenario": f"场景{i}",
+            "preconditions": [f"前置条件{i}"],
+            "steps": [f"执行步骤{i}"],
+            "expected_results": [f"预期结果{i}"],
+            "sources": ["requirement"],
+        }
+        for i in range(1, count + 1)
+    ]
 
 
 class StreamlitAgentPageTests(unittest.TestCase):
@@ -89,6 +110,12 @@ class StreamlitAgentPageTests(unittest.TestCase):
         app.session_state["agent_decisions"] = []
 
         app.run(timeout=10)
+        result_navigation = next(
+            radio for radio in app.radio
+            if radio.label == "结果导航"
+        )
+        result_navigation.set_value("人工反馈")
+        app.run(timeout=10)
 
         self.assertFalse(app.exception)
         self.assertEqual(
@@ -153,6 +180,11 @@ class StreamlitAgentPageTests(unittest.TestCase):
         app.session_state["agent_decisions"] = []
 
         app.run(timeout=10)
+        next(
+            radio for radio in app.radio
+            if radio.label == "结果导航"
+        ).set_value("人工反馈")
+        app.run(timeout=10)
 
         self.assertFalse(app.exception)
         self.assertIn(
@@ -170,7 +202,10 @@ class StreamlitAgentPageTests(unittest.TestCase):
             )
         )
         self.assertEqual(
-            [tab.label for tab in app.tabs],
+            next(
+                radio for radio in app.radio
+                if radio.label == "结果导航"
+            ).options,
             [
                 "结构化测试点",
                 "质量评审",
@@ -207,10 +242,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         app.run(timeout=10)
 
         self.assertFalse(app.exception)
-        self.assertIn(
-            "查看前置条件、步骤、预期结果与来源",
-            [expander.label for expander in app.expander],
-        )
+        self.assertIn("查看详情", [button.label for button in app.button])
         self.assertTrue(
             any(
                 "场景摘要：满足使用条件时抵扣订单金额"
@@ -219,6 +251,150 @@ class StreamlitAgentPageTests(unittest.TestCase):
             )
         )
         self.assertEqual(len(app.dataframe), 0)
+
+    def test_test_points_are_paginated_and_only_one_detail_is_open(self):
+        state = TestAnalysisState("分页需求")
+        state.test_points = _build_test_points(12)
+        state.status = AgentStatus.COMPLETED
+        original_points = deepcopy(state.test_points)
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertTrue(
+            any("第 1/3 页" in item.value for item in app.caption)
+        )
+        self.assertEqual(
+            [button.label for button in app.button].count("查看详情"),
+            5,
+        )
+        self.assertTrue(
+            any("测试点5" in item.value for item in app.markdown)
+        )
+        self.assertFalse(
+            any(">6. 测试点6</div>" in item.value for item in app.markdown)
+        )
+
+        next(
+            button for button in app.button
+            if button.label == "查看详情"
+        ).click()
+        app.run(timeout=10)
+        self.assertEqual(
+            app.session_state[TEST_POINT_EXPANDED_KEY],
+            "测试点1",
+        )
+        self.assertTrue(
+            any("前置条件1" in item.value for item in app.markdown)
+        )
+
+        next(
+            button for button in app.button
+            if button.label == "查看详情"
+        ).click()
+        app.run(timeout=10)
+        self.assertEqual(
+            app.session_state[TEST_POINT_EXPANDED_KEY],
+            "测试点2",
+        )
+        self.assertFalse(
+            any("前置条件1" in item.value for item in app.markdown)
+        )
+        self.assertTrue(
+            any("前置条件2" in item.value for item in app.markdown)
+        )
+
+        next(
+            button for button in app.button
+            if button.label == "下一页"
+        ).click()
+        app.run(timeout=10)
+        self.assertEqual(app.session_state[TEST_POINT_PAGE_KEY], 2)
+        self.assertIsNone(
+            app.session_state[TEST_POINT_EXPANDED_KEY]
+        )
+        self.assertTrue(
+            any(">6. 测试点6</div>" in item.value for item in app.markdown)
+        )
+        self.assertFalse(
+            any(">1. 测试点1</div>" in item.value for item in app.markdown)
+        )
+        self.assertEqual(state.test_points, original_points)
+
+    def test_page_state_resets_for_changed_points_and_switched_task(self):
+        state = TestAnalysisState("第一项需求")
+        state.test_points = _build_test_points(12)
+        state.status = AgentStatus.COMPLETED
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+        app.session_state[TEST_POINT_PAGE_KEY] = 3
+        app.session_state[TEST_POINT_EXPANDED_KEY] = "测试点11"
+        app.run(timeout=10)
+        self.assertEqual(app.session_state[TEST_POINT_PAGE_KEY], 3)
+
+        state.test_points[0]["scenario"] = "更新后的场景"
+        app.run(timeout=10)
+        self.assertEqual(app.session_state[TEST_POINT_PAGE_KEY], 1)
+        self.assertIsNone(
+            app.session_state[TEST_POINT_EXPANDED_KEY]
+        )
+
+        next_state = TestAnalysisState("第二项需求")
+        next_state.test_points = _build_test_points(2)
+        next_state.status = AgentStatus.COMPLETED
+        app.session_state["agent_task_state"] = next_state
+        app.run(timeout=10)
+
+        self.assertEqual(
+            app.session_state[PAGINATION_TASK_ID_KEY],
+            next_state.task_id,
+        )
+        self.assertEqual(app.session_state[TEST_POINT_PAGE_KEY], 1)
+        self.assertIsNone(
+            app.session_state[TEST_POINT_EXPANDED_KEY]
+        )
+        self.assertEqual(
+            app.session_state[RESULT_ACTIVE_TAB_KEY],
+            "结构化测试点",
+        )
+
+    def test_new_analysis_clears_page_only_navigation_state(self):
+        state = TestAnalysisState("需要重新开始的需求")
+        state.test_points = _build_test_points(12)
+        state.status = AgentStatus.COMPLETED
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+        app.session_state[RESULT_ACTIVE_TAB_KEY] = "最终报告"
+        app.session_state[TEST_POINT_PAGE_KEY] = 3
+        app.session_state[TEST_POINT_EXPANDED_KEY] = "测试点11"
+        next(
+            button for button in app.button
+            if button.label == "新建分析"
+        ).click()
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertIsNone(app.session_state["agent_task_state"])
+        self.assertEqual(
+            app.session_state[RESULT_ACTIVE_TAB_KEY],
+            "结构化测试点",
+        )
+        self.assertEqual(app.session_state[TEST_POINT_PAGE_KEY], 1)
+        self.assertIsNone(
+            app.session_state[TEST_POINT_EXPANDED_KEY]
+        )
+        self.assertIsNone(
+            app.session_state[PAGINATION_TASK_ID_KEY]
+        )
 
     def test_started_task_shows_requirement_as_read_only_source(self):
         state = TestAnalysisState(
@@ -238,7 +414,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         self.assertEqual(len(app.text_area), 0)
         self.assertEqual(
             [button.label for button in app.button],
-            ["新建分析"],
+            ["新建分析", "查看执行详情"],
         )
 
     def test_stage_progress_and_debug_details_are_rendered(self):
@@ -258,11 +434,16 @@ class StreamlitAgentPageTests(unittest.TestCase):
                 for markdown in app.markdown
             )
         )
-        self.assertEqual(
-            [expander.label for expander in app.expander],
-            ["执行详情"],
+        self.assertIn(
+            "查看执行详情",
+            [button.label for button in app.button],
         )
-        self.assertFalse(app.expander[0].proto.expanded)
+        self.assertFalse(
+            any(
+                "Agent 事件" in markdown.value
+                for markdown in app.markdown
+            )
+        )
 
     def test_timeline_uses_static_tables(self):
         state = TestAnalysisState("用户可以使用优惠券")
@@ -277,6 +458,11 @@ class StreamlitAgentPageTests(unittest.TestCase):
         ]
 
         app.run(timeout=10)
+        next(
+            button for button in app.button
+            if button.label == "查看执行详情"
+        ).click()
+        app.run(timeout=10)
 
         self.assertFalse(app.exception)
         self.assertEqual(len(app.table), 0)
@@ -286,6 +472,70 @@ class StreamlitAgentPageTests(unittest.TestCase):
                 for markdown in app.markdown
             )
         )
+
+    def test_dialog_keeps_active_tab_page_and_expanded_point(self):
+        state = TestAnalysisState("执行详情需求")
+        state.test_points = _build_test_points(12)
+        state.status = AgentStatus.COMPLETED
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = [
+            OrchestratorDecision(
+                action=OrchestratorAction.ANALYZE_REQUIREMENT,
+                reason="需求分析完成",
+            )
+        ]
+
+        app.run(timeout=10)
+        app.session_state[TEST_POINT_PAGE_KEY] = 2
+        app.session_state[TEST_POINT_EXPANDED_KEY] = "测试点6"
+        app.run(timeout=10)
+        next(
+            button for button in app.button
+            if button.label == "查看执行详情"
+        ).click()
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            app.session_state[RESULT_ACTIVE_TAB_KEY],
+            "结构化测试点",
+        )
+        self.assertEqual(app.session_state[TEST_POINT_PAGE_KEY], 2)
+        self.assertEqual(
+            app.session_state[TEST_POINT_EXPANDED_KEY],
+            "测试点6",
+        )
+        self.assertTrue(
+            any(
+                "Orchestrator 决策" in markdown.value
+                for markdown in app.markdown
+            )
+        )
+
+    def test_result_navigation_survives_normal_rerun(self):
+        state = TestAnalysisState("结果导航需求")
+        state.test_points = _build_test_points(1)
+        state.review_result = {"overall_score": 90}
+        state.status = AgentStatus.COMPLETED
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+        next(
+            radio for radio in app.radio
+            if radio.label == "结果导航"
+        ).set_value("质量评审")
+        app.run(timeout=10)
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            app.session_state[RESULT_ACTIVE_TAB_KEY],
+            "质量评审",
+        )
+        self.assertIn("总分", [metric.label for metric in app.metric])
 
     def test_revision_limit_guides_user_to_feedback_tab(self):
         state = TestAnalysisState("用户可以使用优惠券")
@@ -347,6 +597,11 @@ class StreamlitAgentPageTests(unittest.TestCase):
         app.session_state["agent_task_state"] = state
         app.session_state["agent_decisions"] = []
 
+        app.run(timeout=10)
+        next(
+            radio for radio in app.radio
+            if radio.label == "结果导航"
+        ).set_value("最终报告")
         app.run(timeout=10)
 
         self.assertFalse(app.exception)
@@ -423,7 +678,17 @@ class StreamlitAgentPageTests(unittest.TestCase):
         app.session_state["agent_decisions"] = []
 
         app.run(timeout=10)
-        app.radio[0].set_value("业务规则")
+        result_navigation = next(
+            radio for radio in app.radio
+            if radio.label == "结果导航"
+        )
+        result_navigation.set_value("人工反馈")
+        app.run(timeout=10)
+        feedback_type = next(
+            radio for radio in app.radio
+            if radio.label == "反馈类型"
+        )
+        feedback_type.set_value("业务规则")
         app.run(timeout=10)
         feedback_content = next(
             item
@@ -460,6 +725,10 @@ class StreamlitAgentPageTests(unittest.TestCase):
                 "人工反馈已接收" in success.value
                 for success in app.success
             )
+        )
+        self.assertEqual(
+            app.session_state[RESULT_ACTIVE_TAB_KEY],
+            "人工反馈",
         )
 
 

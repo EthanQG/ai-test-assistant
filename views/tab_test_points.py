@@ -1,3 +1,6 @@
+import hashlib
+import json
+import math
 import time
 
 import streamlit as st
@@ -36,7 +39,24 @@ PENDING_CLARIFICATIONS_KEY = "agent_pending_clarifications"
 EXECUTION_STEPS_KEY = "agent_execution_steps"
 FEEDBACK_FORM_VERSION_KEY = "agent_feedback_form_version"
 FEEDBACK_NOTICE_KEY = "agent_feedback_notice"
+RESULT_ACTIVE_TAB_KEY = "agent_ui_active_result_tab"
+TEST_POINT_PAGE_KEY = "agent_ui_test_point_page"
+TEST_POINT_EXPANDED_KEY = "agent_ui_expanded_test_point"
+TEST_POINT_SIGNATURE_KEY = "agent_ui_test_point_signature"
+PAGINATION_TASK_ID_KEY = "agent_ui_pagination_task_id"
+EXECUTION_DIALOG_BUTTON_PREFIX = "agent_ui_execution_details"
+UI_STATE_PREFIX = "agent_ui_"
 MAX_PAGE_STEPS = 20
+TEST_POINT_PAGE_SIZE = 5
+WORKBENCH_CONTENT_HEIGHT = 480
+RESULT_CONTENT_HEIGHT = 330
+EXECUTION_DETAILS_HEIGHT = 480
+RESULT_TABS = (
+    "结构化测试点",
+    "质量评审",
+    "人工反馈",
+    "最终报告",
+)
 
 
 @st.cache_resource
@@ -47,11 +67,14 @@ def _task_store() -> dict:
 
 def render_ui() -> None:
     _initialize_session()
+    _initialize_page_view_state()
 
     state = st.session_state.get(STATE_KEY)
+    decisions = st.session_state.get(DECISIONS_KEY, [])
+    _sync_page_view_state(state, decisions)
     column_weights = layout_column_weights(
         state,
-        st.session_state.get(DECISIONS_KEY, []),
+        decisions,
     )
     workbench, result_panel = st.columns(
         column_weights,
@@ -59,7 +82,16 @@ def render_ui() -> None:
     )
     with workbench:
         with st.container(border=True):
-            _render_workbench()
+            st.subheader("需求工作台")
+            with st.container(
+                height=WORKBENCH_CONTENT_HEIGHT,
+                border=False,
+            ):
+                st.markdown(
+                    '<span class="agent-workbench-scroll-marker"></span>',
+                    unsafe_allow_html=True,
+                )
+                _render_workbench()
 
     with result_panel:
         with st.container(border=True):
@@ -98,6 +130,85 @@ def _initialize_session() -> None:
     st.session_state[EXECUTION_STEPS_KEY] = stored["execution_steps"]
 
 
+def _initialize_page_view_state() -> None:
+    st.session_state.setdefault(
+        RESULT_ACTIVE_TAB_KEY,
+        RESULT_TABS[0],
+    )
+    st.session_state.setdefault(TEST_POINT_PAGE_KEY, 1)
+    st.session_state.setdefault(TEST_POINT_EXPANDED_KEY, None)
+    st.session_state.setdefault(TEST_POINT_SIGNATURE_KEY, "")
+    st.session_state.setdefault(PAGINATION_TASK_ID_KEY, None)
+
+
+def _clear_page_view_state() -> None:
+    for key in list(st.session_state):
+        if key.startswith(UI_STATE_PREFIX):
+            st.session_state.pop(key, None)
+
+
+def _sync_page_view_state(
+    state: TestAnalysisState | None,
+    decisions: list[OrchestratorDecision],
+) -> None:
+    task_id = state.task_id if state is not None else None
+    previous_task_id = st.session_state.get(PAGINATION_TASK_ID_KEY)
+    signature = _test_point_signature(state)
+
+    if previous_task_id != task_id:
+        st.session_state[PAGINATION_TASK_ID_KEY] = task_id
+        st.session_state[RESULT_ACTIVE_TAB_KEY] = _default_result_tab(
+            state,
+            decisions,
+        )
+        st.session_state[TEST_POINT_PAGE_KEY] = 1
+        st.session_state[TEST_POINT_EXPANDED_KEY] = None
+        st.session_state[TEST_POINT_SIGNATURE_KEY] = signature
+        return
+
+    if st.session_state.get(TEST_POINT_SIGNATURE_KEY) != signature:
+        st.session_state[TEST_POINT_PAGE_KEY] = 1
+        st.session_state[TEST_POINT_EXPANDED_KEY] = None
+        st.session_state[TEST_POINT_SIGNATURE_KEY] = signature
+
+    if st.session_state.get(RESULT_ACTIVE_TAB_KEY) not in RESULT_TABS:
+        st.session_state[RESULT_ACTIVE_TAB_KEY] = _default_result_tab(
+            state,
+            decisions,
+        )
+
+
+def _default_result_tab(
+    state: TestAnalysisState | None,
+    decisions: list[OrchestratorDecision],
+) -> str:
+    if state is None:
+        return RESULT_TABS[0]
+    revision_limit_reached = bool(
+        decisions
+        and decisions[-1].action
+        == OrchestratorAction.REVISION_LIMIT_REACHED
+    )
+    feedback_processing = (
+        state.current_step.value
+        in {"collect_human_feedback", "revise_test_points"}
+        or revision_limit_reached
+    )
+    return "人工反馈" if feedback_processing else RESULT_TABS[0]
+
+
+def _test_point_signature(state: TestAnalysisState | None) -> str:
+    if state is None or not state.test_points:
+        return ""
+    payload = json.dumps(
+        state.test_points,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _persist_task() -> None:
     state = st.session_state.get(STATE_KEY)
     if state is None:
@@ -121,7 +232,6 @@ def _render_workbench():
     state = st.session_state.get(STATE_KEY)
     task_started = state is not None
 
-    st.subheader("需求工作台")
     if task_started:
         st.caption("原始需求（任务创建后保持只读）")
         st.code(
@@ -179,6 +289,7 @@ def _render_workbench():
             )
 
     if reset_clicked:
+        _clear_page_view_state()
         _reset_session()
         st.rerun()
 
@@ -605,26 +716,32 @@ def _load_default_knowledge() -> str:
 def _render_result_panel(state: TestAnalysisState | None):
     st.subheader("任务概览")
     if state is None:
-        st.markdown(
-            """
-            <div class="agent-empty-result">
-              <div class="agent-empty-result__content">
-                <strong>分析结果将在这里持续展示</strong>
-                <p>
-                  在左侧输入需求或上传PRD并启动分析。任务开始后，
-                  这里会显示阶段进度、结构化测试点、质量评审和最终报告。
-                </p>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        with st.container(height=RESULT_CONTENT_HEIGHT, border=False):
+            st.markdown(
+                '<span class="agent-empty-scroll-marker"></span>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                """
+                <div class="agent-empty-result">
+                  <div class="agent-empty-result__content">
+                    <strong>分析结果将在这里持续展示</strong>
+                    <p>
+                      在左侧输入需求或上传PRD并启动分析。任务开始后，
+                      这里会显示阶段进度、结构化测试点、质量评审和最终报告。
+                    </p>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         return st.empty()
 
     overview = task_overview(state)
+    decisions = st.session_state.get(DECISIONS_KEY, [])
     header = task_header(
         state,
-        st.session_state.get(DECISIONS_KEY, []),
+        decisions,
     )
     st.markdown(
         f"**{header['status_label']} · "
@@ -639,57 +756,92 @@ def _render_result_panel(state: TestAnalysisState | None):
         if overview["overall_score"] is not None
         else "待评审"
     )
-    st.caption(
-        f"测试点 {overview['test_point_count']} · "
-        f"Reviewer {score} · "
-        f"自动修正 {overview['automatic_revision_count']}"
-        f"/{state.max_revision_count} · "
-        f"人工修正 {overview['human_revision_count']}"
-    )
+    summary_col, details_col = st.columns([2.5, 1])
+    with summary_col:
+        st.caption(
+            f"测试点 {overview['test_point_count']} · "
+            f"Reviewer {score} · "
+            f"自动修正 {overview['automatic_revision_count']}"
+            f"/{state.max_revision_count} · "
+            f"人工修正 {overview['human_revision_count']}"
+        )
+    with details_col:
+        if st.button(
+            "查看执行详情",
+            type="secondary",
+            use_container_width=True,
+            key=f"{EXECUTION_DIALOG_BUTTON_PREFIX}_{state.task_id}",
+        ):
+            _render_execution_details_dialog(state, decisions)
     _render_blocked_state(state)
     execution_placeholder = st.empty()
-    st.divider()
 
-    (
-        points_tab,
-        quality_tab,
-        feedback_tab,
-        report_tab,
-    ) = st.tabs(
-        [
-            "结构化测试点",
-            "质量评审",
-            "人工反馈",
-            "最终报告",
-        ]
+    active_tab = st.radio(
+        "结果导航",
+        RESULT_TABS,
+        horizontal=True,
+        label_visibility="collapsed",
+        key=RESULT_ACTIVE_TAB_KEY,
     )
-    with points_tab:
-        if state.test_points:
-            _render_test_point_list(state)
+    compact_result_body = (
+        state.status
+        in {
+            AgentStatus.WAITING_FOR_USER,
+            AgentStatus.FAILED,
+        }
+        or bool(
+            decisions
+            and decisions[-1].action
+            == OrchestratorAction.REVISION_LIMIT_REACHED
+        )
+    )
+    scroll_marker_class = "agent-result-scroll-marker"
+    if compact_result_body:
+        scroll_marker_class += " agent-blocked-result-scroll-marker"
+    with st.container(height=RESULT_CONTENT_HEIGHT, border=False):
+        st.markdown(
+            f'<span class="{scroll_marker_class}"></span>',
+            unsafe_allow_html=True,
+        )
+        if active_tab == "结构化测试点":
+            _render_test_points_tab(state)
+        elif active_tab == "质量评审":
+            _render_quality(state)
+        elif active_tab == "人工反馈":
+            _render_feedback_tab(state)
         else:
-            st.caption("当前尚未生成结构化测试点。")
+            _render_report_tab(state)
 
-    with quality_tab:
-        _render_quality(state)
+    return execution_placeholder
 
-    with feedback_tab:
-        _render_feedback_tab(state)
 
-    with report_tab:
-        if state.report:
-            st.download_button(
-                "下载 Markdown 报告",
-                data=state.report,
-                file_name="测试分析报告.md",
-                mime="text/markdown",
-                use_container_width=True,
-            )
-            st.markdown(state.report)
-        else:
-            st.caption("任务完成后将在此展示最终报告。")
+def _render_test_points_tab(state: TestAnalysisState) -> None:
+    if state.test_points:
+        _render_test_point_list(state)
+    else:
+        st.caption("当前尚未生成结构化测试点。")
 
-    with st.expander("执行详情", expanded=False):
-        decisions = st.session_state.get(DECISIONS_KEY, [])
+
+def _render_report_tab(state: TestAnalysisState) -> None:
+    if state.report:
+        st.download_button(
+            "下载 Markdown 报告",
+            data=state.report,
+            file_name="测试分析报告.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
+        st.markdown(state.report)
+    else:
+        st.caption("任务完成后将在此展示最终报告。")
+
+
+@st.dialog("执行详情", width="large")
+def _render_execution_details_dialog(
+    state: TestAnalysisState,
+    decisions: list[OrchestratorDecision],
+) -> None:
+    with st.container(height=EXECUTION_DETAILS_HEIGHT, border=False):
         if decisions:
             st.markdown("#### Orchestrator 决策")
             st.markdown(
@@ -702,17 +854,48 @@ def _render_result_panel(state: TestAnalysisState | None):
             unsafe_allow_html=True,
         )
 
-    return execution_placeholder
-
 
 def _render_test_point_list(state: TestAnalysisState) -> None:
-    for index, test_point in enumerate(state.test_points, start=1):
+    total_points = len(state.test_points)
+    total_pages = max(1, math.ceil(total_points / TEST_POINT_PAGE_SIZE))
+    current_page = min(
+        max(int(st.session_state.get(TEST_POINT_PAGE_KEY, 1)), 1),
+        total_pages,
+    )
+    st.session_state[TEST_POINT_PAGE_KEY] = current_page
+
+    page_start = (current_page - 1) * TEST_POINT_PAGE_SIZE
+    page_end = min(page_start + TEST_POINT_PAGE_SIZE, total_points)
+    visible_points = state.test_points[page_start:page_end]
+
+    st.caption(
+        f"共 {total_points} 条 · 第 {current_page}/{total_pages} 页 · "
+        f"每页 {TEST_POINT_PAGE_SIZE} 条"
+    )
+    for absolute_index, test_point in enumerate(
+        visible_points,
+        start=page_start + 1,
+    ):
+        point_identity = _test_point_identity(test_point)
+        expanded_identity = st.session_state.get(
+            TEST_POINT_EXPANDED_KEY
+        )
+        is_expanded = expanded_identity == point_identity
         st.markdown(
-            test_point_summary_html(test_point, index),
+            test_point_summary_html(test_point, absolute_index),
             unsafe_allow_html=True,
         )
-
-        with st.expander("查看前置条件、步骤、预期结果与来源"):
+        toggle_label = "收起详情" if is_expanded else "查看详情"
+        if st.button(
+            toggle_label,
+            type="secondary",
+            key=_test_point_toggle_key(state, point_identity),
+        ):
+            st.session_state[TEST_POINT_EXPANDED_KEY] = (
+                None if is_expanded else point_identity
+            )
+            st.rerun()
+        if is_expanded:
             _render_detail_items(
                 "前置条件",
                 test_point.get("preconditions", []),
@@ -723,8 +906,60 @@ def _render_test_point_list(state: TestAnalysisState) -> None:
                 test_point.get("expected_results", []),
             )
             _render_detail_items("来源", test_point.get("sources", []))
-        if index < len(state.test_points):
+        if absolute_index < page_end:
             st.divider()
+
+    previous_col, page_col, next_col = st.columns([1, 1.2, 1])
+    with previous_col:
+        previous_clicked = st.button(
+            "上一页",
+            disabled=current_page <= 1,
+            use_container_width=True,
+            key=f"agent_ui_previous_page_{state.task_id}",
+        )
+    with page_col:
+        st.markdown(
+            f"<div style='text-align:center;padding-top:0.5rem;'>"
+            f"第 {current_page}/{total_pages} 页</div>",
+            unsafe_allow_html=True,
+        )
+    with next_col:
+        next_clicked = st.button(
+            "下一页",
+            disabled=current_page >= total_pages,
+            use_container_width=True,
+            key=f"agent_ui_next_page_{state.task_id}",
+        )
+
+    if previous_clicked or next_clicked:
+        st.session_state[TEST_POINT_PAGE_KEY] = (
+            current_page - 1 if previous_clicked else current_page + 1
+        )
+        st.session_state[TEST_POINT_EXPANDED_KEY] = None
+        st.rerun()
+
+
+def _test_point_identity(test_point: dict) -> str:
+    title = str(test_point.get("title", "")).strip()
+    if title:
+        return title
+    payload = json.dumps(
+        test_point,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _test_point_toggle_key(
+    state: TestAnalysisState,
+    point_identity: str,
+) -> str:
+    digest = hashlib.sha256(
+        point_identity.encode("utf-8")
+    ).hexdigest()[:16]
+    return f"agent_ui_toggle_test_point_{state.task_id}_{digest}"
 
 
 def _render_detail_items(label: str, values) -> None:
@@ -748,10 +983,9 @@ def _render_feedback_tab(state: TestAnalysisState) -> None:
 
     rows = feedback_rows(state)
     if rows:
-        st.dataframe(
-            rows,
-            use_container_width=True,
-            hide_index=True,
+        st.markdown(
+            static_table_html(rows),
+            unsafe_allow_html=True,
         )
     else:
         st.caption("当前尚未提交人工反馈。")

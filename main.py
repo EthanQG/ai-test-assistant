@@ -18,7 +18,7 @@ st.markdown("""
 [data-testid="stAppViewBlockContainer"],
 .block-container {
     padding-top: 3rem;
-    padding-bottom: 1.5rem;
+    padding-bottom: 0.25rem;
     width: 100%;
     max-width: 1360px;
     margin-left: auto;
@@ -106,6 +106,64 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     border-color: #DCE2EA !important;
     box-shadow: none !important;
 }
+/* 两个主滚动区由 st.container(height=...) 提供稳定滚动；
+   以下规则只让其高度随浏览器视口变化。 */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(
+    .agent-workbench-scroll-marker
+):not(:has(
+    div[data-testid="stVerticalBlockBorderWrapper"]
+    .agent-workbench-scroll-marker
+)) {
+    height: clamp(
+        380px,
+        calc(100dvh - 15rem),
+        650px
+    ) !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(
+    .agent-result-scroll-marker
+):not(:has(
+    div[data-testid="stVerticalBlockBorderWrapper"]
+    .agent-result-scroll-marker
+)) {
+    height: clamp(
+        220px,
+        calc(100dvh - 31rem),
+        500px
+    ) !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(
+    .agent-blocked-result-scroll-marker
+):not(:has(
+    div[data-testid="stVerticalBlockBorderWrapper"]
+    .agent-blocked-result-scroll-marker
+)) {
+    height: clamp(
+        200px,
+        calc(100dvh - 32rem),
+        500px
+    ) !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(
+    .agent-empty-scroll-marker
+):not(:has(
+    div[data-testid="stVerticalBlockBorderWrapper"]
+    .agent-empty-scroll-marker
+)) {
+    height: clamp(
+        380px,
+        calc(100dvh - 15rem),
+        650px
+    ) !important;
+}
+div[data-testid="element-container"]:has(
+    > div[data-testid="stMarkdown"] .agent-workbench-scroll-marker,
+    > div[data-testid="stMarkdown"] .agent-result-scroll-marker,
+    > div[data-testid="stMarkdown"] .agent-blocked-result-scroll-marker,
+    > div[data-testid="stMarkdown"] .agent-empty-scroll-marker
+) {
+    display: none;
+}
 
 /* ── 文件上传组件 ── */
 div[data-testid="stFileUploader"] {
@@ -136,6 +194,34 @@ div[data-testid="stMetricLabel"] {
 }
 .stTabs [data-baseweb="tab-highlight"] {
     background-color: #2563EB !important;
+}
+/* Streamlit 1.38 的 st.tabs 不暴露活动项状态；结果导航使用有状态
+   radio，但继续呈现为 Tab。只依赖可读 aria-label 和 data-testid。 */
+div[data-testid="stRadio"]:has(
+    [role="radiogroup"][aria-label="结果导航"]
+) [role="radiogroup"] {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid #E2E8F0;
+}
+div[data-testid="stRadio"]:has(
+    [role="radiogroup"][aria-label="结果导航"]
+) label[data-baseweb="radio"] {
+    position: relative;
+    padding: 0.45rem 1rem;
+    margin: 0;
+    cursor: pointer;
+}
+div[data-testid="stRadio"]:has(
+    [role="radiogroup"][aria-label="结果导航"]
+) label[data-baseweb="radio"] > div:first-child {
+    display: none;
+}
+div[data-testid="stRadio"]:has(
+    [role="radiogroup"][aria-label="结果导航"]
+) label[data-baseweb="radio"]:has(input:checked) {
+    color: #2563EB;
+    border-bottom: 2px solid #2563EB;
 }
 
 /* ── 流程标签弱化为状态文本 ── */
