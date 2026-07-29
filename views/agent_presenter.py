@@ -81,6 +81,67 @@ STEP_STAGE_INDEX = {
     "finalize": 4,
 }
 
+EXECUTION_CONTENT = {
+    "initialize": {
+        "title": "正在分析需求",
+        "description": (
+            "Agent正在提取需求事实、业务规则、风险和待确认项。"
+        ),
+        "waiting": "模型响应通常需要1～2分钟，请勿重复提交。",
+    },
+    "analyze_requirement": {
+        "title": "正在分析需求",
+        "description": (
+            "Agent正在分析需求结构、信息边界、业务规则和关键风险。"
+        ),
+        "waiting": "模型响应通常需要1～2分钟，请勿重复提交。",
+    },
+    "retrieve_knowledge": {
+        "title": "正在检索历史测试资产",
+        "description": (
+            "Agent正在检索相关历史测试点、缺陷经验和可复用风险。"
+        ),
+        "waiting": (
+            "检索服务较慢或不可用时会记录降级，并继续后续分析。"
+        ),
+    },
+    "generate_test_points": {
+        "title": "正在生成结构化测试点",
+        "description": (
+            "Agent正在根据需求事实、风险和历史资产生成可执行测试点。"
+        ),
+        "waiting": "模型响应通常需要1～2分钟，请勿重复提交。",
+    },
+    "review_test_points": {
+        "title": "正在评审测试点质量",
+        "description": (
+            "Agent正在检查需求覆盖度、重复项、异常边界和无依据断言。"
+        ),
+        "waiting": "模型响应通常需要1～2分钟，请勿重复提交。",
+    },
+    "collect_human_feedback": {
+        "title": "正在处理人工反馈",
+        "description": (
+            "Agent正在记录反馈范围，并准备进入定向修正与重新评审。"
+        ),
+        "waiting": "请等待当前节点完成，不要重复提交反馈。",
+    },
+    "revise_test_points": {
+        "title": "正在修正测试点",
+        "description": (
+            "Agent正在根据评审意见或人工反馈定向修正测试点。"
+        ),
+        "waiting": "模型响应通常需要1～2分钟，请勿重复提交。",
+    },
+    "finalize": {
+        "title": "正在整理最终报告",
+        "description": (
+            "Agent正在汇总测试点、覆盖情况、质量结论和风险说明。"
+        ),
+        "waiting": "报告整理完成后，页面会立即刷新最终结果。",
+    },
+}
+
 
 def action_label(action: str) -> str:
     return ACTION_LABELS.get(action, action)
@@ -101,6 +162,77 @@ def action_progress_message(action: str) -> str:
             "Agent 会记录降级并继续。"
         )
     return f"正在执行：{label}。"
+
+
+def execution_status_content(
+    state: TestAnalysisState,
+    action: str | None = None,
+) -> dict[str, str]:
+    step = action or state.current_step.value
+    content = dict(
+        EXECUTION_CONTENT.get(
+            step,
+            EXECUTION_CONTENT["initialize"],
+        )
+    )
+    if step == "revise_test_points":
+        next_round = state.revision_count + 1
+        content["title"] = f"正在进行第{next_round}轮测试点修正"
+    return content
+
+
+def recent_progress_items(
+    state: TestAnalysisState,
+    limit: int = 3,
+) -> list[str]:
+    if limit <= 0:
+        return []
+
+    items: list[str] = []
+    seen: set[str] = set()
+    for event in reversed(state.events):
+        text = _event_progress_text(event)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        items.append(text)
+        if len(items) >= limit:
+            break
+    return list(reversed(items))
+
+
+def _event_progress_text(event) -> str | None:
+    event_type = event.event_type.value
+    step = event.step.value
+    step_label = STEP_LABELS.get(step, "")
+
+    if event_type == "task_created":
+        return "任务已创建"
+    if event_type == "task_completed":
+        return "测试分析和报告整理已完成"
+    if event_type == "task_failed":
+        return f"{step_label or '当前节点'}执行失败"
+    if event_type == "step_started" and step_label:
+        return f"已开始{step_label}"
+    if event_type == "step_completed" and step_label:
+        return f"{step_label}已完成"
+    if event_type != "information":
+        return None
+
+    message = event.message
+    if "已收到补充信息" in message:
+        return "已提交用户补充信息"
+    if "需要用户补充需求信息" in message:
+        return "需求分析发现需要补充的信息"
+    if "需要用户确认人工补充的业务规则" in message:
+        return "新增业务规则等待用户确认"
+    if "人工补充的业务规则已确认" in message:
+        return "用户已确认新增业务规则"
+    if "用户取消了业务规则补充" in message:
+        return "用户已取消业务规则补充"
+    if "已重新打开任务" in message:
+        return "已提交人工反馈，准备修正测试点"
+    return None
 
 
 def layout_column_weights(

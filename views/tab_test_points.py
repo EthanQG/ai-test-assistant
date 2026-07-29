@@ -2,6 +2,7 @@ import hashlib
 import json
 import math
 import time
+from html import escape
 
 import streamlit as st
 
@@ -19,11 +20,12 @@ from services.document_service import DocumentService
 from utils.knowledge_base import KnowledgeBaseManager
 
 from .agent_presenter import (
-    action_progress_message,
     decision_rows,
+    execution_status_content,
     event_rows,
     feedback_rows,
     layout_column_weights,
+    recent_progress_items,
     stage_progress_html,
     static_table_html,
     task_header,
@@ -42,15 +44,23 @@ FEEDBACK_NOTICE_KEY = "agent_feedback_notice"
 RESULT_ACTIVE_TAB_KEY = "agent_ui_active_result_tab"
 TEST_POINT_PAGE_KEY = "agent_ui_test_point_page"
 TEST_POINT_EXPANDED_KEY = "agent_ui_expanded_test_point"
+TEST_POINT_DETAIL_ID_KEY = "agent_ui_test_point_detail_id"
 TEST_POINT_SIGNATURE_KEY = "agent_ui_test_point_signature"
 PAGINATION_TASK_ID_KEY = "agent_ui_pagination_task_id"
 EXECUTION_DIALOG_BUTTON_PREFIX = "agent_ui_execution_details"
 UI_STATE_PREFIX = "agent_ui_"
 MAX_PAGE_STEPS = 20
 TEST_POINT_PAGE_SIZE = 5
-WORKBENCH_CONTENT_HEIGHT = 480
-RESULT_CONTENT_HEIGHT = 330
+WORKSPACE_HEIGHT = 736
+LEFT_HEADER_HEIGHT = 56
+LEFT_FOOTER_HEIGHT = 120
+LEFT_BODY_HEIGHT = (
+    WORKSPACE_HEIGHT - LEFT_HEADER_HEIGHT - LEFT_FOOTER_HEIGHT - 48
+)
+RIGHT_FIXED_HEIGHT = 296
+RIGHT_RESULT_HEIGHT = WORKSPACE_HEIGHT - RIGHT_FIXED_HEIGHT - 32
 EXECUTION_DETAILS_HEIGHT = 480
+TEST_POINT_DETAILS_HEIGHT = 480
 RESULT_TABS = (
     "结构化测试点",
     "质量评审",
@@ -81,20 +91,38 @@ def render_ui() -> None:
         gap="medium",
     )
     with workbench:
-        with st.container(border=True):
+        with st.container(height=WORKSPACE_HEIGHT, border=True):
+            st.markdown(
+                '<span class="agent-workspace-shell-marker"></span>',
+                unsafe_allow_html=True,
+            )
             st.subheader("需求工作台")
+            st.caption(_workbench_description(state))
             with st.container(
-                height=WORKBENCH_CONTENT_HEIGHT,
+                height=LEFT_BODY_HEIGHT,
                 border=False,
             ):
                 st.markdown(
                     '<span class="agent-workbench-scroll-marker"></span>',
                     unsafe_allow_html=True,
                 )
-                _render_workbench()
+                _render_workbench_body()
+            with st.container(
+                height=LEFT_FOOTER_HEIGHT,
+                border=False,
+            ):
+                st.markdown(
+                    '<span class="agent-workbench-footer-marker"></span>',
+                    unsafe_allow_html=True,
+                )
+                _render_workbench_footer()
 
     with result_panel:
-        with st.container(border=True):
+        with st.container(height=WORKSPACE_HEIGHT, border=True):
+            st.markdown(
+                '<span class="agent-workspace-shell-marker"></span>',
+                unsafe_allow_html=True,
+            )
             execution_placeholder = _render_result_panel(
                 state
             )
@@ -137,6 +165,7 @@ def _initialize_page_view_state() -> None:
     )
     st.session_state.setdefault(TEST_POINT_PAGE_KEY, 1)
     st.session_state.setdefault(TEST_POINT_EXPANDED_KEY, None)
+    st.session_state.setdefault(TEST_POINT_DETAIL_ID_KEY, None)
     st.session_state.setdefault(TEST_POINT_SIGNATURE_KEY, "")
     st.session_state.setdefault(PAGINATION_TASK_ID_KEY, None)
 
@@ -163,12 +192,14 @@ def _sync_page_view_state(
         )
         st.session_state[TEST_POINT_PAGE_KEY] = 1
         st.session_state[TEST_POINT_EXPANDED_KEY] = None
+        st.session_state[TEST_POINT_DETAIL_ID_KEY] = None
         st.session_state[TEST_POINT_SIGNATURE_KEY] = signature
         return
 
     if st.session_state.get(TEST_POINT_SIGNATURE_KEY) != signature:
         st.session_state[TEST_POINT_PAGE_KEY] = 1
         st.session_state[TEST_POINT_EXPANDED_KEY] = None
+        st.session_state[TEST_POINT_DETAIL_ID_KEY] = None
         st.session_state[TEST_POINT_SIGNATURE_KEY] = signature
 
     if st.session_state.get(RESULT_ACTIVE_TAB_KEY) not in RESULT_TABS:
@@ -228,29 +259,26 @@ def _persist_task() -> None:
     st.query_params["task_id"] = state.task_id
 
 
-def _render_workbench():
-    state = st.session_state.get(STATE_KEY)
-    task_started = state is not None
+def _workbench_description(state: TestAnalysisState | None) -> str:
+    if state is None:
+        return "输入需求或上传PRD，准备创建测试分析任务。"
+    if state.status == AgentStatus.WAITING_FOR_USER:
+        return "查看原始需求，并完成当前待确认内容。"
+    return "原始需求保持只读，便于与右侧分析结果对照。"
 
-    if task_started:
+
+def _render_workbench_body() -> None:
+    state = st.session_state.get(STATE_KEY)
+
+    if state is not None:
         st.caption("原始需求（任务创建后保持只读）")
         st.code(
             state.requirement,
             language=None,
             wrap_lines=True,
         )
-        requirement_text = ""
-        uploaded_prd = None
-        start_clicked = False
-        _, reset_col = st.columns([1.2, 1])
-        with reset_col:
-            reset_clicked = st.button(
-                "新建分析",
-                type="secondary",
-                use_container_width=True,
-            )
     else:
-        requirement_text = st.text_area(
+        st.text_area(
             "输入需求描述或粘贴 PRD 内容",
             height=260,
             placeholder=(
@@ -259,7 +287,7 @@ def _render_workbench():
             ),
             key="agent_requirement_input",
         )
-        uploaded_prd = st.file_uploader(
+        st.file_uploader(
             "或者上传 PRD 文档",
             type=["txt", "md", "pdf", "docx"],
             key="agent_prd_uploader",
@@ -269,10 +297,42 @@ def _render_workbench():
             "无需在每次任务中重复上传。"
         )
 
-        has_input = (
-            bool(requirement_text.strip())
-            or uploaded_prd is not None
+    pending_business_feedback = (
+        HumanFeedbackHandler.pending_confirmation_feedback(state)
+        if state is not None
+        else []
+    )
+    if (
+        state is not None
+        and state.status == AgentStatus.WAITING_FOR_USER
+        and pending_business_feedback
+    ):
+        st.divider()
+        _render_business_rule_confirmation_content(
+            state,
+            pending_business_feedback[0],
         )
+    elif (
+        state is not None
+        and state.status == AgentStatus.WAITING_FOR_USER
+        and state.open_questions
+    ):
+        st.divider()
+        if st.session_state[PENDING_CLARIFICATIONS_KEY] is None:
+            _render_clarification_content(state)
+        else:
+            st.success("补充信息已提交，正在重新分析需求。")
+
+
+def _render_workbench_footer() -> None:
+    state = st.session_state.get(STATE_KEY)
+    if state is None:
+        requirement_text = st.session_state.get(
+            "agent_requirement_input",
+            "",
+        )
+        uploaded_prd = st.session_state.get("agent_prd_uploader")
+        has_input = bool(requirement_text.strip()) or uploaded_prd is not None
         start_col, reset_col = st.columns([2.2, 1])
         with start_col:
             start_clicked = st.button(
@@ -287,43 +347,80 @@ def _render_workbench():
                 type="secondary",
                 use_container_width=True,
             )
+        if reset_clicked:
+            _clear_page_view_state()
+            _reset_session()
+            st.rerun()
+        if start_clicked:
+            _create_agent_task(requirement_text, uploaded_prd)
+            st.rerun()
+        return
 
-    if reset_clicked:
+    pending_business_feedback = (
+        HumanFeedbackHandler.pending_confirmation_feedback(state)
+    )
+    if (
+        state.status == AgentStatus.WAITING_FOR_USER
+        and pending_business_feedback
+    ):
+        _render_business_rule_confirmation_actions(
+            state,
+            pending_business_feedback[0],
+        )
+        return
+    if (
+        state.status == AgentStatus.WAITING_FOR_USER
+        and state.open_questions
+        and st.session_state[PENDING_CLARIFICATIONS_KEY] is None
+    ):
+        if st.button(
+            "提交补充并继续执行",
+            type="primary",
+            use_container_width=True,
+            key=f"submit_clarifications_{state.task_id}",
+        ):
+            _submit_clarifications(state)
+        return
+
+    execution_active = _execution_is_active(state)
+    if execution_active:
+        st.button(
+            "新建分析",
+            type="secondary",
+            disabled=True,
+            use_container_width=True,
+        )
+        st.caption("当前节点结束后即可新建分析。")
+        return
+
+    label = "重新开始" if state.status == AgentStatus.FAILED else "新建分析"
+    if st.button(
+        label,
+        type="secondary",
+        use_container_width=True,
+    ):
         _clear_page_view_state()
         _reset_session()
         st.rerun()
 
-    if start_clicked:
-        _create_agent_task(requirement_text, uploaded_prd)
-        st.rerun()
 
-    state = st.session_state.get(STATE_KEY)
-    pending_business_feedback = (
-        HumanFeedbackHandler.pending_confirmation_feedback(state)
-        if state is not None
-        else []
-    )
-    if (
-        state is not None
-        and state.status == AgentStatus.WAITING_FOR_USER
-        and pending_business_feedback
-    ):
-        st.divider()
-        _render_business_rule_confirmation(
-            state,
-            pending_business_feedback[0],
-        )
-    elif (
-        state is not None
-        and state.status == AgentStatus.WAITING_FOR_USER
-        and state.open_questions
-    ):
-        st.divider()
-        if st.session_state[PENDING_CLARIFICATIONS_KEY] is None:
-            _render_clarification_form(state)
-        else:
-            st.success("补充信息已提交，正在重新分析需求。")
-    return st.empty()
+def _execution_is_active(
+    state: TestAnalysisState | None,
+) -> bool:
+    if state is None:
+        return False
+    stored = _task_store().get(state.task_id, {})
+    if stored.get("in_progress"):
+        return True
+    if st.session_state.get(PENDING_CLARIFICATIONS_KEY) is not None:
+        return True
+    if state.status in {
+        AgentStatus.WAITING_FOR_USER,
+        AgentStatus.COMPLETED,
+        AgentStatus.FAILED,
+    }:
+        return False
+    return bool(st.session_state.get(AUTO_RUN_KEY))
 
 
 def _can_collect_feedback(state: TestAnalysisState) -> bool:
@@ -340,42 +437,34 @@ def _can_collect_feedback(state: TestAnalysisState) -> bool:
     )
 
 
-def _render_clarification_form(state: TestAnalysisState) -> None:
+def _render_clarification_content(state: TestAnalysisState) -> None:
     st.subheader("需要你确认")
     st.info(
         "Agent 只保留了会影响核心业务结果的问题。每项可以直接回答，"
         "也可以选择“暂不确定”，后者会作为风险写入报告。"
     )
 
-    with st.form(f"clarification_form_{state.task_id}"):
-        answer_keys: list[tuple[str, str, str]] = []
-        for index, question in enumerate(state.open_questions, start=1):
-            st.markdown(f"**{index}. {question}**")
-            deferred_key = f"clarification_deferred_{state.task_id}_{index}"
-            answer_key = f"clarification_answer_{state.task_id}_{index}"
-            deferred = st.checkbox("暂不确定", key=deferred_key)
-            st.text_area(
-                "补充说明",
-                key=answer_key,
-                height=80,
-                disabled=deferred,
-                placeholder="请用业务语言简要回答即可",
-                label_visibility="collapsed",
-            )
-            answer_keys.append((question, answer_key, deferred_key))
-
-        submitted = st.form_submit_button(
-            "提交补充并继续执行",
-            type="primary",
-            use_container_width=True,
+    for index, question in enumerate(state.open_questions, start=1):
+        st.markdown(f"**{index}. {question}**")
+        deferred_key = f"clarification_deferred_{state.task_id}_{index}"
+        answer_key = f"clarification_answer_{state.task_id}_{index}"
+        deferred = st.checkbox("暂不确定", key=deferred_key)
+        st.text_area(
+            "补充说明",
+            key=answer_key,
+            height=80,
+            disabled=deferred,
+            placeholder="请用业务语言简要回答即可",
+            label_visibility="collapsed",
         )
 
-    if not submitted:
-        return
 
+def _submit_clarifications(state: TestAnalysisState) -> None:
     answers: dict[str, str | None] = {}
     unanswered: list[str] = []
-    for question, answer_key, deferred_key in answer_keys:
+    for index, question in enumerate(state.open_questions, start=1):
+        deferred_key = f"clarification_deferred_{state.task_id}_{index}"
+        answer_key = f"clarification_answer_{state.task_id}_{index}"
         if st.session_state.get(deferred_key, False):
             answers[question] = None
             continue
@@ -530,7 +619,7 @@ def _render_human_feedback_form(state: TestAnalysisState) -> None:
         st.error(f"人工反馈提交失败：{exc}")
 
 
-def _render_business_rule_confirmation(state, feedback) -> None:
+def _render_business_rule_confirmation_content(state, feedback) -> None:
     st.subheader("确认业务规则")
     st.warning(
         "下面的内容会改变正式需求事实。只有确认后，Agent 才会据此修改测试点。"
@@ -540,6 +629,9 @@ def _render_business_rule_confirmation(state, feedback) -> None:
     st.markdown(f"**规则内容：** {feedback.content}")
     st.markdown(f"**依据：** {feedback.reason}")
 
+
+
+def _render_business_rule_confirmation_actions(state, feedback) -> None:
     confirm_col, reject_col = st.columns(2)
     with confirm_col:
         confirmed = st.button(
@@ -598,8 +690,10 @@ def _process_agent_step(execution_placeholder) -> None:
 
     stored = _task_store().get(state.task_id, {})
     if stored.get("in_progress"):
-        execution_placeholder.info(
-            "当前 Agent 节点仍在执行，请等待完成后再操作。"
+        _render_execution_status(
+            execution_placeholder,
+            state,
+            active=True,
         )
         return
     if stored:
@@ -621,11 +715,12 @@ def _process_agent_step(execution_placeholder) -> None:
     _task_store()[state.task_id] = stored
     try:
         if pending_answers is not None:
-            progress_message = (
-                "正在执行：需求重新分析。模型响应通常需要 1–2 分钟，"
-                "请勿重复点击。"
+            _render_execution_status(
+                execution_placeholder,
+                state,
+                active=True,
+                action=OrchestratorAction.ANALYZE_REQUIREMENT.value,
             )
-            execution_placeholder.info(progress_message)
             started_at = time.perf_counter()
             RequirementAnalyzer().reanalyze_with_clarifications(
                 state,
@@ -676,10 +771,12 @@ def _execute_next_orchestrator_node(
 
     orchestrator = AgentOrchestrator()
     next_decision = orchestrator.decide_next(state)
-    progress_message = action_progress_message(
-        next_decision.action.value
+    _render_execution_status(
+        execution_placeholder,
+        state,
+        active=True,
+        action=next_decision.action.value,
     )
-    execution_placeholder.info(progress_message)
     decision = orchestrator.run_next(state)
     st.session_state[DECISIONS_KEY].append(decision)
     st.session_state[EXECUTION_STEPS_KEY] += 1
@@ -714,9 +811,9 @@ def _load_default_knowledge() -> str:
 
 
 def _render_result_panel(state: TestAnalysisState | None):
-    st.subheader("任务概览")
     if state is None:
-        with st.container(height=RESULT_CONTENT_HEIGHT, border=False):
+        st.subheader("任务概览")
+        with st.container(height=RIGHT_RESULT_HEIGHT, border=False):
             st.markdown(
                 '<span class="agent-empty-scroll-marker"></span>',
                 unsafe_allow_html=True,
@@ -743,20 +840,30 @@ def _render_result_panel(state: TestAnalysisState | None):
         state,
         decisions,
     )
-    st.markdown(
-        f"**{header['status_label']} · "
-        f"当前阶段：{header['stage_label']}**"
-    )
+    title_col, state_col = st.columns([1, 2.4])
+    with title_col:
+        st.subheader("任务概览")
+    with state_col:
+        st.markdown(
+            f"**{header['status_label']} · "
+            f"当前阶段：{header['stage_label']}**"
+        )
     st.markdown(
         stage_progress_html(state),
         unsafe_allow_html=True,
+    )
+    execution_placeholder = st.empty()
+    _render_execution_status(
+        execution_placeholder,
+        state,
+        active=_execution_is_active(state),
     )
     score = (
         overview["overall_score"]
         if overview["overall_score"] is not None
         else "待评审"
     )
-    summary_col, details_col = st.columns([2.5, 1])
+    summary_col, details_col = st.columns([3.2, 1])
     with summary_col:
         st.caption(
             f"测试点 {overview['test_point_count']} · "
@@ -774,7 +881,6 @@ def _render_result_panel(state: TestAnalysisState | None):
         ):
             _render_execution_details_dialog(state, decisions)
     _render_blocked_state(state)
-    execution_placeholder = st.empty()
 
     active_tab = st.radio(
         "结果导航",
@@ -798,7 +904,7 @@ def _render_result_panel(state: TestAnalysisState | None):
     scroll_marker_class = "agent-result-scroll-marker"
     if compact_result_body:
         scroll_marker_class += " agent-blocked-result-scroll-marker"
-    with st.container(height=RESULT_CONTENT_HEIGHT, border=False):
+    with st.container(height=RIGHT_RESULT_HEIGHT, border=False):
         st.markdown(
             f'<span class="{scroll_marker_class}"></span>',
             unsafe_allow_html=True,
@@ -813,6 +919,63 @@ def _render_result_panel(state: TestAnalysisState | None):
             _render_report_tab(state)
 
     return execution_placeholder
+
+
+def _render_execution_status(
+    placeholder,
+    state: TestAnalysisState,
+    *,
+    active: bool,
+    action: str | None = None,
+) -> None:
+    content = execution_status_content(state, action)
+    progress_items = recent_progress_items(state)
+
+    if active:
+        title = content["title"]
+        status_state = "running"
+        description = content["description"]
+        waiting = content["waiting"]
+    elif state.status == AgentStatus.FAILED:
+        title = "当前节点执行失败"
+        status_state = "error"
+        description = (
+            state.error_message
+            or "任务执行失败，请查看错误信息后重新发起分析。"
+        )
+        waiting = "动态执行状态已停止。"
+    elif state.status == AgentStatus.COMPLETED:
+        title = "测试分析任务已完成"
+        status_state = "complete"
+        description = "结构化测试点、质量评审和最终报告已经生成。"
+        waiting = "可以继续浏览结果、下载报告或提交人工反馈。"
+    elif state.status == AgentStatus.WAITING_FOR_USER:
+        title = "任务正在等待用户操作"
+        status_state = "complete"
+        description = (
+            "Agent已暂停执行，请在左侧完成需求补充或业务规则确认。"
+        )
+        waiting = "提交后会恢复同一任务，不会重新创建AgentState。"
+    else:
+        title = "自动执行已暂停"
+        status_state = "complete"
+        description = (
+            "当前没有正在执行的Agent节点，请根据页面提示继续操作。"
+        )
+        waiting = "动态执行状态已停止。"
+
+    with placeholder.container():
+        st.status(
+            title,
+            state=status_state,
+            expanded=False,
+        )
+        recent = progress_items[-1] if progress_items else waiting
+        st.markdown(
+            f"<div class='agent-execution-summary'>{escape(description)}"
+            f"<br><span>最近进展：{escape(recent)}</span></div>",
+            unsafe_allow_html=True,
+        )
 
 
 def _render_test_points_tab(state: TestAnalysisState) -> None:
@@ -855,6 +1018,22 @@ def _render_execution_details_dialog(
         )
 
 
+@st.dialog("测试点详情", width="large")
+def _render_test_point_details_dialog(test_point: dict) -> None:
+    st.markdown(f"### {test_point.get('title', '未命名测试点')}")
+    with st.container(height=TEST_POINT_DETAILS_HEIGHT, border=False):
+        _render_detail_items(
+            "前置条件",
+            test_point.get("preconditions", []),
+        )
+        _render_detail_items("执行步骤", test_point.get("steps", []))
+        _render_detail_items(
+            "预期结果",
+            test_point.get("expected_results", []),
+        )
+        _render_detail_items("来源", test_point.get("sources", []))
+
+
 def _render_test_point_list(state: TestAnalysisState) -> None:
     total_points = len(state.test_points)
     total_pages = max(1, math.ceil(total_points / TEST_POINT_PAGE_SIZE))
@@ -877,35 +1056,17 @@ def _render_test_point_list(state: TestAnalysisState) -> None:
         start=page_start + 1,
     ):
         point_identity = _test_point_identity(test_point)
-        expanded_identity = st.session_state.get(
-            TEST_POINT_EXPANDED_KEY
-        )
-        is_expanded = expanded_identity == point_identity
         st.markdown(
             test_point_summary_html(test_point, absolute_index),
             unsafe_allow_html=True,
         )
-        toggle_label = "收起详情" if is_expanded else "查看详情"
         if st.button(
-            toggle_label,
+            "查看详情",
             type="secondary",
             key=_test_point_toggle_key(state, point_identity),
         ):
-            st.session_state[TEST_POINT_EXPANDED_KEY] = (
-                None if is_expanded else point_identity
-            )
-            st.rerun()
-        if is_expanded:
-            _render_detail_items(
-                "前置条件",
-                test_point.get("preconditions", []),
-            )
-            _render_detail_items("执行步骤", test_point.get("steps", []))
-            _render_detail_items(
-                "预期结果",
-                test_point.get("expected_results", []),
-            )
-            _render_detail_items("来源", test_point.get("sources", []))
+            st.session_state[TEST_POINT_DETAIL_ID_KEY] = point_identity
+            _render_test_point_details_dialog(test_point)
         if absolute_index < page_end:
             st.divider()
 
@@ -936,13 +1097,17 @@ def _render_test_point_list(state: TestAnalysisState) -> None:
             current_page - 1 if previous_clicked else current_page + 1
         )
         st.session_state[TEST_POINT_EXPANDED_KEY] = None
+        st.session_state[TEST_POINT_DETAIL_ID_KEY] = None
         st.rerun()
 
 
 def _test_point_identity(test_point: dict) -> str:
-    title = str(test_point.get("title", "")).strip()
-    if title:
-        return title
+    explicit_id = (
+        test_point.get("test_point_id")
+        or test_point.get("id")
+    )
+    if explicit_id is not None and str(explicit_id).strip():
+        return str(explicit_id).strip()
     payload = json.dumps(
         test_point,
         ensure_ascii=False,
@@ -1004,13 +1169,7 @@ def _render_feedback_tab(state: TestAnalysisState) -> None:
 
 def _render_blocked_state(state: TestAnalysisState) -> None:
     if state.status == AgentStatus.WAITING_FOR_USER:
-        pending_feedback = (
-            HumanFeedbackHandler.pending_confirmation_feedback(state)
-        )
-        if pending_feedback:
-            st.warning("任务已暂停，请在左侧确认或取消新增业务规则。")
-        else:
-            st.warning("任务已暂停，请在左侧工作台回答关键问题后继续。")
+        return
     elif state.status == AgentStatus.FAILED:
         st.error(state.error_message or "Agent 执行失败")
     else:

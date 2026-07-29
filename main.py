@@ -26,7 +26,8 @@ st.markdown("""
 }
 /* 未创建任务时让右侧保持完整结果面板，而不是顶部矮卡片 */
 .agent-empty-result {
-    min-height: 470px;
+    min-height: 0;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -106,19 +107,71 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     border-color: #DCE2EA !important;
     box-shadow: none !important;
 }
-/* 两个主滚动区由 st.container(height=...) 提供稳定滚动；
-   以下规则只让其高度随浏览器视口变化。 */
+/* 左右外层使用同一个 WORKSPACE_HEIGHT；外层固定且不滚动，
+   只有需求正文和当前结果正文占用剩余空间并独立滚动。 */
+div[data-testid="stVerticalBlockBorderWrapper"]:has(
+    .agent-workspace-shell-marker
+):not(:has(
+    div[data-testid="stVerticalBlockBorderWrapper"]
+    .agent-workspace-shell-marker
+)) {
+    overflow: hidden !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(
+    .agent-workspace-shell-marker
+):not(:has(
+    div[data-testid="stVerticalBlockBorderWrapper"]
+    .agent-workspace-shell-marker
+)) > div {
+    height: 100%;
+    min-height: 0;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(
+    .agent-workspace-shell-marker
+):not(:has(
+    div[data-testid="stVerticalBlockBorderWrapper"]
+    .agent-workspace-shell-marker
+)) > div > div[data-testid="stVerticalBlock"] {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.agent-execution-summary {
+    margin: 0;
+    line-height: 1.45;
+}
+.agent-execution-summary span {
+    color: #64748B;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(
+    .agent-workspace-shell-marker
+):not(:has(
+    div[data-testid="stVerticalBlockBorderWrapper"]
+    .agent-workspace-shell-marker
+)) > div > div[data-testid="stVerticalBlock"]
+> div[data-testid="stHorizontalBlock"] {
+    flex: 0 0 auto;
+}
 div[data-testid="stVerticalBlockBorderWrapper"]:has(
     .agent-workbench-scroll-marker
 ):not(:has(
     div[data-testid="stVerticalBlockBorderWrapper"]
     .agent-workbench-scroll-marker
 )) {
-    height: clamp(
-        380px,
-        calc(100dvh - 15rem),
-        650px
-    ) !important;
+    min-height: 0 !important;
+    flex: 0 0 auto;
+    overflow-y: auto !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"]:has(
+    .agent-workbench-footer-marker
+):not(:has(
+    div[data-testid="stVerticalBlockBorderWrapper"]
+    .agent-workbench-footer-marker
+)) {
+    flex: 0 0 auto;
+    overflow: hidden !important;
 }
 div[data-testid="stVerticalBlockBorderWrapper"]:has(
     .agent-result-scroll-marker
@@ -126,23 +179,9 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(
     div[data-testid="stVerticalBlockBorderWrapper"]
     .agent-result-scroll-marker
 )) {
-    height: clamp(
-        220px,
-        calc(100dvh - 31rem),
-        500px
-    ) !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"]:has(
-    .agent-blocked-result-scroll-marker
-):not(:has(
-    div[data-testid="stVerticalBlockBorderWrapper"]
-    .agent-blocked-result-scroll-marker
-)) {
-    height: clamp(
-        200px,
-        calc(100dvh - 32rem),
-        500px
-    ) !important;
+    min-height: 0 !important;
+    flex: 0 0 auto;
+    overflow-y: auto !important;
 }
 div[data-testid="stVerticalBlockBorderWrapper"]:has(
     .agent-empty-scroll-marker
@@ -150,14 +189,15 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(
     div[data-testid="stVerticalBlockBorderWrapper"]
     .agent-empty-scroll-marker
 )) {
-    height: clamp(
-        380px,
-        calc(100dvh - 15rem),
-        650px
-    ) !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    flex: 1 1 0;
+    overflow-y: auto !important;
 }
 div[data-testid="element-container"]:has(
+    > div[data-testid="stMarkdown"] .agent-workspace-shell-marker,
     > div[data-testid="stMarkdown"] .agent-workbench-scroll-marker,
+    > div[data-testid="stMarkdown"] .agent-workbench-footer-marker,
     > div[data-testid="stMarkdown"] .agent-result-scroll-marker,
     > div[data-testid="stMarkdown"] .agent-blocked-result-scroll-marker,
     > div[data-testid="stMarkdown"] .agent-empty-scroll-marker

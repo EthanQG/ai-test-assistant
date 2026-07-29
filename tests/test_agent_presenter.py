@@ -13,9 +13,11 @@ from agent.state import (
 from views.agent_presenter import (
     action_progress_message,
     decision_rows,
+    execution_status_content,
     event_rows,
     feedback_rows,
     layout_column_weights,
+    recent_progress_items,
     stage_progress,
     stage_progress_html,
     static_table_html,
@@ -27,6 +29,44 @@ from views.agent_presenter import (
 
 
 class AgentPresenterTests(unittest.TestCase):
+    def test_execution_status_uses_deterministic_node_copy(self):
+        state = TestAnalysisState("订单需求")
+        state.current_step = AgentStep.REVIEW_TEST_POINTS
+
+        review = execution_status_content(state)
+        revision = execution_status_content(
+            state,
+            "revise_test_points",
+        )
+
+        self.assertEqual(review["title"], "正在评审测试点质量")
+        self.assertIn("覆盖度", review["description"])
+        self.assertEqual(revision["title"], "正在进行第1轮测试点修正")
+        self.assertIn("1～2分钟", revision["waiting"])
+
+    def test_recent_progress_filters_and_translates_events(self):
+        state = TestAnalysisState("订单需求")
+        state.start_step(
+            AgentStep.ANALYZE_REQUIREMENT,
+            "正在分析需求结构与信息边界",
+        )
+        state.complete_step(
+            AgentStep.ANALYZE_REQUIREMENT,
+            "需求结构化分析完成",
+        )
+        state.add_information("已收到补充信息，继续执行任务")
+
+        progress = recent_progress_items(state)
+
+        self.assertEqual(
+            progress,
+            [
+                "已开始需求分析",
+                "需求分析已完成",
+                "已提交用户补充信息",
+            ],
+        )
+
     def test_llm_action_progress_message_sets_waiting_expectation(self):
         message = action_progress_message("revise_test_points")
 

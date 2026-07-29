@@ -16,6 +16,7 @@ from views.tab_test_points import (
     FEEDBACK_FORM_VERSION_KEY,
     PAGINATION_TASK_ID_KEY,
     RESULT_ACTIVE_TAB_KEY,
+    TEST_POINT_DETAIL_ID_KEY,
     TEST_POINT_EXPANDED_KEY,
     TEST_POINT_PAGE_KEY,
     _task_store,
@@ -126,9 +127,9 @@ class StreamlitAgentPageTests(unittest.TestCase):
             "提交补充并继续执行",
             [button.label for button in app.button],
         )
-        self.assertIn(
-            "任务已暂停，请在左侧工作台回答关键问题后继续。",
-            [warning.value for warning in app.warning],
+        self.assertEqual(
+            app.status[0].label,
+            "任务正在等待用户操作",
         )
         self.assertTrue(
             any(
@@ -137,6 +138,32 @@ class StreamlitAgentPageTests(unittest.TestCase):
                 for markdown in app.markdown
             )
         )
+
+    def test_fixed_clarification_action_keeps_required_validation(self):
+        state = TestAnalysisState("用户可以使用优惠券")
+        state.wait_for_user(["优惠券是否允许叠加？"])
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+        next(
+            button for button in app.button
+            if button.label == "提交补充并继续执行"
+        ).click()
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertTrue(
+            any(
+                "请回答所有问题" in error.value
+                for error in app.error
+            )
+        )
+        self.assertIsNone(
+            app.session_state["agent_pending_clarifications"]
+        )
+        self.assertEqual(state.status, AgentStatus.WAITING_FOR_USER)
 
     def test_task_can_be_restored_from_query_parameter(self):
         state = TestAnalysisState("用户可以使用优惠券")
@@ -162,9 +189,9 @@ class StreamlitAgentPageTests(unittest.TestCase):
                     for markdown in app.markdown
                 )
             )
-            self.assertIn(
-                "任务已暂停，请在左侧工作台回答关键问题后继续。",
-                [warning.value for warning in app.warning],
+            self.assertEqual(
+                app.status[0].label,
+                "任务正在等待用户操作",
             )
         finally:
             _task_store().pop(state.task_id, None)
@@ -252,7 +279,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         )
         self.assertEqual(len(app.dataframe), 0)
 
-    def test_test_points_are_paginated_and_only_one_detail_is_open(self):
+    def test_test_points_are_paginated_and_open_details_in_dialog(self):
         state = TestAnalysisState("分页需求")
         state.test_points = _build_test_points(12)
         state.status = AgentStatus.COMPLETED
@@ -283,22 +310,20 @@ class StreamlitAgentPageTests(unittest.TestCase):
             if button.label == "查看详情"
         ).click()
         app.run(timeout=10)
-        self.assertEqual(
-            app.session_state[TEST_POINT_EXPANDED_KEY],
-            "测试点1",
-        )
+        first_identity = app.session_state[TEST_POINT_DETAIL_ID_KEY]
+        self.assertTrue(first_identity)
         self.assertTrue(
             any("前置条件1" in item.value for item in app.markdown)
         )
 
-        next(
+        [
             button for button in app.button
             if button.label == "查看详情"
-        ).click()
+        ][1].click()
         app.run(timeout=10)
-        self.assertEqual(
-            app.session_state[TEST_POINT_EXPANDED_KEY],
-            "测试点2",
+        self.assertNotEqual(
+            app.session_state[TEST_POINT_DETAIL_ID_KEY],
+            first_identity,
         )
         self.assertFalse(
             any("前置条件1" in item.value for item in app.markdown)
@@ -315,6 +340,9 @@ class StreamlitAgentPageTests(unittest.TestCase):
         self.assertEqual(app.session_state[TEST_POINT_PAGE_KEY], 2)
         self.assertIsNone(
             app.session_state[TEST_POINT_EXPANDED_KEY]
+        )
+        self.assertIsNone(
+            app.session_state[TEST_POINT_DETAIL_ID_KEY]
         )
         self.assertTrue(
             any(">6. 测试点6</div>" in item.value for item in app.markdown)
@@ -614,6 +642,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
 
     def test_in_progress_task_does_not_start_duplicate_polling(self):
         state = TestAnalysisState("用户可以使用优惠券")
+        original_events = list(state.events)
         _task_store()[state.task_id] = {
             "state": state,
             "decisions": [],
@@ -630,14 +659,49 @@ class StreamlitAgentPageTests(unittest.TestCase):
             app.run(timeout=10)
 
             self.assertFalse(app.exception)
-            self.assertTrue(
-                any(
-                    "当前 Agent 节点仍在执行" in info.value
-                    for info in app.info
-                )
+            self.assertEqual(len(app.status), 1)
+            self.assertEqual(app.status[0].label, "正在分析需求")
+            self.assertEqual(app.status[0].state, "running")
+            self.assertEqual(
+                state.events,
+                original_events,
             )
+            new_analysis = next(
+                button for button in app.button
+                if button.label == "新建分析"
+            )
+            self.assertTrue(new_analysis.disabled)
         finally:
             _task_store().pop(state.task_id, None)
+
+    def test_waiting_and_completed_states_stop_running_status(self):
+        waiting = TestAnalysisState("等待补充的需求")
+        waiting.wait_for_user(["库存不足时是否允许预占？"])
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = waiting
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            app.status[0].label,
+            "任务正在等待用户操作",
+        )
+        self.assertEqual(app.status[0].state, "complete")
+
+        completed = TestAnalysisState("已经完成的需求")
+        completed.test_points = [{"title": "库存校验"}]
+        completed.review_result = {"overall_score": 90}
+        completed.status = AgentStatus.COMPLETED
+        completed.current_step = AgentStep.FINALIZE
+        app.session_state["agent_task_state"] = completed
+        app.session_state["agent_decisions"] = []
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(app.status[0].label, "测试分析任务已完成")
+        self.assertEqual(app.status[0].state, "complete")
 
     def test_pending_business_rule_renders_confirmation_actions(self):
         state = TestAnalysisState("用户可以使用优惠券")
@@ -662,9 +726,9 @@ class StreamlitAgentPageTests(unittest.TestCase):
         labels = [button.label for button in app.button]
         self.assertIn("确认规则并继续", labels)
         self.assertIn("取消该规则", labels)
-        self.assertIn(
-            "任务已暂停，请在左侧确认或取消新增业务规则。",
-            [warning.value for warning in app.warning],
+        self.assertEqual(
+            app.status[0].label,
+            "任务正在等待用户操作",
         )
 
     def test_submitted_feedback_advances_form_version(self):
