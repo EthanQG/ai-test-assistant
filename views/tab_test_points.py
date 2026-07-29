@@ -16,13 +16,16 @@ from services.document_service import DocumentService
 from utils.knowledge_base import KnowledgeBaseManager
 
 from .agent_presenter import (
+    CATEGORY_LABELS,
     action_progress_message,
     decision_rows,
     event_rows,
     feedback_rows,
+    layout_column_weights,
+    stage_progress_html,
     static_table_html,
+    task_header,
     task_overview,
-    test_point_rows,
 )
 
 
@@ -44,16 +47,25 @@ def _task_store() -> dict:
 
 def render_ui() -> None:
     _initialize_session()
-    _render_intro()
 
-    workbench, result_panel = st.columns([0.42, 0.58], gap="medium")
+    state = st.session_state.get(STATE_KEY)
+    column_weights = layout_column_weights(
+        state,
+        st.session_state.get(DECISIONS_KEY, []),
+    )
+    workbench, result_panel = st.columns(
+        column_weights,
+        gap="medium",
+    )
     with workbench:
-        with st.container(height=760, border=True):
-            execution_placeholder = _render_workbench()
+        with st.container(border=True):
+            _render_workbench()
 
     with result_panel:
-        with st.container(height=760, border=True):
-            _render_result_panel(st.session_state.get(STATE_KEY))
+        with st.container(border=True):
+            execution_placeholder = _render_result_panel(
+                state
+            )
 
     _process_agent_step(execution_placeholder)
 
@@ -105,53 +117,66 @@ def _persist_task() -> None:
     st.query_params["task_id"] = state.task_id
 
 
-def _render_intro() -> None:
-    st.header("测试分析 Agent 工作台")
-    st.caption(
-        "左侧输入需求并处理 Agent 的关键追问；右侧持续展示任务状态、执行轨迹和最终报告。"
-    )
-
-
 def _render_workbench():
     state = st.session_state.get(STATE_KEY)
     task_started = state is not None
 
     st.subheader("需求工作台")
-    requirement_text = st.text_area(
-        "输入需求描述或粘贴 PRD 内容",
-        height=260,
-        placeholder=(
-            "示例：用户提交订单时系统校验库存，库存充足则创建订单并扣减库存，"
-            "库存不足则提示失败。"
-        ),
-        key="agent_requirement_input",
-        disabled=task_started,
-    )
-    uploaded_prd = st.file_uploader(
-        "或者上传 PRD 文档",
-        type=["txt", "md", "pdf", "docx"],
-        key="agent_prd_uploader",
-        disabled=task_started,
-    )
-    st.caption(
-        "历史测试经验由 Agent 自动从默认知识文件和 Milvus 检索，无需在每次任务中重复上传。"
-    )
+    if task_started:
+        st.caption("原始需求（任务创建后保持只读）")
+        st.code(
+            state.requirement,
+            language=None,
+            wrap_lines=True,
+        )
+        requirement_text = ""
+        uploaded_prd = None
+        start_clicked = False
+        _, reset_col = st.columns([1.2, 1])
+        with reset_col:
+            reset_clicked = st.button(
+                "清空任务",
+                type="secondary",
+                use_container_width=True,
+            )
+    else:
+        requirement_text = st.text_area(
+            "输入需求描述或粘贴 PRD 内容",
+            height=260,
+            placeholder=(
+                "示例：用户提交订单时系统校验库存，库存充足则创建订单并扣减库存，"
+                "库存不足则提示失败。"
+            ),
+            key="agent_requirement_input",
+        )
+        uploaded_prd = st.file_uploader(
+            "或者上传 PRD 文档",
+            type=["txt", "md", "pdf", "docx"],
+            key="agent_prd_uploader",
+        )
+        st.caption(
+            "历史测试经验由 Agent 自动从默认知识文件和 Milvus 检索，"
+            "无需在每次任务中重复上传。"
+        )
 
-    has_input = bool(requirement_text.strip()) or uploaded_prd is not None
-    start_col, reset_col = st.columns([3, 1])
-    with start_col:
-        start_clicked = st.button(
-            "启动测试分析 Agent",
-            type="primary",
-            disabled=not has_input or task_started,
-            use_container_width=True,
+        has_input = (
+            bool(requirement_text.strip())
+            or uploaded_prd is not None
         )
-    with reset_col:
-        reset_clicked = st.button(
-            "清空任务",
-            type="secondary",
-            use_container_width=True,
-        )
+        start_col, reset_col = st.columns([2.2, 1])
+        with start_col:
+            start_clicked = st.button(
+                "启动测试分析 Agent",
+                type="primary",
+                disabled=not has_input,
+                use_container_width=True,
+            )
+        with reset_col:
+            reset_clicked = st.button(
+                "清空任务",
+                type="secondary",
+                use_container_width=True,
+            )
 
     if reset_clicked:
         _reset_session()
@@ -162,9 +187,6 @@ def _render_workbench():
         st.rerun()
 
     state = st.session_state.get(STATE_KEY)
-    feedback_notice = st.session_state.pop(FEEDBACK_NOTICE_KEY, None)
-    if feedback_notice:
-        st.success(feedback_notice)
     pending_business_feedback = (
         HumanFeedbackHandler.pending_confirmation_feedback(state)
         if state is not None
@@ -190,26 +212,7 @@ def _render_workbench():
             _render_clarification_form(state)
         else:
             st.success("补充信息已提交，正在重新分析需求。")
-    elif state is not None and _can_collect_feedback(state):
-        st.divider()
-        _render_human_feedback_form(state)
-    elif state is not None:
-        st.divider()
-
-    if state is not None:
-        st.caption(_task_hint(state))
-
     return st.empty()
-
-
-def _task_hint(state: TestAnalysisState) -> str:
-    if state.status == AgentStatus.COMPLETED:
-        return "本次分析已完成。可在上方提交人工反馈，或在右侧查看和下载报告。"
-    if state.status == AgentStatus.FAILED:
-        return "本次分析执行失败。请查看右侧错误信息，确认原因后重新发起任务。"
-    if state.status == AgentStatus.WAITING_FOR_USER:
-        return "任务正在等待补充信息，请完成上方关键问题后继续。"
-    return "Agent 正在执行，节点完成后右侧轨迹会自动更新，请耐心等待。"
 
 
 def _can_collect_feedback(state: TestAnalysisState) -> bool:
@@ -599,102 +602,179 @@ def _load_default_knowledge() -> str:
     return KnowledgeBaseManager().load_bug_experience()
 
 
-def _render_result_panel(state: TestAnalysisState | None) -> None:
+def _render_result_panel(state: TestAnalysisState | None):
     st.subheader("任务概览")
     if state is None:
-        st.info("在左侧输入需求并启动 Agent，任务状态和分析结果会固定显示在这里。")
-        st.caption("尚未创建分析任务。")
-        return
+        st.markdown(
+            """
+            <div class="agent-empty-result">
+              <div class="agent-empty-result__content">
+                <strong>分析结果将在这里持续展示</strong>
+                <p>
+                  在左侧输入需求或上传PRD并启动分析。任务开始后，
+                  这里会显示阶段进度、结构化测试点、质量评审和最终报告。
+                </p>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return st.empty()
 
     overview = task_overview(state)
-    with st.container(border=True):
-        metric_columns = st.columns(5)
-        metric_columns[0].metric("任务状态", overview["status_label"])
-        metric_columns[1].metric("当前步骤", overview["current_step"])
-        metric_columns[2].metric("测试点", overview["test_point_count"])
-        metric_columns[3].metric(
-            "Reviewer评分",
-            overview["overall_score"]
-            if overview["overall_score"] is not None
-            else "待评审",
-        )
-        metric_columns[4].metric(
-            "自动/人工修正",
-            (
-                f"{overview['automatic_revision_count']}"
-                f"/{state.max_revision_count}"
-                f" · {overview['human_revision_count']}"
-            ),
-        )
-        _render_blocked_state(state)
+    header = task_header(
+        state,
+        st.session_state.get(DECISIONS_KEY, []),
+    )
+    st.markdown(
+        f"**{header['status_label']} · "
+        f"当前阶段：{header['stage_label']}**"
+    )
+    st.markdown(
+        stage_progress_html(state),
+        unsafe_allow_html=True,
+    )
+    score = (
+        overview["overall_score"]
+        if overview["overall_score"] is not None
+        else "待评审"
+    )
+    st.caption(
+        f"测试点 {overview['test_point_count']} · "
+        f"Reviewer {score} · "
+        f"自动修正 {overview['automatic_revision_count']}"
+        f"/{state.max_revision_count} · "
+        f"人工修正 {overview['human_revision_count']}"
+    )
+    _render_blocked_state(state)
+    execution_placeholder = st.empty()
+    st.divider()
 
-    with st.container(height=580, border=True):
-        (
-            timeline_tab,
-            points_tab,
-            quality_tab,
-            feedback_tab,
-            report_tab,
-        ) = st.tabs(
-            [
-                "执行轨迹",
-                "结构化测试点",
-                "质量评审",
-                "人工反馈",
-                "最终报告",
-            ]
-        )
-        with timeline_tab:
-            decisions = st.session_state.get(DECISIONS_KEY, [])
-            if decisions:
-                st.markdown("#### Orchestrator 决策")
-                st.markdown(
-                    static_table_html(decision_rows(decisions)),
-                    unsafe_allow_html=True,
-                )
-            st.markdown("#### Agent 事件")
+    (
+        points_tab,
+        quality_tab,
+        feedback_tab,
+        report_tab,
+    ) = st.tabs(
+        [
+            "结构化测试点",
+            "质量评审",
+            "人工反馈",
+            "最终报告",
+        ]
+    )
+    with points_tab:
+        if state.test_points:
+            _render_test_point_list(state)
+        else:
+            st.caption("当前尚未生成结构化测试点。")
+
+    with quality_tab:
+        _render_quality(state)
+
+    with feedback_tab:
+        _render_feedback_tab(state)
+
+    with report_tab:
+        if state.report:
+            st.download_button(
+                "下载 Markdown 报告",
+                data=state.report,
+                file_name="测试分析报告.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
+            st.markdown(state.report)
+        else:
+            st.caption("任务完成后将在此展示最终报告。")
+
+    with st.expander("执行详情", expanded=False):
+        decisions = st.session_state.get(DECISIONS_KEY, [])
+        if decisions:
+            st.markdown("#### Orchestrator 决策")
             st.markdown(
-                static_table_html(event_rows(state)),
+                static_table_html(decision_rows(decisions)),
                 unsafe_allow_html=True,
             )
+        st.markdown("#### Agent 事件")
+        st.markdown(
+            static_table_html(event_rows(state)),
+            unsafe_allow_html=True,
+        )
 
-        with points_tab:
-            rows = test_point_rows(state)
-            if rows:
-                st.dataframe(
-                    rows,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-            else:
-                st.caption("当前尚未生成结构化测试点。")
+    return execution_placeholder
 
-        with quality_tab:
-            _render_quality(state)
 
-        with feedback_tab:
-            rows = feedback_rows(state)
-            if rows:
-                st.dataframe(
-                    rows,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-            else:
-                st.caption("当前尚未提交人工反馈。")
+def _render_test_point_list(state: TestAnalysisState) -> None:
+    for index, test_point in enumerate(state.test_points, start=1):
+        title = str(test_point.get("title", "")).strip() or "未命名测试点"
+        category = str(test_point.get("category", ""))
+        category_label = CATEGORY_LABELS.get(category, category or "-")
+        priority = str(test_point.get("priority", "")).strip() or "-"
+        scenario = str(test_point.get("scenario", "")).strip()
 
-        with report_tab:
-            if state.report:
-                st.download_button(
-                    "下载 Markdown 报告",
-                    data=state.report,
-                    file_name="测试分析报告.md",
-                    mime="text/markdown",
-                    use_container_width=True,
-                )
-                st.markdown(state.report)
-            else:
-                st.caption("任务完成后将在此展示最终报告。")
+        title_col, category_col, priority_col = st.columns(
+            [0.64, 0.2, 0.16]
+        )
+        title_col.markdown(f"**{index}. {title}**")
+        category_col.caption(f"分类：{category_label}")
+        priority_col.caption(f"优先级：{priority}")
+        st.caption(f"场景摘要：{scenario or '未提供'}")
+
+        with st.expander("查看前置条件、步骤、预期结果与来源"):
+            _render_detail_items(
+                "前置条件",
+                test_point.get("preconditions", []),
+            )
+            _render_detail_items("执行步骤", test_point.get("steps", []))
+            _render_detail_items(
+                "预期结果",
+                test_point.get("expected_results", []),
+            )
+            _render_detail_items("来源", test_point.get("sources", []))
+        if index < len(state.test_points):
+            st.divider()
+
+
+def _render_detail_items(label: str, values) -> None:
+    st.markdown(f"**{label}**")
+    items = [
+        str(value).strip()
+        for value in values
+        if str(value).strip()
+    ]
+    if not items:
+        st.caption("未提供")
+        return
+    for item in items:
+        st.markdown(f"- {item}")
+
+
+def _render_feedback_tab(state: TestAnalysisState) -> None:
+    feedback_notice = st.session_state.pop(FEEDBACK_NOTICE_KEY, None)
+    if feedback_notice:
+        st.success(feedback_notice)
+
+    rows = feedback_rows(state)
+    if rows:
+        st.dataframe(
+            rows,
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.caption("当前尚未提交人工反馈。")
+
+    pending_business_feedback = (
+        HumanFeedbackHandler.pending_confirmation_feedback(state)
+    )
+    if pending_business_feedback:
+        st.info("请先在左侧需求工作台确认或取消待处理的业务规则。")
+    elif _can_collect_feedback(state):
+        st.divider()
+        _render_human_feedback_form(state)
+    elif state.status == AgentStatus.RUNNING and rows:
+        st.info("Agent 正在应用人工反馈，完成后会更新评审结果和最终报告。")
 
 
 def _render_blocked_state(state: TestAnalysisState) -> None:
@@ -716,7 +796,8 @@ def _render_blocked_state(state: TestAnalysisState) -> None:
             == OrchestratorAction.REVISION_LIMIT_REACHED
         ):
             st.warning(
-                "自动修正已达到上限，当前结果会保留并等待人工处理，不会标记为质量通过。"
+                "自动修正已达到上限，当前结果会保留且不会标记为质量通过。"
+                "请进入“人工反馈”Tab补充处理意见。"
             )
 
 

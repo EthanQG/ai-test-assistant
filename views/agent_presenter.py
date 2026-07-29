@@ -62,6 +62,25 @@ ACTION_LABELS = {
     "terminal": "任务结束",
 }
 
+PRIMARY_STAGE_LABELS = [
+    "需求分析",
+    "知识检索",
+    "生成测试点",
+    "评审与修正",
+    "整理报告",
+]
+
+STEP_STAGE_INDEX = {
+    "initialize": 0,
+    "analyze_requirement": 0,
+    "retrieve_knowledge": 1,
+    "generate_test_points": 2,
+    "review_test_points": 3,
+    "collect_human_feedback": 3,
+    "revise_test_points": 3,
+    "finalize": 4,
+}
+
 
 def action_label(action: str) -> str:
     return ACTION_LABELS.get(action, action)
@@ -84,6 +103,32 @@ def action_progress_message(action: str) -> str:
     return f"正在执行：{label}。"
 
 
+def layout_column_weights(
+    state: TestAnalysisState | None,
+    decisions: list[OrchestratorDecision],
+) -> tuple[float, float]:
+    if state is None:
+        return (0.42, 0.58)
+
+    current_step = state.current_step.value
+    last_action = (
+        decisions[-1].action.value
+        if decisions
+        else ""
+    )
+    result_focused = (
+        state.status.value == "completed"
+        or last_action == "revision_limit_reached"
+        or current_step
+        in {
+            "collect_human_feedback",
+            "revise_test_points",
+        }
+        or bool(state.human_feedback)
+    )
+    return (0.33, 0.67) if result_focused else (0.42, 0.58)
+
+
 def task_overview(state: TestAnalysisState) -> dict[str, Any]:
     final_result = state.final_result or {}
     quality = final_result.get("quality_summary", {})
@@ -101,6 +146,98 @@ def task_overview(state: TestAnalysisState) -> dict[str, Any]:
         "human_revision_count": state.human_revision_count,
         "rag_status": state.knowledge_retrieval_status.value,
     }
+
+
+def task_header(
+    state: TestAnalysisState,
+    decisions: list[OrchestratorDecision],
+) -> dict[str, str]:
+    stage_index = STEP_STAGE_INDEX.get(state.current_step.value, 0)
+    stage_label = PRIMARY_STAGE_LABELS[stage_index]
+    status_label = STATUS_LABELS[state.status.value]
+
+    pending_business_rule = any(
+        item.get("feedback_type") == "business_rule"
+        and item.get("status") == "pending_confirmation"
+        for item in state.human_feedback
+    )
+    feedback_processing = (
+        state.status.value == "running"
+        and any(
+            item.get("status") in {"ready", "applied"}
+            for item in state.human_feedback
+        )
+    )
+    revision_limit_reached = bool(
+        decisions
+        and decisions[-1].action.value == "revision_limit_reached"
+    )
+
+    if state.status.value == "waiting_for_user":
+        if pending_business_rule:
+            status_label = "等待规则确认"
+            stage_label = "评审与修正"
+        else:
+            status_label = "等待补充信息"
+            stage_label = "需求分析"
+    elif revision_limit_reached:
+        status_label = "已达自动修正上限"
+        stage_label = "评审与修正"
+    elif feedback_processing:
+        status_label = "人工反馈处理中"
+        stage_label = "评审与修正"
+    elif state.status.value == "completed":
+        stage_label = "整理报告"
+
+    return {
+        "status_label": status_label,
+        "stage_label": stage_label,
+    }
+
+
+def stage_progress(state: TestAnalysisState) -> list[dict[str, str]]:
+    current_index = STEP_STAGE_INDEX[state.current_step.value]
+    if state.status.value == "completed":
+        current_index = len(PRIMARY_STAGE_LABELS) - 1
+
+    stages = []
+    for index, label in enumerate(PRIMARY_STAGE_LABELS):
+        if state.status.value == "completed" or index < current_index:
+            stage_status = "completed"
+        elif index == current_index:
+            stage_status = (
+                "failed"
+                if state.status.value == "failed"
+                else "current"
+            )
+        else:
+            stage_status = "pending"
+        stages.append({"label": label, "status": stage_status})
+    return stages
+
+
+def stage_progress_html(state: TestAnalysisState) -> str:
+    status_styles = {
+        "completed": ("✓", "#166534", "#DCFCE7"),
+        "current": ("●", "#1D4ED8", "#DBEAFE"),
+        "failed": ("!", "#B91C1C", "#FEE2E2"),
+        "pending": ("○", "#64748B", "#F1F5F9"),
+    }
+    items = []
+    for stage in stage_progress(state):
+        symbol, color, background = status_styles[stage["status"]]
+        items.append(
+            '<span style="display:inline-flex;align-items:center;gap:5px;'
+            f'padding:5px 9px;border-radius:6px;color:{color};'
+            f'background:{background};white-space:nowrap;">'
+            f"{symbol} {escape(stage['label'])}</span>"
+        )
+    return (
+        '<div class="agent-stage-progress" style="display:flex;'
+        'gap:6px;flex-wrap:wrap;margin:8px 0 4px 0;">'
+        + "".join(items)
+        + "</div>"
+    )
 
 
 def event_rows(state: TestAnalysisState) -> list[dict[str, Any]]:

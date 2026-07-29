@@ -1,6 +1,11 @@
 import unittest
 
-from agent import AgentStatus, HumanFeedbackHandler, TestAnalysisState
+from agent import (
+    AgentStatus,
+    AgentStep,
+    HumanFeedbackHandler,
+    TestAnalysisState,
+)
 from agent.orchestrator import (
     OrchestratorAction,
     OrchestratorDecision,
@@ -13,10 +18,57 @@ from views.tab_test_points import (
 
 
 class StreamlitAgentPageTests(unittest.TestCase):
+    def test_text_input_creates_task_with_requirement(self):
+        app = AppTest.from_file(
+            "tests/fixtures/task_creation_app.py"
+        ).run(timeout=10)
+
+        self.assertFalse(app.exception, app.exception)
+        app.button[0].click()
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            app.session_state["agent_task_state"].requirement,
+            "用户可以提交订单",
+        )
+        self.assertIn("用户可以提交订单", [item.value for item in app.markdown])
+
+    def test_uploaded_file_creates_task_with_extracted_requirement(self):
+        app = AppTest.from_file(
+            "tests/fixtures/task_creation_app.py"
+        ).run(timeout=10)
+
+        self.assertFalse(app.exception, app.exception)
+        app.button[1].click()
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            app.session_state["agent_task_state"].requirement,
+            "# 订单需求\n\n库存不足时禁止创建订单。",
+        )
+        self.assertTrue(
+            any(
+                "库存不足时禁止创建订单" in item.value
+                for item in app.markdown
+            )
+        )
+
     def test_page_renders_and_enables_agent_for_requirement_input(self):
         app = AppTest.from_file("main.py").run(timeout=10)
 
         self.assertFalse(app.exception)
+        self.assertEqual(
+            [title.value for title in app.get("title")],
+            ["🧪 Test Analysis Agent"],
+        )
+        self.assertTrue(
+            any(
+                "agent-empty-result" in markdown.value
+                for markdown in app.markdown
+            )
+        )
         self.assertEqual(len(app.text_area), 1)
         self.assertEqual(len(app.button), 2)
         self.assertTrue(app.button[0].disabled)
@@ -50,6 +102,13 @@ class StreamlitAgentPageTests(unittest.TestCase):
         self.assertIn(
             "任务已暂停，请在左侧工作台回答关键问题后继续。",
             [warning.value for warning in app.warning],
+        )
+        self.assertTrue(
+            any(
+                "等待补充信息 · 当前阶段：需求分析"
+                in markdown.value
+                for markdown in app.markdown
+            )
         )
 
     def test_task_can_be_restored_from_query_parameter(self):
@@ -110,6 +169,100 @@ class StreamlitAgentPageTests(unittest.TestCase):
                 for info in app.info
             )
         )
+        self.assertEqual(
+            [tab.label for tab in app.tabs],
+            [
+                "结构化测试点",
+                "质量评审",
+                "人工反馈",
+                "最终报告",
+            ],
+        )
+        self.assertEqual(
+            [title.value for title in app.get("title")],
+            ["🧪 Test Analysis Agent"],
+        )
+
+    def test_completed_task_uses_expandable_test_point_list(self):
+        state = TestAnalysisState("用户可以使用优惠券")
+        state.test_points = [
+            {
+                "title": "正常使用优惠券",
+                "category": "functional",
+                "priority": "P0",
+                "scenario": "满足使用条件时抵扣订单金额",
+                "preconditions": ["优惠券有效"],
+                "steps": ["选择优惠券", "提交订单"],
+                "expected_results": ["订单金额正确抵扣"],
+                "sources": ["requirement"],
+            }
+        ]
+        state.review_result = {"overall_score": 90}
+        state.review_passed = True
+        state.status = AgentStatus.COMPLETED
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertIn(
+            "查看前置条件、步骤、预期结果与来源",
+            [expander.label for expander in app.expander],
+        )
+        self.assertTrue(
+            any(
+                "场景摘要：满足使用条件时抵扣订单金额"
+                in caption.value
+                for caption in app.caption
+            )
+        )
+        self.assertEqual(len(app.dataframe), 0)
+
+    def test_started_task_shows_requirement_as_read_only_source(self):
+        state = TestAnalysisState(
+            "这是从上传的PDF中解析并保存到State的原始需求。"
+        )
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            [code.value for code in app.code],
+            ["这是从上传的PDF中解析并保存到State的原始需求。"],
+        )
+        self.assertEqual(len(app.text_area), 0)
+        self.assertEqual(
+            [button.label for button in app.button],
+            ["清空任务"],
+        )
+
+    def test_stage_progress_and_debug_details_are_rendered(self):
+        state = TestAnalysisState("用户可以使用优惠券")
+        state.current_step = AgentStep.REVIEW_TEST_POINTS
+        state.status = AgentStatus.RUNNING
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertTrue(
+            any(
+                "agent-stage-progress" in markdown.value
+                for markdown in app.markdown
+            )
+        )
+        self.assertEqual(
+            [expander.label for expander in app.expander],
+            ["执行详情"],
+        )
+        self.assertFalse(app.expander[0].proto.expanded)
 
     def test_timeline_uses_static_tables(self):
         state = TestAnalysisState("用户可以使用优惠券")
@@ -132,6 +285,76 @@ class StreamlitAgentPageTests(unittest.TestCase):
                 "agent-static-table" in markdown.value
                 for markdown in app.markdown
             )
+        )
+
+    def test_revision_limit_guides_user_to_feedback_tab(self):
+        state = TestAnalysisState("用户可以使用优惠券")
+        state.test_points = [{"title": "正常使用优惠券"}]
+        state.status = AgentStatus.RUNNING
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = [
+            OrchestratorDecision(
+                action=OrchestratorAction.REVISION_LIMIT_REACHED,
+                reason="达到自动修正次数上限",
+            )
+        ]
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertTrue(
+            any(
+                "请进入“人工反馈”Tab" in warning.value
+                for warning in app.warning
+            )
+        )
+        self.assertIn(
+            "提交人工反馈",
+            [button.label for button in app.button],
+        )
+
+    def test_failed_state_is_not_presented_as_revision_limit(self):
+        state = TestAnalysisState("用户可以使用优惠券")
+        state.fail("模型服务请求超时")
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        self.assertIn(
+            "模型服务请求超时",
+            [error.value for error in app.error],
+        )
+        self.assertFalse(
+            any(
+                "自动修正已达到上限" in warning.value
+                for warning in app.warning
+            )
+        )
+
+    def test_completed_report_keeps_download_action(self):
+        state = TestAnalysisState("用户可以使用优惠券")
+        state.test_points = [{"title": "正常使用优惠券"}]
+        state.review_result = {"overall_score": 90}
+        state.review_passed = True
+        state.report = "# 测试分析报告"
+        state.status = AgentStatus.COMPLETED
+        state.current_step = AgentStep.FINALIZE
+        app = AppTest.from_file("main.py")
+        app.session_state["agent_task_state"] = state
+        app.session_state["agent_decisions"] = []
+
+        app.run(timeout=10)
+
+        self.assertFalse(app.exception)
+        download_buttons = app.get("download_button")
+        self.assertEqual(len(download_buttons), 1)
+        self.assertEqual(
+            download_buttons[0].label,
+            "下载 Markdown 报告",
         )
 
     def test_in_progress_task_does_not_start_duplicate_polling(self):

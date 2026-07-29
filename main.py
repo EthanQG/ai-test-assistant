@@ -14,11 +14,27 @@ st.markdown("""
 .stApp {
     background-color: #F8F9FA;
 }
-/* 主内容区宽度与间距 */
+/* 所有任务状态共用同一个宽屏工作区 */
+[data-testid="stAppViewBlockContainer"],
 .block-container {
     padding-top: 3.75rem;
     padding-bottom: 2rem;
-    max-width: 1600px;
+    width: 100%;
+    max-width: 1360px;
+    margin-left: auto;
+    margin-right: auto;
+}
+/* 未创建任务时让右侧保持完整结果面板，而不是顶部矮卡片 */
+.agent-empty-result {
+    min-height: 470px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+}
+.agent-empty-result__content {
+    max-width: 32rem;
 }
 /* 全局字体 */
 body {

@@ -15,7 +15,11 @@ from views.agent_presenter import (
     decision_rows,
     event_rows,
     feedback_rows,
+    layout_column_weights,
+    stage_progress,
+    stage_progress_html,
     static_table_html,
+    task_header,
     task_overview,
     test_point_rows,
 )
@@ -84,6 +88,141 @@ class AgentPresenterTests(unittest.TestCase):
         self.assertNotIn("<script>", html)
         self.assertIn("&lt;script&gt;", html)
         self.assertNotIn("<th></th>", html)
+
+    def test_stage_progress_maps_revision_to_quality_stage(self):
+        state = TestAnalysisState("订单需求")
+        state.current_step = AgentStep.REVISE_TEST_POINTS
+        state.status = AgentStatus.RUNNING
+
+        stages = stage_progress(state)
+        html = stage_progress_html(state)
+
+        self.assertEqual(
+            [stage["status"] for stage in stages],
+            [
+                "completed",
+                "completed",
+                "completed",
+                "current",
+                "pending",
+            ],
+        )
+        self.assertIn("评审与修正", html)
+        self.assertIn("agent-stage-progress", html)
+
+    def test_failed_stage_is_distinct_from_pending(self):
+        state = TestAnalysisState("订单需求")
+        state.current_step = AgentStep.GENERATE_TEST_POINTS
+        state.status = AgentStatus.FAILED
+
+        stages = stage_progress(state)
+
+        self.assertEqual(stages[2]["status"], "failed")
+        self.assertEqual(stages[3]["status"], "pending")
+
+    def test_layout_uses_more_result_space_for_completed_task(self):
+        state = TestAnalysisState("订单需求")
+
+        self.assertEqual(layout_column_weights(None, []), (0.42, 0.58))
+        self.assertEqual(
+            layout_column_weights(state, []),
+            (0.42, 0.58),
+        )
+
+        state.status = AgentStatus.COMPLETED
+
+        self.assertEqual(
+            layout_column_weights(state, []),
+            (0.33, 0.67),
+        )
+
+    def test_layout_uses_more_result_space_at_revision_limit(self):
+        state = TestAnalysisState("订单需求")
+        decisions = [
+            OrchestratorDecision(
+                OrchestratorAction.REVISION_LIMIT_REACHED,
+                "达到自动修正上限",
+            )
+        ]
+
+        self.assertEqual(
+            layout_column_weights(state, decisions),
+            (0.33, 0.67),
+        )
+
+    def test_task_header_uses_product_language_for_main_states(self):
+        state = TestAnalysisState("订单需求")
+
+        cases = []
+        cases.append(("未开始", task_header(state, [])))
+
+        state.status = AgentStatus.RUNNING
+        state.current_step = AgentStep.RETRIEVE_KNOWLEDGE
+        cases.append(("执行中", task_header(state, [])))
+
+        state.wait_for_user(["库存锁定时机是什么？"])
+        cases.append(("等待补充", task_header(state, [])))
+
+        state.status = AgentStatus.RUNNING
+        state.current_step = AgentStep.REVISE_TEST_POINTS
+        state.human_feedback = [
+            {
+                "feedback_type": "test_suggestion",
+                "status": "ready",
+            }
+        ]
+        cases.append(("人工反馈", task_header(state, [])))
+
+        state.human_feedback = []
+        decisions = [
+            OrchestratorDecision(
+                OrchestratorAction.REVISION_LIMIT_REACHED,
+                "达到自动修正上限",
+            )
+        ]
+        cases.append(("修正上限", task_header(state, decisions)))
+
+        state.status = AgentStatus.COMPLETED
+        state.current_step = AgentStep.FINALIZE
+        cases.append(("已完成", task_header(state, [])))
+
+        state.status = AgentStatus.FAILED
+        state.current_step = AgentStep.GENERATE_TEST_POINTS
+        cases.append(("执行失败", task_header(state, [])))
+
+        expected = {
+            "未开始": ("等待开始", "需求分析"),
+            "执行中": ("执行中", "知识检索"),
+            "等待补充": ("等待补充信息", "需求分析"),
+            "人工反馈": ("人工反馈处理中", "评审与修正"),
+            "修正上限": ("已达自动修正上限", "评审与修正"),
+            "已完成": ("已完成", "整理报告"),
+            "执行失败": ("执行失败", "生成测试点"),
+        }
+        for name, header in cases:
+            with self.subTest(name=name):
+                self.assertEqual(
+                    (
+                        header["status_label"],
+                        header["stage_label"],
+                    ),
+                    expected[name],
+                )
+
+    def test_task_header_distinguishes_business_rule_confirmation(self):
+        state = TestAnalysisState("订单需求")
+        state.status = AgentStatus.WAITING_FOR_USER
+        state.human_feedback = [
+            {
+                "feedback_type": "business_rule",
+                "status": "pending_confirmation",
+            }
+        ]
+
+        header = task_header(state, [])
+
+        self.assertEqual(header["status_label"], "等待规则确认")
+        self.assertEqual(header["stage_label"], "评审与修正")
 
     def test_test_point_rows_flatten_list_fields(self):
         state = TestAnalysisState("订单需求")
