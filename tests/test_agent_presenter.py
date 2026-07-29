@@ -21,6 +21,7 @@ from views.agent_presenter import (
     static_table_html,
     task_header,
     task_overview,
+    test_point_summary_html,
     test_point_rows,
 )
 
@@ -246,6 +247,23 @@ class AgentPresenterTests(unittest.TestCase):
             rows[0]["来源"],
             "requirement, test_experience",
         )
+
+    def test_test_point_summary_html_is_aligned_and_escaped(self):
+        html = test_point_summary_html(
+            {
+                "title": "<script>异常标题</script>",
+                "category": "exception",
+                "priority": "P0",
+                "scenario": "重复提交",
+            },
+            2,
+        )
+
+        self.assertIn("agent-test-point-summary", html)
+        self.assertIn("分类：异常", html)
+        self.assertIn("优先级：P0", html)
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
 
     def test_feedback_rows_translate_internal_values(self):
         state = TestAnalysisState("订单需求")

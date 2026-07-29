@@ -16,7 +16,6 @@ from services.document_service import DocumentService
 from utils.knowledge_base import KnowledgeBaseManager
 
 from .agent_presenter import (
-    CATEGORY_LABELS,
     action_progress_message,
     decision_rows,
     event_rows,
@@ -26,6 +25,7 @@ from .agent_presenter import (
     static_table_html,
     task_header,
     task_overview,
+    test_point_summary_html,
 )
 
 
@@ -135,7 +135,7 @@ def _render_workbench():
         _, reset_col = st.columns([1.2, 1])
         with reset_col:
             reset_clicked = st.button(
-                "清空任务",
+                "新建分析",
                 type="secondary",
                 use_container_width=True,
             )
@@ -173,7 +173,7 @@ def _render_workbench():
             )
         with reset_col:
             reset_clicked = st.button(
-                "清空任务",
+                "重置输入",
                 type="secondary",
                 use_container_width=True,
             )
@@ -707,19 +707,10 @@ def _render_result_panel(state: TestAnalysisState | None):
 
 def _render_test_point_list(state: TestAnalysisState) -> None:
     for index, test_point in enumerate(state.test_points, start=1):
-        title = str(test_point.get("title", "")).strip() or "未命名测试点"
-        category = str(test_point.get("category", ""))
-        category_label = CATEGORY_LABELS.get(category, category or "-")
-        priority = str(test_point.get("priority", "")).strip() or "-"
-        scenario = str(test_point.get("scenario", "")).strip()
-
-        title_col, category_col, priority_col = st.columns(
-            [0.64, 0.2, 0.16]
+        st.markdown(
+            test_point_summary_html(test_point, index),
+            unsafe_allow_html=True,
         )
-        title_col.markdown(f"**{index}. {title}**")
-        category_col.caption(f"分类：{category_label}")
-        priority_col.caption(f"优先级：{priority}")
-        st.caption(f"场景摘要：{scenario or '未提供'}")
 
         with st.expander("查看前置条件、步骤、预期结果与来源"):
             _render_detail_items(

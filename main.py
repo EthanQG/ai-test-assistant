@@ -17,8 +17,8 @@ st.markdown("""
 /* 所有任务状态共用同一个宽屏工作区 */
 [data-testid="stAppViewBlockContainer"],
 .block-container {
-    padding-top: 3.75rem;
-    padding-bottom: 2rem;
+    padding-top: 3rem;
+    padding-bottom: 1.5rem;
     width: 100%;
     max-width: 1360px;
     margin-left: auto;
@@ -39,24 +39,33 @@ st.markdown("""
 /* 全局字体 */
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    line-height: 1.6;
+    line-height: 1.5;
+    color: #172033;
+}
+h1 {
+    font-size: 2rem !important;
+    line-height: 1.15 !important;
+    margin-bottom: 0.15rem !important;
+    padding-top: 0 !important;
+}
+h3 {
+    font-size: 1.35rem !important;
+    line-height: 1.3 !important;
 }
 
 /* ── 按钮统一样式 ── */
 .stButton > button,
 .stDownloadButton > button {
     width: 100% !important;
-    border-radius: 8px !important;
-    border: none !important;
-    padding: 0.5rem 1.5rem !important;
+    border-radius: 7px !important;
+    padding: 0.45rem 1rem !important;
     font-weight: 500 !important;
-    transition: all 0.25s ease !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08) !important;
+    transition: background-color 0.15s ease, border-color 0.15s ease !important;
+    box-shadow: none !important;
 }
 .stButton > button:hover,
 .stDownloadButton > button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0,0,0,0.14) !important;
+    box-shadow: none !important;
 }
 /* 主按钮 — 深蓝主题色 */
 .stButton > button[kind="primary"] {
@@ -68,11 +77,13 @@ body {
 }
 /* 次按钮 */
 .stButton > button[kind="secondary"] {
-    background-color: #E2E8F0 !important;
-    color: #1E293B !important;
+    background-color: #FFFFFF !important;
+    color: #475569 !important;
+    border: 1px solid #CBD5E1 !important;
 }
 .stButton > button[kind="secondary"]:hover {
-    background-color: #CBD5E1 !important;
+    background-color: #F8FAFC !important;
+    border-color: #94A3B8 !important;
 }
 
 /* ── 输入框美化 ── */
@@ -91,8 +102,9 @@ div[data-testid="stTextInput"] input:focus {
 
 /* ── 卡片容器圆角与阴影 ── */
 div[data-testid="stVerticalBlockBorderWrapper"] {
-    border-radius: 12px !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06) !important;
+    border-radius: 8px !important;
+    border-color: #DCE2EA !important;
+    box-shadow: none !important;
 }
 
 /* ── 文件上传组件 ── */
@@ -112,24 +124,82 @@ div[data-testid="stMetricLabel"] {
 
 /* ── Tab 标签美化 ── */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 0.5rem;
+    gap: 0.25rem;
 }
 .stTabs [data-baseweb="tab"] {
-    border-radius: 8px 8px 0 0;
-    padding: 0.5rem 1.2rem;
+    border-radius: 0;
+    padding: 0.45rem 1rem;
     font-weight: 500;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    color: #2563EB !important;
+}
+.stTabs [data-baseweb="tab-highlight"] {
+    background-color: #2563EB !important;
+}
+
+/* ── 流程标签弱化为状态文本 ── */
+.agent-stage-progress {
+    display: flex;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    margin: 0.55rem 0 0.3rem;
+}
+.agent-stage {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0;
+    border-radius: 0;
+    background: transparent;
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+.agent-stage--completed { color: #47705A; }
+.agent-stage--current { color: #2563EB; font-weight: 600; }
+.agent-stage--failed { color: #B42318; font-weight: 600; }
+.agent-stage--pending { color: #94A3B8; }
+
+/* ── 测试点摘要对齐 ── */
+.agent-test-point-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 1.1rem;
+    row-gap: 0.3rem;
+    align-items: baseline;
+    padding: 0.35rem 0 0.25rem;
+}
+.agent-test-point-title {
+    min-width: 0;
+    font-weight: 600;
+    color: #172033;
+}
+.agent-test-point-meta {
+    font-size: 0.8rem;
+    color: #64748B;
+    white-space: nowrap;
+}
+.agent-test-point-scenario {
+    grid-column: 1 / -1;
+    font-size: 0.875rem;
+    color: #64748B;
+}
+div[data-testid="stExpander"] details {
+    border-radius: 7px !important;
+    border-color: #DCE2EA !important;
+    box-shadow: none !important;
 }
 
 /* ── 标题间距 ── */
-h1, h2, h3 {
-    padding-top: 0.3rem;
+h2, h3 {
+    padding-top: 0.15rem;
 }
 
 /* ── 分割线 ── */
 hr {
     border: none;
     border-top: 1px solid #E2E8F0;
-    margin: 16px 0;
+    margin: 12px 0;
 }
 </style>
 """, unsafe_allow_html=True)

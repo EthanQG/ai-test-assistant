@@ -214,8 +214,8 @@ class StreamlitAgentPageTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "场景摘要：满足使用条件时抵扣订单金额"
-                in caption.value
-                for caption in app.caption
+                in markdown.value
+                for markdown in app.markdown
             )
         )
         self.assertEqual(len(app.dataframe), 0)
@@ -238,7 +238,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         self.assertEqual(len(app.text_area), 0)
         self.assertEqual(
             [button.label for button in app.button],
-            ["清空任务"],
+            ["新建分析"],
         )
 
     def test_stage_progress_and_debug_details_are_rendered(self):

@@ -217,26 +217,42 @@ def stage_progress(state: TestAnalysisState) -> list[dict[str, str]]:
 
 
 def stage_progress_html(state: TestAnalysisState) -> str:
-    status_styles = {
-        "completed": ("✓", "#166534", "#DCFCE7"),
-        "current": ("●", "#1D4ED8", "#DBEAFE"),
-        "failed": ("!", "#B91C1C", "#FEE2E2"),
-        "pending": ("○", "#64748B", "#F1F5F9"),
+    status_symbols = {
+        "completed": "✓",
+        "current": "●",
+        "failed": "!",
+        "pending": "○",
     }
     items = []
     for stage in stage_progress(state):
-        symbol, color, background = status_styles[stage["status"]]
+        symbol = status_symbols[stage["status"]]
         items.append(
-            '<span style="display:inline-flex;align-items:center;gap:5px;'
-            f'padding:5px 9px;border-radius:6px;color:{color};'
-            f'background:{background};white-space:nowrap;">'
+            f'<span class="agent-stage agent-stage--{stage["status"]}">'
             f"{symbol} {escape(stage['label'])}</span>"
         )
     return (
-        '<div class="agent-stage-progress" style="display:flex;'
-        'gap:6px;flex-wrap:wrap;margin:8px 0 4px 0;">'
+        '<div class="agent-stage-progress">'
         + "".join(items)
         + "</div>"
+    )
+
+
+def test_point_summary_html(
+    test_point: dict[str, Any],
+    index: int,
+) -> str:
+    title = str(test_point.get("title", "")).strip() or "未命名测试点"
+    category = str(test_point.get("category", ""))
+    category_label = CATEGORY_LABELS.get(category, category or "-")
+    priority = str(test_point.get("priority", "")).strip() or "-"
+    scenario = str(test_point.get("scenario", "")).strip() or "未提供"
+    return (
+        '<div class="agent-test-point-summary">'
+        f'<div class="agent-test-point-title">{index}. {escape(title)}</div>'
+        f'<div class="agent-test-point-meta">分类：{escape(category_label)}</div>'
+        f'<div class="agent-test-point-meta">优先级：{escape(priority)}</div>'
+        f'<div class="agent-test-point-scenario">场景摘要：{escape(scenario)}</div>'
+        "</div>"
     )
 
 
