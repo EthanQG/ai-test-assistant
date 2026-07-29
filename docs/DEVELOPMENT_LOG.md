@@ -2,7 +2,11 @@
 
 这份文档记录项目从固定 Workflow 向 Agent 架构演进的过程。它不仅记录代码变化，还解释每次调整的原因、解决的问题、验证方式和下一步计划，方便后续复盘及面试表达。
 
-当前产品范围请查看 [PRD V2](product/PRD_AGENT_V2.md)，最新开发接力点请查看 [CURRENT_STATUS.md](CURRENT_STATUS.md)，代码知识与面试复盘请查看 [LEARNING_NOTES.md](LEARNING_NOTES.md)，跨电脑的 Codex 协作规则请查看根目录 [AGENTS.md](../AGENTS.md)。
+当前产品范围请查看 [PRD V2](product/PRD_AGENT_V2.md)，后续阶段请查看
+[秋招项目含金量提升路线图](roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)，最新开发接力点请查看
+[CURRENT_STATUS.md](CURRENT_STATUS.md)，代码知识与面试复盘请查看
+[LEARNING_NOTES.md](LEARNING_NOTES.md)，跨电脑的 Codex 协作规则请查看根目录
+[AGENTS.md](../AGENTS.md)。
 
 ## 如何维护本文档
 
@@ -43,7 +47,14 @@
 | 阶段 2.11.5A | 已完成 | 双栏信息架构、阶段进度、只读需求对照和折叠执行详情 | `d2eb741` |
 | 阶段 2.11.5B | 已建立检查点 | 统一标题留白、阶段标签、Tab、按钮和测试点摘要视觉 | `6b48817` |
 | 阶段 2.11.5C | 已完成 | 固定双栏工作区、有状态结果导航、测试点分页和执行详情Dialog | `2416da4` |
-| 阶段 2.11.5D | 已完成 | 动态执行状态、固定操作栏、结果浏览和页面展示收尾 | 待提交 |
+| 阶段 2.11.5D | 已完成 | 动态执行状态、固定操作栏、结果浏览和页面展示收尾 | `c8477b9` |
+| 路线图校准 | 已完成（仅文档） | 冻结Streamlit V1，明确MySQL权威数据、Milvus索引和阶段2.12～2.17 | 待提交 |
+| 阶段 2.12 | 规划中 | Application Service、TaskRepository和Streamlit调用入口迁移 | - |
+| 阶段 2.13 | 规划中 | MySQL任务快照、事件、服务重启恢复和重复执行保护 | - |
+| 阶段 2.14 | 规划中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
+| 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
+| 阶段 2.16 | 规划中 | 脱敏离线评测、RAG/Reviewer专项评测和三组消融实验 | - |
+| 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
 ---
 
@@ -1816,3 +1827,71 @@ rerun时机。`_process_agent_step`和`_execute_next_orchestrator_node`只在原
 代码、测试、浏览器截图和文档已完成。Streamlit页面至此定位为V1功能演示界面：用于演示
 完整Agent链路和人工反馈闭环，不继续追求完全复刻DeepL或生产级固定工作台。本阶段不再
 恢复2.11.5B视觉精修；下一小阶段优先处理LLM调用耗时、输出预算和自动修正成本。
+
+---
+
+## 路线图校准：后端边界、任务持久化与知识资产闭环
+
+### 校准原因
+
+阶段2.11完成后，继续直接在Streamlit中接入MySQL、Milvus写回和性能逻辑，会让页面再次
+承担任务创建、节点推进、状态保存和外部服务调用。与此同时，项目虽然能够从Milvus检索
+历史资产，但当前Agent页面没有把审核后的结果重新沉淀为历史资产，知识来源仍依赖旧集合、
+旧Workflow或手动写入。
+
+本次只调整文档和阶段顺序，不修改代码，不把规划能力描述为已实现。
+
+### 当前代码事实
+
+- `RAGService.save_case()`仍保留写入Milvus的方法
+- `TestAssistantManager.save_to_rag()`仍作为旧Workflow兼容入口
+- 当前Agent页面没有调用上述保存方法
+- 当前Milvus实现同时保存向量、PRD文本和测试点文本
+- 当前Agent任务只保存在Streamlit进程内
+- 166项离线自动化测试通过，但没有真实RAG和质量评测结论
+
+### 数据职责校准
+
+后续明确区分：
+
+```text
+MySQL任务快照
+→ 保存Agent执行和恢复所需的完整状态
+
+MySQL KnowledgeAsset
+→ 保存用户确认后的完整、权威、可版本化测试资产
+
+Milvus V2索引
+→ 保存向量、asset_id和必要元数据，负责找出语义相似候选
+```
+
+Milvus比较的是当前需求查询向量与历史知识资产检索向量。命中后返回`asset_id`和相似度，
+Application Service再从MySQL读取完整资产，由ContextBuilder决定哪些内容进入Generator。
+
+### 新阶段顺序
+
+- 2.12：先增加Application Service和Repository边界
+- 2.13：再实现MySQL任务快照、事件、恢复和重复保护
+- 2.14：再实现用户确认后的KnowledgeAsset与Milvus V2闭环
+- 2.15：在稳定数据边界上增加ContextBuilder、Token和耗时
+- 2.16：建立离线评测与三组消融实验
+- 2.17：最后才评估FastAPI、后台任务、SSE和Vue
+
+后续小阶段统一使用`2.12.1`、`2.12.2`等数字编号，不再使用A、B、C、D。历史已经提交的
+2.11.5A～2.11.5D名称保持不变，用于保留真实开发记录。
+
+### 范围控制
+
+当前P0不包含：
+
+- 多Agent自由协作
+- LLM自主选择任意节点或工具
+- 不受控自主规划
+- 为展示而增加长期记忆
+- 后端边界未稳定前重写Vue
+- 没有真实超预算样本的复杂自动摘要
+
+### 下一步
+
+先提交本次文档校准。用户确认后，从阶段`2.12.1 Application Service接口`开始代码开发，
+不直接跳到MySQL或Milvus写回。

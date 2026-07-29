@@ -39,6 +39,10 @@
 - Reviewer会将可选问题列表中的纯空白占位归一化为空列表，同时继续拒绝错误数据类型
 - Generator与Reviewer使用8192的大体量输出预算；Reviser只返回增删改操作，由Python校验并原子合并，避免重复输出完整测试点集合
 
+当前 Agent 页面只接入了 Milvus 历史资产检索，尚未接入“用户确认后沉淀知识资产”的入口。
+旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
+知识闭环。后续将由 MySQL 保存完整、可审计的知识资产，Milvus 只承担向量候选检索。
+
 ## 项目结构
 
 ```text
@@ -52,6 +56,7 @@
 ├── prompts/                # 模型提示词
 ├── knowledge/              # 本地测试知识
 ├── docs/                   # 当前接力状态与开发复盘
+│   └── roadmap/           # 秋招目标、阶段范围和证据要求
 └── tests/                  # 自动化测试
 ```
 
@@ -68,6 +73,7 @@
 - [当前开发状态与跨设备接力](docs/CURRENT_STATUS.md)
 - [开发与复盘日志](docs/DEVELOPMENT_LOG.md)
 - [代码学习与面试复盘](docs/LEARNING_NOTES.md)
+- [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)
 
 V1 Workflow PRD 已归档在 [docs/archive/PRD_WORKFLOW_V1.md](docs/archive/PRD_WORKFLOW_V1.md)，不再代表当前产品范围。Codex 的仓库级协作规则位于 [AGENTS.md](AGENTS.md)。
 
@@ -110,7 +116,12 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 
 ## 后续计划
 
-1. 设计MySQL历史任务持久化与跨服务重启恢复
-2. 完善修正历史、达到修正上限后的人工处理和知识沉淀交互
-3. 建立离线评测集，量化 RAG 和 Reviewer 带来的覆盖率提升
-4. Agent 核心稳定后，再评估 FastAPI + React/Vue 前后端分离
+1. 阶段2.12：增加Application Service与Repository边界，让Streamlit只调用应用服务
+2. 阶段2.13：使用MySQL保存任务快照和事件，实现重启恢复、version与execution_id保护
+3. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
+4. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
+5. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
+6. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+
+详细范围、验收证据和明确不做的功能见
+[秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。

@@ -4,9 +4,16 @@
 
 ## 当前产品定义
 
-- [Test Analysis Agent 产品需求说明书 V2.1](product/PRD_AGENT_V2.md)
+- [Test Analysis Agent 产品需求说明书 V2.7](product/PRD_AGENT_V2.md)
 
-V2.1 PRD 是当前有效的产品范围和验收依据。新增 Agent 节点、用户流程或产品能力前，应先确认与 V2.1 PRD 一致。
+V2.7 PRD 是当前有效的产品范围和验收依据。新增 Agent 节点、用户流程或产品能力前，应先确认与 V2.7 PRD 一致。
+
+## 当前路线图
+
+- [秋招项目含金量提升路线图](roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)：阶段2.12～2.17的优先级、范围、证据和简历边界
+
+路线图负责回答“接下来按什么顺序做”；PRD负责回答“产品需要具备什么能力”。规划中的能力
+不得因为写入路线图而视为已经实现。
 
 ## 开发协作
 
@@ -27,4 +34,5 @@ V1 PRD 同时规划了测试点生成、pytest 用例生成和日志分析，采
 - 当前开发接力点变化：覆盖更新 `CURRENT_STATUS.md`
 - 完成一个可独立验证的阶段：追加 `DEVELOPMENT_LOG.md`
 - 新增代码概念或面试知识：追加 `LEARNING_NOTES.md`
+- 阶段范围、优先级或证据要求变化：更新 `roadmap/AUTUMN_RECRUITMENT_ROADMAP.md`
 - 历史文档不覆盖修改；产生新版本时移动到 `archive/`
