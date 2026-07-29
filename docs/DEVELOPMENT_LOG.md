@@ -48,8 +48,8 @@
 | 阶段 2.11.5B | 已建立检查点 | 统一标题留白、阶段标签、Tab、按钮和测试点摘要视觉 | `6b48817` |
 | 阶段 2.11.5C | 已完成 | 固定双栏工作区、有状态结果导航、测试点分页和执行详情Dialog | `2416da4` |
 | 阶段 2.11.5D | 已完成 | 动态执行状态、固定操作栏、结果浏览和页面展示收尾 | `c8477b9` |
-| 路线图校准 | 已完成（仅文档） | 冻结Streamlit V1，明确MySQL权威数据、Milvus索引和阶段2.12～2.17 | 待提交 |
-| 阶段 2.12 | 规划中 | Application Service、TaskRepository和Streamlit调用入口迁移 | - |
+| 路线图校准 | 已完成（仅文档） | 冻结Streamlit V1，明确MySQL权威数据、Milvus索引和阶段2.12～2.17 | `e9c56b3` |
+| 阶段 2.12 | 已完成 | Application Service、TaskRepository、只读TaskView、页面入口迁移和节点耗时基线 | 待提交 |
 | 阶段 2.13 | 规划中 | MySQL任务快照、事件、服务重启恢复和重复执行保护 | - |
 | 阶段 2.14 | 规划中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
@@ -1895,3 +1895,154 @@ Application Service再从MySQL读取完整资产，由ContextBuilder决定哪些
 
 先提交本次文档校准。用户确认后，从阶段`2.12.1 Application Service接口`开始代码开发，
 不直接跳到MySQL或Milvus写回。
+
+---
+
+## 阶段 2.12：后端调用边界
+
+### 本阶段目标
+
+在不改变Agent节点顺序、状态转换、Reviewer/Reviser规则和Streamlit页面结构的前提下，
+隔离页面与Agent核心。Streamlit只能表达用户动作，Application Service负责加载任务、
+调用受控编排器、保存结果并返回只读视图。
+
+### 开发前问题
+
+`views/tab_test_points.py`原来直接承担：
+
+- 创建`TestAnalysisState`
+- 创建并调用`AgentOrchestrator`
+- 直接调用`RequirementAnalyzer.reanalyze_with_clarifications()`
+- 直接调用`HumanFeedbackHandler`
+- 使用`st.cache_resource`中的`_task_store()`保存可变State
+- 在session_state中保存决策、自动运行、待补充命令和执行步数
+
+`_task_store()`属于Streamlit进程级共享资源，不是会话级存储。不同会话只要知道task_id，
+理论上可以访问同一份可变State；同时页面、存储和业务控制耦合，未来接MySQL或FastAPI会
+重复改写页面逻辑。
+
+### Application Service
+
+新增`TestAnalysisApplicationService`，公开：
+
+```text
+create_task
+get_task
+list_tasks
+advance_task
+submit_clarifications
+confirm_business_rules
+submit_feedback
+retry_task
+delete_task
+```
+
+接口只表达创建、继续、补充、确认、反馈和重试等用户用例，没有提供
+`execute_node(node_name)`。`advance_task()`仍调用既有Orchestrator，由Orchestrator根据
+AgentState选择唯一合法节点；Application Service没有复制状态机。
+
+上传文档也通过`CreateTaskCommand + UploadedDocument`进入Application Service，再调用既有
+DocumentService解析，页面不再直接调用文档、知识、LLM或RAG服务。
+
+### TaskRepository与会话隔离
+
+新增`TaskRepository`契约：
+
+```text
+create(record)
+get(task_id)
+save(record, expected_version=None)
+list()
+delete(task_id)
+```
+
+`InMemoryTaskRepository`使用锁保护单实例读写，并在创建、读取、保存和列表时使用深复制。
+Application Service修改的是加载出的隔离副本，完成用例后显式保存；页面无法通过
+`TaskView`绕过Repository修改AgentState。
+
+当前Repository在每个Streamlit会话初始化时单独装配，不再使用模块级或进程级任务字典。
+因此同一会话的普通rerun可以继续任务，但跨新会话、硬刷新会话重建和服务重启恢复明确留给
+2.13 MySQL，不再用全局可变字典模拟持久化。
+
+### 只读TaskView
+
+页面session_state不再保存AgentState。Application Service把Repository中的State复制为
+`TaskView`，列表和字典字段在读取时再次返回副本。TaskView还提供：
+
+- Orchestrator决策只读元组
+- 是否自动推进、是否处理中
+- 待补充命令状态
+- 执行步数
+- 待确认业务规则的只读视图
+- 是否达到自动修正上限
+- 节点执行指标与累计执行耗时
+
+Presenter改为接收TaskView，但展示映射、文案、CSS、布局、分页和Dialog行为没有改变。
+
+### 页面保留的session_state
+
+页面继续保存：
+
+- 会话级Application Service依赖
+- 当前task_id
+- 结果Tab、测试点页码、Dialog和展开项
+- 需求输入、上传控件、问题回答和反馈表单草稿
+- 表单版本和一次性成功提示
+
+页面不再保存可变State、决策列表、自动运行、待处理补充命令或执行步数。
+
+### 最小性能基线
+
+Application Service在每次推进前后记录`NodeExecutionMetric`：
+
+- action
+- started_at与finished_at
+- duration_seconds
+- succeeded
+- error_type
+
+`TaskView.total_execution_seconds`汇总节点实际执行时间。指标包装不会改变节点输入或结果。
+LLM Token、模型、重试次数、Embedding和Milvus耗时需要统一外部调用埋点，按范围留到2.15。
+
+### 自动化测试
+
+新增：
+
+- Application Service创建、推进、补充、规则确认、反馈、完成、修正和失败测试
+- Repository创建、读取、保存、删除、隔离副本和会话实例隔离测试
+- AST架构测试，禁止页面引用Orchestrator、节点、FeedbackHandler、AgentState和`_task_store()`
+- AppTest改为通过会话级Application Service与Repository注入任务
+
+完整结果：
+
+```text
+python -m unittest discover -s tests -v
+181 tests passed
+```
+
+已有文本/文件创建、等待补充、业务规则确认、人工反馈、分页、Dialog、失败、完成和防重复
+页面测试全部通过。测试不访问真实DeepSeek、Milvus或Embedding。
+
+### 依赖方向
+
+```text
+views
+→ application
+→ repositories.TaskRepository
+→ agent.AgentOrchestrator / nodes / HumanFeedbackHandler
+→ services
+```
+
+会话启动位置只调用`build_session_application_service()`，具体内存Repository的装配位于
+Application bootstrap中，页面不访问Repository。
+
+### 当前限制与下一步
+
+- `expected_version`已预留但内存实现不执行版本校验
+- `in_progress`只覆盖同一会话同步调用
+- 新会话和服务重启后不能恢复内存任务
+- State缺少可靠`from_dict()`和快照schema version
+- 节点指标尚未分解到LLM、Embedding和Milvus
+
+下一阶段只进入2.13 MySQL任务快照、事件、恢复和重复执行保护，不同时实现KnowledgeAsset、
+Milvus V2、FastAPI、后台任务、SSE或Vue。

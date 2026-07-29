@@ -5,10 +5,10 @@
 | 项目 | 内容 |
 |---|---|
 | 产品名称 | Test Analysis Agent |
-| 文档版本 | V2.7 |
+| 文档版本 | V2.8 |
 | 更新时间 | 2026-07-29 |
 | 文档状态 | 当前有效 |
-| 产品阶段 | Streamlit V1演示完成，后端边界与持久化规划中 |
+| 产品阶段 | Streamlit V1演示与后端调用边界完成，MySQL持久化待实施 |
 | 当前界面 | Streamlit |
 | 当前模型 | DeepSeek 兼容 Chat Completions API |
 | 历史版本 | [Workflow PRD V1](../archive/PRD_WORKFLOW_V1.md) |
@@ -283,14 +283,14 @@ Agent 使用受控编排：
 
 | 编号 | 需求 | 优先级 | 状态 | 验收标准 |
 |---|---|---:|---|---|
-| FR-601 | Application Service统一应用入口 | P0 | 规划中 | Streamlit只调用Application Service，不直接操作Agent节点、Orchestrator、Repository、MySQL、Milvus或LLM |
-| FR-602 | TaskRepository隔离存储实现 | P0 | 规划中 | 内存与MySQL实现遵循同一契约，Application Service不依赖具体数据库 |
+| FR-601 | Application Service统一应用入口 | P0 | 已实现 | Streamlit只调用Application Service，不直接操作Agent节点、Orchestrator、Repository、MySQL、Milvus或LLM |
+| FR-602 | TaskRepository隔离存储实现 | P0 | 已实现（内存） | TaskRepository定义统一契约；会话级InMemory实现返回隔离副本，Application Service不依赖具体数据库 |
 | FR-603 | 任务快照和独立事件持久化 | P0 | 规划中 | 每个节点完成后原子保存AgentState快照、决策和新增事件 |
 | FR-604 | version和execution_id重复保护 | P0 | 规划中 | 旧版本并发写入被拒绝，同一execution_id重复请求不重复提交节点结果 |
 | FR-605 | KnowledgeAsset准入和权威存储 | P0 | 规划中 | 只有Reviewer通过且经用户明确确认的结果才能作为完整知识资产保存到MySQL |
 | FR-606 | Milvus V2知识索引 | P0 | 规划中 | Milvus保存向量和asset_id等索引信息，检索命中后从MySQL读取完整资产 |
 | FR-607 | 节点级ContextBuilder和Token预算 | P0 | 规划中 | 每个节点只接收必要字段；RAG、输入和输出均有可验证预算与裁剪记录 |
-| FR-608 | 节点与外部服务可观测性 | P0 | 规划中 | 记录节点、LLM、Embedding、Milvus的耗时、Token、重试和错误类型 |
+| FR-608 | 节点与外部服务可观测性 | P0 | 部分实现 | Application Service已记录节点开始、结束、耗时、成功/失败和错误类型；LLM、Embedding、Milvus、Token与重试分层指标留到2.15 |
 | FR-609 | 脱敏离线评测与消融实验 | P0 | 规划中 | 使用10～20份脱敏需求对比基础LLM、LLM+RAG和完整质量闭环 |
 
 ---
@@ -504,7 +504,7 @@ pending
 
 ### 9.2 后续页面规划
 
-Streamlit页面作为V1功能演示层冻结。阶段2.12只替换页面调用入口，不继续调整布局和CSS；
+Streamlit页面作为V1功能演示层冻结。阶段2.12已经完成调用入口替换且未调整布局和CSS；
 阶段2.13接入MySQL任务恢复；阶段2.14在最终报告区域增加最小知识资产确认入口。是否迁移
 FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文工程和离线评测稳定后再决定。
 
@@ -521,7 +521,7 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 | NFR-005 | 可追踪性 | 每个节点记录开始、完成或失败事件 | Event 断言 |
 | NFR-006 | 失败可见 | JSON 或模型异常不能静默跳过 | State 进入失败或显式降级 |
 | NFR-007 | 可维护性 | 节点、Service、State 和 Prompt 职责分离 | 代码审查 |
-| NFR-008 | 响应性能 | 尚未建立真实基线 | 后续集成测试记录 P50/P95 |
+| NFR-008 | 响应性能 | 已记录单次节点与单任务执行耗时，尚无真实样本分位数 | 后续集成测试记录 P50/P95 |
 | NFR-009 | 生成质量 | 尚未建立真实基线 | 离线评测集 |
 | NFR-010 | 浏览器兼容 | 尚未验证 | 页面稳定后测试 Chrome/Edge |
 
@@ -615,7 +615,7 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 
 ### M5：后端边界、任务与知识资产
 
-- [ ] Application Service与内存Repository（阶段2.12）
+- [x] Application Service与内存Repository（阶段2.12）
 - [ ] MySQL任务快照、事件与服务重启恢复（阶段2.13）
 - [ ] version、execution_id和执行租约（阶段2.13）
 - [ ] 用户确认后的KnowledgeAsset权威存储（阶段2.14）
@@ -703,3 +703,4 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 | V2.5 | 2026-07-29 | 固定双栏工作区，增加有状态结果导航、测试点分页和执行详情Dialog |
 | V2.6 | 2026-07-29 | 增加可信执行状态与最近进展，完成固定操作栏后统一左右工作区为736px |
 | V2.7 | 2026-07-29 | 冻结Streamlit V1演示层，规划Application Service、MySQL任务恢复、KnowledgeAsset与Milvus V2知识闭环、上下文工程和离线评测 |
+| V2.8 | 2026-07-29 | 完成Application Service、TaskRepository内存实现、只读TaskView、Streamlit调用迁移和节点执行性能基线 |

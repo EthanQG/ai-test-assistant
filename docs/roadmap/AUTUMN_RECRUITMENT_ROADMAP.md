@@ -42,6 +42,9 @@ Python Orchestrator 负责合法步骤、状态转换、最大修正次数和终
 - Milvus 检索的命中、无匹配和失败降级
 - 结构化 JSON 校验、截断检测和一次受控重试
 - Streamlit V1 功能演示链路
+- Application Service用户用例边界与只读TaskView
+- TaskRepository契约、会话级InMemory实现和隔离副本
+- 页面入口不再直接调用Orchestrator、节点或FeedbackHandler
 
 ### 3.2 已实现但缺少真实效果验证
 
@@ -55,10 +58,10 @@ Python Orchestrator 负责合法步骤、状态转换、最大修正次数和终
 
 ### 3.3 部分实现
 
-- 任务只保存在 Streamlit 进程内，服务重启后丢失
-- `in_progress` 只在单进程内防止重复节点
+- 任务只保存在当前Streamlit会话内，会话重建或服务重启后丢失
+- `in_progress` 只在单会话内防止重复节点
 - AgentState 只有 `to_dict()`，尚无完整快照恢复
-- 只有 Orchestrator 节点总耗时，缺少外部调用分层耗时
+- Application Service已记录节点成功/失败耗时，缺少外部调用分层耗时
 - PromptService 已按节点构造输入，但尚无集中 ContextBuilder 和输入预算
 - 旧 Workflow 仍保留写入 Milvus 的兼容方法，当前 Agent 页面没有知识沉淀入口
 
@@ -140,7 +143,11 @@ Milvus 是语义检索索引，负责保存：
 
 ## 5. 阶段规划
 
-## 2.12 后端调用边界
+## 2.12 后端调用边界（已完成）
+
+完成证据：Streamlit只调用Application Service；TaskRepository提供会话级内存实现并返回
+隔离副本；页面只保存task_id和UI状态；181项离线自动化测试通过。当前内存实现不提供跨新
+会话或服务重启恢复，该能力按计划留到2.13。
 
 ### 2.12.1 Application Service 接口
 

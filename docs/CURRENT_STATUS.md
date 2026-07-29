@@ -10,94 +10,117 @@
 ## Git基线
 
 - 分支：`main`
-- 当前提交：`c8477b9 优化：完成Streamlit演示页面收尾`
-- 当前提交与`origin/main`一致
-- 文档同步开始前工作区干净
+- 阶段2.12开发前提交：`0d7c36c 文档：修正学习复盘章节顺序`
+- 本轮阶段2.12代码和文档尚未提交
+- 开发开始前工作区干净
 
 ## 当前阶段
 
-阶段2.11 Streamlit V1功能演示页面已经收尾。页面继续用于演示：
+阶段2.12“后端调用边界”已经完成：
 
-- PRD文本和文档输入
-- Agent逐节点执行
-- 待确认问题暂停和恢复
-- 业务规则二次确认
-- 结构化测试点、质量评审和受控修正
-- 人工反馈和最终报告下载
-- 当前节点、关键进展和完整执行详情
+- 增加`TestAnalysisApplicationService`
+- 增加Command、只读`TaskView`和节点执行指标
+- 定义`TaskRepository`并实现会话级`InMemoryTaskRepository`
+- Streamlit只通过Application Service创建、推进、补充、确认和反馈
+- 移除页面`_task_store()`及对Orchestrator、节点和FeedbackHandler的直接调用
+- 页面布局、CSS、测试点分页、Dialog和Agent业务规则保持不变
 
-页面布局和视觉冻结。后续除Application Service调用入口替换，以及阶段2.14最小知识资产
-确认入口外，不继续调整Streamlit布局和CSS。
+下一阶段为2.13 MySQL任务持久化与恢复。本轮未实现MySQL、FastAPI、后台任务、SSE或Vue。
 
-## 当前真实能力边界
+## 当前依赖方向
 
-### 已实现
+```text
+views/
+  → application/TestAnalysisApplicationService
+  → repositories/TaskRepository
+  → agent/AgentOrchestrator、节点与HumanFeedbackHandler
+  → services/LLM、RAG、Prompt与文档解析
 
-- 受控单Agent Agentic Workflow
-- AgentState、AgentEvent和Python Orchestrator
-- RequirementAnalyzer、KnowledgeRetriever、Generator、Reviewer、Reviser、Finalizer
-- Human-in-the-loop暂停、恢复和业务规则确认
-- Milvus历史资产检索，以及无命中和服务失败降级
-- 结构化JSON校验、截断识别和一次受控重试
-- Streamlit V1完整功能演示
+Streamlit会话装配
+  → InMemoryTaskRepository
+```
 
-### 尚未实现
+页面只能获得`TaskView`。View从Repository隔离副本生成；页面读取列表或字典后进行修改，不会
+改变Repository中的AgentState。
 
-- Application Service和TaskRepository
-- MySQL任务快照、独立事件和跨服务重启恢复
-- version、execution_id和执行租约
-- 当前Agent结果经确认后沉淀为KnowledgeAsset
-- MySQL权威知识资产与Milvus V2索引闭环
-- ContextBuilder和节点级Token预算
-- LLM、Embedding和Milvus分层耗时与真实Token统计
-- 脱敏离线评测和三组消融实验
-- FastAPI、后台任务、SSE和Vue
+## Application Service公开用例
 
-旧Workflow仍保留`RAGService.save_case()`和`TestAssistantManager.save_to_rag()`兼容方法，
-但当前Agent页面没有调用，因此不能把知识资产沉淀描述为已实现。当前Milvus历史数据来自
-既有集合或旧方式写入，本地Bug经验来自静态知识文件。
+- `create_task(command)`
+- `get_task(task_id)`
+- `list_tasks()`
+- `advance_task(task_id)`
+- `submit_clarifications(task_id, command)`
+- `confirm_business_rules(task_id, command)`
+- `submit_feedback(task_id, command)`
+- `retry_task(task_id)`
+- `delete_task(task_id)`
 
-## 后续阶段
+没有提供任意节点执行接口。合法下一步仍由`AgentOrchestrator`决定。
 
-1. 阶段2.12：Application Service、TaskRepository和Streamlit调用入口迁移
-2. 阶段2.13：MySQL任务持久化、服务重启恢复和重复执行保护
-3. 阶段2.14：用户确认后的KnowledgeAsset、MySQL权威存储和Milvus V2索引
-4. 阶段2.15：ContextBuilder、Token预算和分层可观测性
-5. 阶段2.16：10～20份脱敏需求评测集、RAG/Reviewer评测和三组消融实验
-6. 阶段2.17：前述阶段稳定后再评估FastAPI、后台任务、SSE和Vue
+## Streamlit session_state边界
 
-下一次代码开发从`2.12.1 Application Service接口`开始，不直接接MySQL或Milvus。
+保留：
 
-## 数据职责
+- 会话级Application Service依赖实例
+- 当前`task_id`
+- Tab、页码、Dialog、展开项
+- 输入框、上传控件、澄清回答和人工反馈表单草稿
+- 表单版本和一次性页面提示
 
-- MySQL任务表：保存完整AgentState快照、决策、版本和恢复信息
-- MySQL事件表：保存Agent、Orchestrator和外部调用事件
-- MySQL知识资产表：保存用户确认后的完整结构化KnowledgeAsset
-- Milvus：保存向量、asset_id、版本和必要索引元数据
-- Streamlit session_state：只保存Tab、分页、Dialog、表单草稿和页面调度状态
+已移除：
 
-检索时由Milvus比较当前需求向量和历史资产检索向量，返回相似`asset_id`；随后从MySQL读取
-完整资产，由ContextBuilder完成阈值过滤、裁剪和来源标记。
+- 可变AgentState
+- Orchestrator决策列表
+- 自动运行标记
+- 待处理澄清命令
+- 执行步数
+- 进程级`_task_store()`字典
+
+后五项现在由Application Service与TaskRepository内部管理。
+
+## 性能基线
+
+Application Service在每次`advance_task()`时记录：
+
+- 节点动作
+- UTC开始与结束时间
+- 实际耗时
+- 成功或失败
+- 失败异常类型
+- 单任务累计节点执行耗时
+
+LLM Token、模型、重试次数、Embedding和Milvus分层耗时尚未记录，留到2.15。
 
 ## 验证状态
 
-本次文档同步开始前和完成后均已执行：
-
 ```text
 python -m unittest discover -s tests -v
-166 tests passed
+181 tests passed
 ```
 
-自动化测试不访问真实DeepSeek、Milvus或Embedding服务。
+新增测试覆盖Application Service用例、Repository复制与会话隔离、业务规则门禁、评审与修正
+路径、失败指标，以及Streamlit架构边界。自动化测试不访问真实DeepSeek、Milvus或Embedding。
 
 ## 当前限制
 
-- Streamlit仍同步执行LLM节点，单次模型调用可能持续较长时间，尚未建立正式性能基线
-- 当前任务仍只保存在Streamlit服务进程内
-- 当前`in_progress`不能处理跨进程并发和服务重启
-- AgentState只有`to_dict()`，缺少完整快照恢复
-- 当前Milvus实现同时存储向量和文本，尚未迁移为MySQL权威资产加Milvus索引的V2结构
-- 尚无真实质量、Token、RAG召回或Reviewer效果数据
+- InMemory Repository按Streamlit会话装配，只支持当前会话内的rerun和task_id恢复
+- 新浏览器会话、硬刷新导致会话重建或Streamlit服务重启后，内存任务不可恢复
+- `expected_version`只在Repository接口中预留，当前内存实现没有并发版本控制
+- `in_progress`只能保护同一会话的同步调用，不能处理跨进程并发
+- AgentState仍只有`to_dict()`，缺少完整快照恢复
+- 尚未记录LLM、Embedding、Milvus、Token和重试的分层指标
+- 尚未完成知识资产沉淀和真实离线评测
+
+## 下一步：阶段2.13
+
+1. 增加AgentState完整快照序列化与schema version
+2. 设计MySQL任务表与独立事件表
+3. 实现MySQLTaskRepository
+4. 每个节点完成后保存快照与新增事件
+5. 实现服务重启恢复
+6. 增加version、execution_id和执行租约
+
+进入2.13前不要实现KnowledgeAsset、Milvus V2、FastAPI或Vue。
 
 ## 新电脑恢复方式
 

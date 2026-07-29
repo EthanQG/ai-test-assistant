@@ -2,7 +2,7 @@ from html import escape
 from typing import Any
 
 from agent.orchestrator import OrchestratorDecision
-from agent.state import TestAnalysisState
+from application import TaskView
 
 
 STATUS_LABELS = {
@@ -165,7 +165,7 @@ def action_progress_message(action: str) -> str:
 
 
 def execution_status_content(
-    state: TestAnalysisState,
+    state: TaskView,
     action: str | None = None,
 ) -> dict[str, str]:
     step = action or state.current_step.value
@@ -182,7 +182,7 @@ def execution_status_content(
 
 
 def recent_progress_items(
-    state: TestAnalysisState,
+    state: TaskView,
     limit: int = 3,
 ) -> list[str]:
     if limit <= 0:
@@ -236,7 +236,7 @@ def _event_progress_text(event) -> str | None:
 
 
 def layout_column_weights(
-    state: TestAnalysisState | None,
+    state: TaskView | None,
     decisions: list[OrchestratorDecision],
 ) -> tuple[float, float]:
     if state is None:
@@ -261,7 +261,7 @@ def layout_column_weights(
     return (0.33, 0.67) if result_focused else (0.42, 0.58)
 
 
-def task_overview(state: TestAnalysisState) -> dict[str, Any]:
+def task_overview(state: TaskView) -> dict[str, Any]:
     final_result = state.final_result or {}
     quality = final_result.get("quality_summary", {})
     return {
@@ -281,7 +281,7 @@ def task_overview(state: TestAnalysisState) -> dict[str, Any]:
 
 
 def task_header(
-    state: TestAnalysisState,
+    state: TaskView,
     decisions: list[OrchestratorDecision],
 ) -> dict[str, str]:
     stage_index = STEP_STAGE_INDEX.get(state.current_step.value, 0)
@@ -327,7 +327,7 @@ def task_header(
     }
 
 
-def stage_progress(state: TestAnalysisState) -> list[dict[str, str]]:
+def stage_progress(state: TaskView) -> list[dict[str, str]]:
     current_index = STEP_STAGE_INDEX[state.current_step.value]
     if state.status.value == "completed":
         current_index = len(PRIMARY_STAGE_LABELS) - 1
@@ -348,7 +348,7 @@ def stage_progress(state: TestAnalysisState) -> list[dict[str, str]]:
     return stages
 
 
-def stage_progress_html(state: TestAnalysisState) -> str:
+def stage_progress_html(state: TaskView) -> str:
     status_symbols = {
         "completed": "✓",
         "current": "●",
@@ -388,7 +388,7 @@ def test_point_summary_html(
     )
 
 
-def event_rows(state: TestAnalysisState) -> list[dict[str, Any]]:
+def event_rows(state: TaskView) -> list[dict[str, Any]]:
     return [
         {
             "序号": str(index),
@@ -464,7 +464,7 @@ def static_table_html(rows: list[dict[str, Any]]) -> str:
     )
 
 
-def test_point_rows(state: TestAnalysisState) -> list[dict[str, str]]:
+def test_point_rows(state: TaskView) -> list[dict[str, str]]:
     rows = []
     for test_point in state.test_points:
         rows.append(
@@ -486,7 +486,7 @@ def test_point_rows(state: TestAnalysisState) -> list[dict[str, str]]:
     return rows
 
 
-def feedback_rows(state: TestAnalysisState) -> list[dict[str, str]]:
+def feedback_rows(state: TaskView) -> list[dict[str, str]]:
     return [
         {
             "类型": FEEDBACK_TYPE_LABELS.get(

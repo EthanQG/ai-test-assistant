@@ -27,7 +27,7 @@
 - [ ] 能解释 `yield` 为什么适合流式输出
 - [ ] 能解释 AgentState 和 AgentEvent 的区别
 - [ ] 能解释受控 Agent 与固定 Workflow 的区别
-- [ ] 能理解现有166项单元测试分别保护哪些业务边界
+- [ ] 能理解现有181项单元测试分别保护哪些业务边界
 - [ ] 能独立增加一个状态字段、事件或测试
 
 ---
@@ -2957,7 +2957,7 @@ Orchestrator决策和Agent事件对开发排错、项目答辩和可解释性非
 
 ### 26.7 为什么本阶段不加入侧边栏
 
-侧边栏的核心内容是新建分析、搜索历史和恢复历史任务，这些功能必须依赖阶段2.12的MySQL
+侧边栏的核心内容是新建分析、搜索历史和恢复历史任务，这些功能必须依赖阶段2.13的MySQL
 数据模型和恢复语义。现在加入空壳或假历史数据会制造不可用入口。本阶段只保证主页面没有
 依赖整页宽度的硬编码，未来可以在不改变Agent核心逻辑的情况下加入`st.sidebar`。
 
@@ -3017,7 +3017,7 @@ UploadedFile等价对象调用原任务创建入口，验证“解析文件→�
 
 #### 问：这次改动如何为MySQL历史任务做准备？
 
-> 页面创建任务后只依赖State展示原始需求和结果，而不是依赖上传控件的临时值。阶段2.12
+> 页面创建任务后只依赖State展示原始需求和结果，而不是依赖上传控件的临时值。阶段2.13
 > 从MySQL恢复同样的State快照后，可以复用当前右侧结果展示和左侧只读需求对照。
 
 ### 26.12 为什么初始态和完成态截图宽度曾经不一致
@@ -3437,3 +3437,187 @@ MySQL先保存`pending_index`资产，再调用Embedding和Milvus。索引失败
 - [ ] 列出五种禁止自动沉淀知识资产的情况
 - [ ] 解释Milvus写入失败后为什么不能删除MySQL中的完整资产
 - [ ] 解释为什么没有评测前不做按测试点Chunk的复杂索引
+
+---
+
+## 三十一、阶段 2.12：Application Service与TaskRepository
+
+### 31.1 为什么页面不能直接调用Agent节点
+
+旧页面同时做了四件事：
+
+```text
+收集按钮输入
+→ 修改AgentState
+→ 选择并调用节点
+→ 把可变State保存到进程字典
+```
+
+这会导致未来增加MySQL或FastAPI时，页面中的创建、恢复、反馈和推进逻辑需要再复制一次。
+更重要的是，如果页面能够调用任意节点，就可能绕过Orchestrator的状态检查。
+
+Application Service把“用户想做什么”转换为应用用例：
+
+```text
+页面：继续任务
+→ Application Service.advance_task(task_id)
+→ Repository加载隔离副本
+→ Orchestrator决定合法下一节点
+→ 执行并保存
+→ 返回只读TaskView
+```
+
+页面没有`execute_node("review")`之类的接口，因此不能跳过需求分析或生成步骤。
+
+### 31.2 Application Service和普通Service有什么区别
+
+项目原有`LLMService`、`RAGService`和`DocumentService`封装某一种外部能力；Application
+Service编排一个完整用户用例。
+
+```text
+Application Service：创建任务、继续任务、提交补充、确认规则
+LLM Service：调用模型
+RAG Service：检索历史资产
+Document Service：解析上传文件
+```
+
+Application Service不是新的Orchestrator。它负责事务边界式的“加载—执行—保存”，节点
+顺序和分支条件仍由AgentOrchestrator负责。
+
+### 31.3 Command为什么比很多位置参数更清楚
+
+`SubmitFeedbackCommand`把一次用户操作所需字段放在不可变对象中：
+
+```python
+SubmitFeedbackCommand(
+    action="add",
+    feedback_type="test_suggestion",
+    target="新增测试点",
+    content="增加并发核销场景",
+    reason="历史缺陷",
+)
+```
+
+好处包括：
+
+- 调用语义清楚
+- 未来API可以把请求体转换成同一个Command
+- 测试可以独立构造用例输入
+- 不把Streamlit控件对象传入Agent核心
+
+上传文件也先转换为`UploadedDocument(filename, content)`，Application Service再交给
+DocumentService，核心层不依赖Streamlit的UploadedFile类型。
+
+### 31.4 Repository为什么必须返回隔离副本
+
+如果Repository直接返回内部保存的可变State，调用方即使不执行`save()`也能修改数据：
+
+```python
+state = repository.get(task_id)
+state.test_points.clear()  # 内部对象可能已经被改掉
+```
+
+InMemory实现使用深复制：
+
+```text
+create：保存副本
+get：返回副本
+save：再次保存副本
+list：每项返回副本
+```
+
+这样Application Service必须显式保存，行为更接近未来MySQL Repository。单元测试也验证：
+修改第一次`get()`得到的对象，不会影响第二次读取。
+
+### 31.5 TaskView为什么不是AgentState
+
+AgentState包含`start_step()`、`wait_for_user()`、`fail()`等可变业务方法。页面如果获得它，
+可以绕过Application Service直接改变状态。
+
+TaskView只用于读取：
+
+- 由State隔离快照构建
+- 列表与字典属性读取时返回副本
+- 决策和性能指标使用不可变元组
+- 提供页面所需的派生信息，例如待确认规则和修正上限
+
+页面仍可以使用`task.status`、`task.test_points`等熟悉字段，但不能通过这些值修改Repository
+中的真实任务。
+
+### 31.6 为什么InMemory Repository按会话装配
+
+旧`st.cache_resource`任务字典由整个Streamlit进程共享。它能让新会话凭task_id找到任务，
+但也意味着不同用户可能拿到同一份可变对象。
+
+阶段2.12选择会话级装配：
+
+```text
+一个Streamlit会话
+→ 一个Application Service
+→ 一个InMemoryTaskRepository
+```
+
+这保证会话之间不会意外共享内存任务。代价是新会话、硬刷新导致会话重建或服务重启后无法
+恢复。该问题不能再用全局字典假装解决，阶段2.13会使用MySQL保存权威快照。
+
+### 31.7 最小性能指标记录在哪里
+
+每次`advance_task()`在Application Service边界记录：
+
+```text
+调用前：action、started_at
+调用后：finished_at、duration、succeeded
+异常时：error_type
+任务级：累加所有节点duration
+```
+
+这个位置能够覆盖RequirementAnalyzer、Retriever、Generator、Reviewer、Reviser和Finalizer，
+也能记录节点失败，不需要侵入每个节点。
+
+它目前不能区分一个节点内部的LLM、Embedding、Milvus和JSON重试分别用了多久，也没有真实
+Token usage。这些需要在统一外部调用封装中记录，属于2.15，而不是伪造估算数据。
+
+### 31.8 面试问题与参考答案
+
+#### 问：Application Service会不会只是多套了一层？
+
+> 不只是转发。它定义用户用例边界，负责从Repository加载隔离任务、调用受控Orchestrator、
+> 保存结果、记录节点指标并返回只读TaskView。页面和未来FastAPI都能复用同一套用例，
+> 而节点顺序仍只有Orchestrator维护。
+
+#### 问：为什么Repository接口现在就保留expected_version？
+
+> 阶段2.12只使用单会话内存实现，没有可靠数据库版本，所以参数只是兼容点，不能宣称已经
+> 实现乐观锁。阶段2.13的MySQL Repository会读取version并在条件更新失败时报告并发冲突。
+
+#### 问：页面完全不依赖Agent了吗？
+
+> 页面不再依赖可变AgentState、Orchestrator、节点或FeedbackHandler，但仍读取状态枚举用于
+> 展示。真正的业务调用只有Application Service，Presenter消费只读TaskView。这属于调用
+> 边界解耦，不代表领域概念从页面完全消失。
+
+#### 问：为什么不在2.12直接接MySQL？
+
+> 如果同时修改调用边界和存储实现，出现回归时很难判断是应用用例还是数据库问题。先用
+> InMemory Repository证明接口和页面行为，再在2.13替换为MySQL，风险更可控。
+
+#### 问：节点指标为什么不直接写进AgentState？
+
+> AgentState保存任务业务事实和执行状态；当前指标属于应用执行元数据。先由TaskRecord保存，
+> 避免为了最小基线修改领域模型。2.13设计事件表时再确定长期持久化结构。
+
+### 31.9 动手练习
+
+- [ ] 从“提交人工反馈”按钮开始，画出页面到Repository保存的调用链
+- [ ] 修改`repository.get()`返回的test_points，确认再次读取没有变化
+- [ ] 创建两个InMemoryTaskRepository，确认任务不会跨实例出现
+- [ ] 构造失败节点，检查NodeExecutionMetric中的错误类型
+- [ ] 搜索页面代码，确认不存在AgentOrchestrator和HumanFeedbackHandler直接调用
+
+### 31.10 掌握检查
+
+- [ ] 能区分Application Service、AgentOrchestrator和外部能力Service
+- [ ] 能解释Command、TaskRecord、TaskView和TaskRepository的职责
+- [ ] 能说明为什么页面只保存task_id和UI状态
+- [ ] 能解释会话隔离与刷新恢复之间的取舍
+- [ ] 能说明当前性能基线能证明什么、不能证明什么

@@ -3,7 +3,7 @@ from io import BytesIO
 import streamlit as st
 
 from views.tab_test_points import (
-    STATE_KEY,
+    _current_task,
     _create_agent_task,
     _initialize_session,
 )
@@ -22,6 +22,6 @@ if st.button("创建文件任务"):
     )
     _create_agent_task("", uploaded)
 
-state = st.session_state[STATE_KEY]
-if state is not None:
-    st.write(state.requirement)
+task = _current_task()
+if task is not None:
+    st.write(task.requirement)

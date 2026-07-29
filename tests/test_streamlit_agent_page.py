@@ -11,15 +11,21 @@ from agent.orchestrator import (
     OrchestratorAction,
     OrchestratorDecision,
 )
+from application import (
+    TaskRecord,
+    TestAnalysisApplicationService,
+)
+from repositories import InMemoryTaskRepository
 from streamlit.testing.v1 import AppTest
 from views.tab_test_points import (
+    APPLICATION_SERVICE_KEY,
+    CURRENT_TASK_ID_KEY,
     FEEDBACK_FORM_VERSION_KEY,
     PAGINATION_TASK_ID_KEY,
     RESULT_ACTIVE_TAB_KEY,
     TEST_POINT_DETAIL_ID_KEY,
     TEST_POINT_EXPANDED_KEY,
     TEST_POINT_PAGE_KEY,
-    _task_store,
 )
 
 
@@ -39,6 +45,39 @@ def _build_test_points(count: int) -> list[dict]:
     ]
 
 
+def _seed_app(
+    app: AppTest,
+    state: TestAnalysisState,
+    decisions: list[OrchestratorDecision] | None = None,
+    *,
+    auto_run: bool = False,
+    pending_clarifications: dict[str, str | None] | None = None,
+    execution_steps: int = 0,
+    in_progress: bool = False,
+    select_task: bool = True,
+) -> InMemoryTaskRepository:
+    repository = InMemoryTaskRepository()
+    repository.create(
+        TaskRecord(
+            state=state,
+            decisions=list(decisions or []),
+            auto_run=auto_run,
+            pending_clarifications=pending_clarifications,
+            execution_steps=execution_steps,
+            in_progress=in_progress,
+        )
+    )
+    app.session_state[APPLICATION_SERVICE_KEY] = (
+        TestAnalysisApplicationService(
+            repository,
+            knowledge_loader=lambda: "",
+        )
+    )
+    if select_task:
+        app.session_state[CURRENT_TASK_ID_KEY] = state.task_id
+    return repository
+
+
 class StreamlitAgentPageTests(unittest.TestCase):
     def test_text_input_creates_task_with_requirement(self):
         app = AppTest.from_file(
@@ -50,8 +89,10 @@ class StreamlitAgentPageTests(unittest.TestCase):
         app.run(timeout=10)
 
         self.assertFalse(app.exception)
+        service = app.session_state[APPLICATION_SERVICE_KEY]
+        task_id = app.session_state[CURRENT_TASK_ID_KEY]
         self.assertEqual(
-            app.session_state["agent_task_state"].requirement,
+            service.get_task(task_id).requirement,
             "用户可以提交订单",
         )
         self.assertIn("用户可以提交订单", [item.value for item in app.markdown])
@@ -66,8 +107,10 @@ class StreamlitAgentPageTests(unittest.TestCase):
         app.run(timeout=10)
 
         self.assertFalse(app.exception)
+        service = app.session_state[APPLICATION_SERVICE_KEY]
+        task_id = app.session_state[CURRENT_TASK_ID_KEY]
         self.assertEqual(
-            app.session_state["agent_task_state"].requirement,
+            service.get_task(task_id).requirement,
             "# 订单需求\n\n库存不足时禁止创建订单。",
         )
         self.assertTrue(
@@ -107,8 +150,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
             ["优惠券是否允许叠加？", "失效时间如何计算？"]
         )
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
         result_navigation = next(
@@ -143,8 +185,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state = TestAnalysisState("用户可以使用优惠券")
         state.wait_for_user(["优惠券是否允许叠加？"])
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
         next(
@@ -160,41 +201,37 @@ class StreamlitAgentPageTests(unittest.TestCase):
                 for error in app.error
             )
         )
-        self.assertIsNone(
-            app.session_state["agent_pending_clarifications"]
+        service = app.session_state[APPLICATION_SERVICE_KEY]
+        self.assertFalse(
+            service.get_task(state.task_id).has_pending_clarifications
         )
         self.assertEqual(state.status, AgentStatus.WAITING_FOR_USER)
 
     def test_task_can_be_restored_from_query_parameter(self):
         state = TestAnalysisState("用户可以使用优惠券")
         state.wait_for_user(["优惠券是否允许叠加？"])
-        _task_store()[state.task_id] = {
-            "state": state,
-            "decisions": [],
-            "auto_run": False,
-            "pending_clarifications": None,
-            "execution_steps": 1,
-            "in_progress": False,
-        }
         app = AppTest.from_file("main.py")
+        _seed_app(
+            app,
+            state,
+            execution_steps=1,
+            select_task=False,
+        )
         app.query_params["task_id"] = state.task_id
 
-        try:
-            app.run(timeout=10)
+        app.run(timeout=10)
 
-            self.assertFalse(app.exception)
-            self.assertTrue(
-                any(
-                    "优惠券是否允许叠加？" in markdown.value
-                    for markdown in app.markdown
-                )
+        self.assertFalse(app.exception)
+        self.assertTrue(
+            any(
+                "优惠券是否允许叠加？" in markdown.value
+                for markdown in app.markdown
             )
-            self.assertEqual(
-                app.status[0].label,
-                "任务正在等待用户操作",
-            )
-        finally:
-            _task_store().pop(state.task_id, None)
+        )
+        self.assertEqual(
+            app.status[0].label,
+            "任务正在等待用户操作",
+        )
 
     def test_completed_task_renders_human_feedback_form(self):
         state = TestAnalysisState("用户可以使用优惠券")
@@ -203,8 +240,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.review_passed = True
         state.status = AgentStatus.COMPLETED
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
         next(
@@ -263,8 +299,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.review_passed = True
         state.status = AgentStatus.COMPLETED
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
 
@@ -285,8 +320,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.status = AgentStatus.COMPLETED
         original_points = deepcopy(state.test_points)
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
 
@@ -357,8 +391,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.test_points = _build_test_points(12)
         state.status = AgentStatus.COMPLETED
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        repository = _seed_app(app, state)
 
         app.run(timeout=10)
         app.session_state[TEST_POINT_PAGE_KEY] = 3
@@ -366,7 +399,9 @@ class StreamlitAgentPageTests(unittest.TestCase):
         app.run(timeout=10)
         self.assertEqual(app.session_state[TEST_POINT_PAGE_KEY], 3)
 
-        state.test_points[0]["scenario"] = "更新后的场景"
+        updated_record = repository.get(state.task_id)
+        updated_record.state.test_points[0]["scenario"] = "更新后的场景"
+        repository.save(updated_record)
         app.run(timeout=10)
         self.assertEqual(app.session_state[TEST_POINT_PAGE_KEY], 1)
         self.assertIsNone(
@@ -376,7 +411,8 @@ class StreamlitAgentPageTests(unittest.TestCase):
         next_state = TestAnalysisState("第二项需求")
         next_state.test_points = _build_test_points(2)
         next_state.status = AgentStatus.COMPLETED
-        app.session_state["agent_task_state"] = next_state
+        repository.create(TaskRecord(state=next_state))
+        app.session_state[CURRENT_TASK_ID_KEY] = next_state.task_id
         app.run(timeout=10)
 
         self.assertEqual(
@@ -397,8 +433,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.test_points = _build_test_points(12)
         state.status = AgentStatus.COMPLETED
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
         app.session_state[RESULT_ACTIVE_TAB_KEY] = "最终报告"
@@ -411,7 +446,8 @@ class StreamlitAgentPageTests(unittest.TestCase):
         app.run(timeout=10)
 
         self.assertFalse(app.exception)
-        self.assertIsNone(app.session_state["agent_task_state"])
+        self.assertIsNone(app.session_state[CURRENT_TASK_ID_KEY])
+        self.assertNotIn("agent_task_state", app.session_state)
         self.assertEqual(
             app.session_state[RESULT_ACTIVE_TAB_KEY],
             "结构化测试点",
@@ -429,8 +465,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
             "这是从上传的PDF中解析并保存到State的原始需求。"
         )
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
 
@@ -450,8 +485,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.current_step = AgentStep.REVIEW_TEST_POINTS
         state.status = AgentStatus.RUNNING
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
 
@@ -476,14 +510,13 @@ class StreamlitAgentPageTests(unittest.TestCase):
     def test_timeline_uses_static_tables(self):
         state = TestAnalysisState("用户可以使用优惠券")
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = [
+        _seed_app(app, state, [
             OrchestratorDecision(
                 action=OrchestratorAction.ANALYZE_REQUIREMENT,
                 reason="尚未完成结构化需求分析",
                 duration_seconds=1.5,
             )
-        ]
+        ])
 
         app.run(timeout=10)
         next(
@@ -506,13 +539,12 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.test_points = _build_test_points(12)
         state.status = AgentStatus.COMPLETED
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = [
+        _seed_app(app, state, [
             OrchestratorDecision(
                 action=OrchestratorAction.ANALYZE_REQUIREMENT,
                 reason="需求分析完成",
             )
-        ]
+        ])
 
         app.run(timeout=10)
         app.session_state[TEST_POINT_PAGE_KEY] = 2
@@ -547,8 +579,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.review_result = {"overall_score": 90}
         state.status = AgentStatus.COMPLETED
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
         next(
@@ -570,13 +601,12 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.test_points = [{"title": "正常使用优惠券"}]
         state.status = AgentStatus.RUNNING
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = [
+        _seed_app(app, state, [
             OrchestratorDecision(
                 action=OrchestratorAction.REVISION_LIMIT_REACHED,
                 reason="达到自动修正次数上限",
             )
-        ]
+        ])
 
         app.run(timeout=10)
 
@@ -596,8 +626,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state = TestAnalysisState("用户可以使用优惠券")
         state.fail("模型服务请求超时")
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
 
@@ -622,8 +651,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.status = AgentStatus.COMPLETED
         state.current_step = AgentStep.FINALIZE
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
         next(
@@ -643,43 +671,36 @@ class StreamlitAgentPageTests(unittest.TestCase):
     def test_in_progress_task_does_not_start_duplicate_polling(self):
         state = TestAnalysisState("用户可以使用优惠券")
         original_events = list(state.events)
-        _task_store()[state.task_id] = {
-            "state": state,
-            "decisions": [],
-            "auto_run": True,
-            "pending_clarifications": None,
-            "execution_steps": 1,
-            "in_progress": True,
-        }
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        repository = _seed_app(
+            app,
+            state,
+            auto_run=True,
+            execution_steps=1,
+            in_progress=True,
+        )
 
-        try:
-            app.run(timeout=10)
+        app.run(timeout=10)
 
-            self.assertFalse(app.exception)
-            self.assertEqual(len(app.status), 1)
-            self.assertEqual(app.status[0].label, "正在分析需求")
-            self.assertEqual(app.status[0].state, "running")
-            self.assertEqual(
-                state.events,
-                original_events,
-            )
-            new_analysis = next(
-                button for button in app.button
-                if button.label == "新建分析"
-            )
-            self.assertTrue(new_analysis.disabled)
-        finally:
-            _task_store().pop(state.task_id, None)
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.status), 1)
+        self.assertEqual(app.status[0].label, "正在分析需求")
+        self.assertEqual(app.status[0].state, "running")
+        self.assertEqual(
+            repository.get(state.task_id).state.events,
+            original_events,
+        )
+        new_analysis = next(
+            button for button in app.button
+            if button.label == "新建分析"
+        )
+        self.assertTrue(new_analysis.disabled)
 
     def test_waiting_and_completed_states_stop_running_status(self):
         waiting = TestAnalysisState("等待补充的需求")
         waiting.wait_for_user(["库存不足时是否允许预占？"])
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = waiting
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, waiting)
 
         app.run(timeout=10)
 
@@ -695,8 +716,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         completed.review_result = {"overall_score": 90}
         completed.status = AgentStatus.COMPLETED
         completed.current_step = AgentStep.FINALIZE
-        app.session_state["agent_task_state"] = completed
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, completed)
         app.run(timeout=10)
 
         self.assertFalse(app.exception)
@@ -717,8 +737,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
             },
         )
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
 
@@ -738,8 +757,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
         state.review_passed = True
         state.status = AgentStatus.COMPLETED
         app = AppTest.from_file("main.py")
-        app.session_state["agent_task_state"] = state
-        app.session_state["agent_decisions"] = []
+        _seed_app(app, state)
 
         app.run(timeout=10)
         result_navigation = next(
@@ -779,9 +797,11 @@ class StreamlitAgentPageTests(unittest.TestCase):
             app.session_state[FEEDBACK_FORM_VERSION_KEY],
             1,
         )
-        self.assertEqual(len(state.human_feedback), 1)
+        service = app.session_state[APPLICATION_SERVICE_KEY]
+        task = service.get_task(state.task_id)
+        self.assertEqual(len(task.human_feedback), 1)
         self.assertEqual(
-            state.human_feedback[0]["status"],
+            task.human_feedback[0]["status"],
             "pending_confirmation",
         )
         self.assertTrue(

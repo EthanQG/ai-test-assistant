@@ -38,6 +38,10 @@
 - 结构化LLM节点启用JSON Output、截断检测和一次受控校验重试
 - Reviewer会将可选问题列表中的纯空白占位归一化为空列表，同时继续拒绝错误数据类型
 - Generator与Reviewer使用8192的大体量输出预算；Reviser只返回增删改操作，由Python校验并原子合并，避免重复输出完整测试点集合
+- Streamlit只调用Application Service表达创建、推进、补充、确认、反馈和重试等用户动作
+- TaskRepository隔离任务存储，当前InMemory实现按Streamlit会话装配并返回隔离副本
+- 页面只持有当前task_id和纯UI状态，通过只读TaskView渲染Agent结果
+- Application Service记录每次节点执行的开始、结束、耗时、成功/失败和错误类型，并汇总单任务执行耗时
 
 当前 Agent 页面只接入了 Milvus 历史资产检索，尚未接入“用户确认后沉淀知识资产”的入口。
 旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
@@ -49,7 +53,9 @@
 .
 ├── AGENTS.md               # Codex跨设备协作与开发约定
 ├── main.py                 # Streamlit 应用入口
+├── application/            # 应用用例、Command、只读TaskView与会话装配
 ├── agent/                  # Agent状态、事件及后续节点
+├── repositories/           # TaskRepository抽象与内存实现
 ├── views/                  # 页面与交互状态
 ├── services/               # LLM、RAG、文档解析应用服务
 ├── utils/                  # 基础客户端、配置及兼容业务入口
@@ -60,9 +66,10 @@
 └── tests/                  # 自动化测试
 ```
 
-当前页面已经不再调用 `TestAssistantManager`。该类只作为旧 Workflow 兼容实现保留；当前主入口由
-`TestAnalysisState + AgentOrchestrator` 驱动，LLM、RAG、Prompt 和文档解析继续通过
-`services` 层隔离。
+当前页面已经不再调用 `TestAssistantManager`，也不直接创建AgentState、Orchestrator、节点
+或FeedbackHandler。页面通过`TestAnalysisApplicationService`进入应用用例，由Application
+Service加载Repository中的隔离副本、调用受控Orchestrator并保存结果，再返回只读`TaskView`。
+旧`TestAssistantManager`只作为Workflow兼容实现保留。
 
 ## 开发过程与设计说明
 
@@ -116,12 +123,11 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 
 ## 后续计划
 
-1. 阶段2.12：增加Application Service与Repository边界，让Streamlit只调用应用服务
-2. 阶段2.13：使用MySQL保存任务快照和事件，实现重启恢复、version与execution_id保护
-3. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
-4. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
-5. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
-6. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+1. 阶段2.13：使用MySQL保存任务快照和事件，实现重启恢复、version与execution_id保护
+2. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
+3. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
+4. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
+5. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。

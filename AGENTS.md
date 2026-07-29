@@ -37,8 +37,14 @@
 views/
   Streamlit 页面与交互状态
 
+application/
+  创建、推进、补充、确认、反馈等应用用例；向页面返回只读 TaskView
+
+repositories/
+  TaskRepository 抽象与当前会话级内存实现
+
 utils/TestAssistantManager
-  当前页面兼容入口；后续逐步被 Agent 编排器替代
+  旧 Workflow 兼容入口；当前 Agent 页面不再调用
 
 services/
   LLM、RAG、Prompt 和文档解析的应用服务
@@ -59,6 +65,8 @@ tests/
 - 优先保持现有测试分析功能可运行
 - Agent 采用受控编排：代码限制步骤、状态和最大迭代次数
 - LLM 负责理解、生成和评审，不直接操作底层数据库或页面状态
+- Streamlit 只调用 Application Service，不直接创建或调用 Agent 节点、编排器和 Repository
+- Repository 返回隔离副本，页面只读取 TaskView，不直接修改 AgentState
 - 外部能力通过 Service 或 Tool 边界调用
 - 内部数据优先使用结构化模型，不依赖解析 Markdown
 - 需求事实、推导风险和待确认项必须明确区分

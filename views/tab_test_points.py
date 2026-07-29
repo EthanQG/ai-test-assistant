@@ -1,23 +1,26 @@
 import hashlib
 import json
 import math
-import time
 from html import escape
 
 import streamlit as st
 
 from agent import (
-    AgentOrchestrator,
     AgentStatus,
-    FeedbackStatus,
-    HumanFeedbackHandler,
     OrchestratorAction,
     OrchestratorDecision,
-    RequirementAnalyzer,
-    TestAnalysisState,
 )
-from services.document_service import DocumentService
-from utils.knowledge_base import KnowledgeBaseManager
+from application import (
+    ConfirmBusinessRulesCommand,
+    CreateTaskCommand,
+    SubmitClarificationsCommand,
+    SubmitFeedbackCommand,
+    TaskNotFoundError,
+    TaskView,
+    TestAnalysisApplicationService,
+    UploadedDocument,
+    build_session_application_service,
+)
 
 from .agent_presenter import (
     decision_rows,
@@ -34,11 +37,8 @@ from .agent_presenter import (
 )
 
 
-STATE_KEY = "agent_task_state"
-DECISIONS_KEY = "agent_decisions"
-AUTO_RUN_KEY = "agent_auto_run"
-PENDING_CLARIFICATIONS_KEY = "agent_pending_clarifications"
-EXECUTION_STEPS_KEY = "agent_execution_steps"
+APPLICATION_SERVICE_KEY = "agent_application_service"
+CURRENT_TASK_ID_KEY = "agent_current_task_id"
 FEEDBACK_FORM_VERSION_KEY = "agent_feedback_form_version"
 FEEDBACK_NOTICE_KEY = "agent_feedback_notice"
 RESULT_ACTIVE_TAB_KEY = "agent_ui_active_result_tab"
@@ -49,7 +49,6 @@ TEST_POINT_SIGNATURE_KEY = "agent_ui_test_point_signature"
 PAGINATION_TASK_ID_KEY = "agent_ui_pagination_task_id"
 EXECUTION_DIALOG_BUTTON_PREFIX = "agent_ui_execution_details"
 UI_STATE_PREFIX = "agent_ui_"
-MAX_PAGE_STEPS = 20
 TEST_POINT_PAGE_SIZE = 5
 WORKSPACE_HEIGHT = 736
 LEFT_HEADER_HEIGHT = 56
@@ -69,18 +68,12 @@ RESULT_TABS = (
 )
 
 
-@st.cache_resource
-def _task_store() -> dict:
-    """Keep active tasks while the Streamlit server process is alive."""
-    return {}
-
-
 def render_ui() -> None:
     _initialize_session()
     _initialize_page_view_state()
 
-    state = st.session_state.get(STATE_KEY)
-    decisions = st.session_state.get(DECISIONS_KEY, [])
+    state = _current_task()
+    decisions = list(state.decisions) if state is not None else []
     _sync_page_view_state(state, decisions)
     column_weights = layout_column_weights(
         state,
@@ -131,31 +124,41 @@ def render_ui() -> None:
 
 
 def _initialize_session() -> None:
-    st.session_state.setdefault(STATE_KEY, None)
-    st.session_state.setdefault(DECISIONS_KEY, [])
-    st.session_state.setdefault(AUTO_RUN_KEY, False)
-    st.session_state.setdefault(PENDING_CLARIFICATIONS_KEY, None)
-    st.session_state.setdefault(EXECUTION_STEPS_KEY, 0)
+    if APPLICATION_SERVICE_KEY not in st.session_state:
+        st.session_state[APPLICATION_SERVICE_KEY] = (
+            build_session_application_service()
+        )
+    st.session_state.setdefault(CURRENT_TASK_ID_KEY, None)
     st.session_state.setdefault(FEEDBACK_FORM_VERSION_KEY, 0)
     st.session_state.setdefault(FEEDBACK_NOTICE_KEY, None)
 
-    if st.session_state[STATE_KEY] is not None:
+    if st.session_state[CURRENT_TASK_ID_KEY] is not None:
         return
 
     task_id = st.query_params.get("task_id")
     if not task_id:
         return
-    stored = _task_store().get(task_id)
-    if not stored:
+    try:
+        _application_service().get_task(task_id)
+    except TaskNotFoundError:
         return
+    st.session_state[CURRENT_TASK_ID_KEY] = task_id
 
-    st.session_state[STATE_KEY] = stored["state"]
-    st.session_state[DECISIONS_KEY] = stored["decisions"]
-    st.session_state[AUTO_RUN_KEY] = stored["auto_run"]
-    st.session_state[PENDING_CLARIFICATIONS_KEY] = stored[
-        "pending_clarifications"
-    ]
-    st.session_state[EXECUTION_STEPS_KEY] = stored["execution_steps"]
+
+def _application_service() -> TestAnalysisApplicationService:
+    return st.session_state[APPLICATION_SERVICE_KEY]
+
+
+def _current_task() -> TaskView | None:
+    task_id = st.session_state.get(CURRENT_TASK_ID_KEY)
+    if not task_id:
+        return None
+    try:
+        return _application_service().get_task(task_id)
+    except TaskNotFoundError:
+        st.session_state[CURRENT_TASK_ID_KEY] = None
+        st.query_params.clear()
+        return None
 
 
 def _initialize_page_view_state() -> None:
@@ -177,7 +180,7 @@ def _clear_page_view_state() -> None:
 
 
 def _sync_page_view_state(
-    state: TestAnalysisState | None,
+    state: TaskView | None,
     decisions: list[OrchestratorDecision],
 ) -> None:
     task_id = state.task_id if state is not None else None
@@ -210,7 +213,7 @@ def _sync_page_view_state(
 
 
 def _default_result_tab(
-    state: TestAnalysisState | None,
+    state: TaskView | None,
     decisions: list[OrchestratorDecision],
 ) -> str:
     if state is None:
@@ -228,7 +231,7 @@ def _default_result_tab(
     return "人工反馈" if feedback_processing else RESULT_TABS[0]
 
 
-def _test_point_signature(state: TestAnalysisState | None) -> str:
+def _test_point_signature(state: TaskView | None) -> str:
     if state is None or not state.test_points:
         return ""
     payload = json.dumps(
@@ -240,26 +243,7 @@ def _test_point_signature(state: TestAnalysisState | None) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _persist_task() -> None:
-    state = st.session_state.get(STATE_KEY)
-    if state is None:
-        return
-    _task_store()[state.task_id] = {
-        "state": state,
-        "decisions": st.session_state[DECISIONS_KEY],
-        "auto_run": st.session_state[AUTO_RUN_KEY],
-        "pending_clarifications": st.session_state[
-            PENDING_CLARIFICATIONS_KEY
-        ],
-        "execution_steps": st.session_state[EXECUTION_STEPS_KEY],
-        "in_progress": _task_store()
-        .get(state.task_id, {})
-        .get("in_progress", False),
-    }
-    st.query_params["task_id"] = state.task_id
-
-
-def _workbench_description(state: TestAnalysisState | None) -> str:
+def _workbench_description(state: TaskView | None) -> str:
     if state is None:
         return "输入需求或上传PRD，准备创建测试分析任务。"
     if state.status == AgentStatus.WAITING_FOR_USER:
@@ -268,7 +252,7 @@ def _workbench_description(state: TestAnalysisState | None) -> str:
 
 
 def _render_workbench_body() -> None:
-    state = st.session_state.get(STATE_KEY)
+    state = _current_task()
 
     if state is not None:
         st.caption("原始需求（任务创建后保持只读）")
@@ -298,9 +282,7 @@ def _render_workbench_body() -> None:
         )
 
     pending_business_feedback = (
-        HumanFeedbackHandler.pending_confirmation_feedback(state)
-        if state is not None
-        else []
+        state.pending_business_feedback if state is not None else ()
     )
     if (
         state is not None
@@ -318,14 +300,14 @@ def _render_workbench_body() -> None:
         and state.open_questions
     ):
         st.divider()
-        if st.session_state[PENDING_CLARIFICATIONS_KEY] is None:
+        if not state.has_pending_clarifications:
             _render_clarification_content(state)
         else:
             st.success("补充信息已提交，正在重新分析需求。")
 
 
 def _render_workbench_footer() -> None:
-    state = st.session_state.get(STATE_KEY)
+    state = _current_task()
     if state is None:
         requirement_text = st.session_state.get(
             "agent_requirement_input",
@@ -357,7 +339,7 @@ def _render_workbench_footer() -> None:
         return
 
     pending_business_feedback = (
-        HumanFeedbackHandler.pending_confirmation_feedback(state)
+        state.pending_business_feedback
     )
     if (
         state.status == AgentStatus.WAITING_FOR_USER
@@ -371,7 +353,7 @@ def _render_workbench_footer() -> None:
     if (
         state.status == AgentStatus.WAITING_FOR_USER
         and state.open_questions
-        and st.session_state[PENDING_CLARIFICATIONS_KEY] is None
+        and not state.has_pending_clarifications
     ):
         if st.button(
             "提交补充并继续执行",
@@ -405,14 +387,13 @@ def _render_workbench_footer() -> None:
 
 
 def _execution_is_active(
-    state: TestAnalysisState | None,
+    state: TaskView | None,
 ) -> bool:
     if state is None:
         return False
-    stored = _task_store().get(state.task_id, {})
-    if stored.get("in_progress"):
+    if state.in_progress:
         return True
-    if st.session_state.get(PENDING_CLARIFICATIONS_KEY) is not None:
+    if state.has_pending_clarifications:
         return True
     if state.status in {
         AgentStatus.WAITING_FOR_USER,
@@ -420,24 +401,21 @@ def _execution_is_active(
         AgentStatus.FAILED,
     }:
         return False
-    return bool(st.session_state.get(AUTO_RUN_KEY))
+    return state.auto_run
 
 
-def _can_collect_feedback(state: TestAnalysisState) -> bool:
+def _can_collect_feedback(state: TaskView) -> bool:
     if not state.test_points:
         return False
     if state.status == AgentStatus.COMPLETED:
         return True
-    decisions = st.session_state.get(DECISIONS_KEY, [])
     return bool(
         state.status == AgentStatus.RUNNING
-        and decisions
-        and decisions[-1].action
-        == OrchestratorAction.REVISION_LIMIT_REACHED
+        and state.revision_limit_reached
     )
 
 
-def _render_clarification_content(state: TestAnalysisState) -> None:
+def _render_clarification_content(state: TaskView) -> None:
     st.subheader("需要你确认")
     st.info(
         "Agent 只保留了会影响核心业务结果的问题。每项可以直接回答，"
@@ -459,7 +437,7 @@ def _render_clarification_content(state: TestAnalysisState) -> None:
         )
 
 
-def _submit_clarifications(state: TestAnalysisState) -> None:
+def _submit_clarifications(state: TaskView) -> None:
     answers: dict[str, str | None] = {}
     unanswered: list[str] = []
     for index, question in enumerate(state.open_questions, start=1):
@@ -477,13 +455,17 @@ def _submit_clarifications(state: TestAnalysisState) -> None:
         st.error("请回答所有问题，无法确认的项目可以勾选“暂不确定”。")
         return
 
-    st.session_state[PENDING_CLARIFICATIONS_KEY] = answers
-    st.session_state[AUTO_RUN_KEY] = False
-    _persist_task()
-    st.rerun()
+    try:
+        _application_service().submit_clarifications(
+            state.task_id,
+            SubmitClarificationsCommand(answers=answers),
+        )
+        st.rerun()
+    except Exception as exc:
+        st.error(f"补充信息提交失败：{exc}")
 
 
-def _render_human_feedback_form(state: TestAnalysisState) -> None:
+def _render_human_feedback_form(state: TaskView) -> None:
     form_version = st.session_state[FEEDBACK_FORM_VERSION_KEY]
     st.subheader("人工反馈")
     st.info(
@@ -593,27 +575,21 @@ def _render_human_feedback_form(state: TestAnalysisState) -> None:
         return
 
     try:
-        feedback = HumanFeedbackHandler().submit(
-            state,
-            {
-                "action": action,
-                "feedback_type": feedback_type,
-                "target": target,
-                "content": content,
-                "reason": reason,
-            },
+        _application_service().submit_feedback(
+            state.task_id,
+            SubmitFeedbackCommand(
+                action=action,
+                feedback_type=feedback_type,
+                target=target,
+                content=content,
+                reason=reason,
+            ),
         )
-        st.session_state[AUTO_RUN_KEY] = (
-            feedback.status == FeedbackStatus.READY
-        )
-        st.session_state[PENDING_CLARIFICATIONS_KEY] = None
-        st.session_state[EXECUTION_STEPS_KEY] = 0
         st.session_state[FEEDBACK_FORM_VERSION_KEY] += 1
         st.session_state[FEEDBACK_NOTICE_KEY] = (
             "人工反馈已接收。Agent 将按“修正测试点 → 重新评审 → "
             "更新报告”继续执行。"
         )
-        _persist_task()
         st.rerun()
     except Exception as exc:
         st.error(f"人工反馈提交失败：{exc}")
@@ -624,7 +600,7 @@ def _render_business_rule_confirmation_content(state, feedback) -> None:
     st.warning(
         "下面的内容会改变正式需求事实。只有确认后，Agent 才会据此修改测试点。"
     )
-    st.markdown(f"**操作：** {feedback.action.value}")
+    st.markdown(f"**操作：** {feedback.action}")
     st.markdown(f"**目标：** {feedback.target}")
     st.markdown(f"**规则内容：** {feedback.content}")
     st.markdown(f"**依据：** {feedback.reason}")
@@ -650,14 +626,13 @@ def _render_business_rule_confirmation_actions(state, feedback) -> None:
         return
 
     try:
-        handler = HumanFeedbackHandler()
-        if confirmed:
-            handler.confirm_business_rule(state, feedback.feedback_id)
-        else:
-            handler.reject_business_rule(state, feedback.feedback_id)
-        st.session_state[AUTO_RUN_KEY] = True
-        st.session_state[EXECUTION_STEPS_KEY] = 0
-        _persist_task()
+        _application_service().confirm_business_rules(
+            state.task_id,
+            ConfirmBusinessRulesCommand(
+                feedback_id=feedback.feedback_id,
+                confirmed=confirmed,
+            ),
+        )
         st.rerun()
     except Exception as exc:
         st.error(f"业务规则确认失败：{exc}")
@@ -665,152 +640,64 @@ def _render_business_rule_confirmation_actions(state, feedback) -> None:
 
 def _create_agent_task(requirement_text: str, uploaded_prd) -> None:
     try:
-        requirement = requirement_text.strip()
+        uploaded_document = None
         if uploaded_prd is not None:
-            requirement = DocumentService.extract_text(uploaded_prd)
-
-        state = TestAnalysisState(requirement)
-        state.local_bug_knowledge = _load_default_knowledge()
-        st.session_state[STATE_KEY] = state
-        st.session_state[DECISIONS_KEY] = []
-        st.session_state[AUTO_RUN_KEY] = True
-        st.session_state[PENDING_CLARIFICATIONS_KEY] = None
-        st.session_state[EXECUTION_STEPS_KEY] = 0
+            uploaded_document = UploadedDocument(
+                filename=uploaded_prd.name,
+                content=uploaded_prd.getvalue(),
+            )
+        task = _application_service().create_task(
+            CreateTaskCommand(
+                requirement=requirement_text,
+                uploaded_document=uploaded_document,
+            )
+        )
+        st.session_state[CURRENT_TASK_ID_KEY] = task.task_id
         st.session_state[FEEDBACK_FORM_VERSION_KEY] = 0
         st.session_state[FEEDBACK_NOTICE_KEY] = None
-        _persist_task()
+        st.query_params["task_id"] = task.task_id
     except Exception as exc:
         _show_execution_error(exc, "Agent 启动失败")
 
 
 def _process_agent_step(execution_placeholder) -> None:
-    state = st.session_state.get(STATE_KEY)
+    state = _current_task()
     if state is None:
         return
 
-    stored = _task_store().get(state.task_id, {})
-    if stored.get("in_progress"):
+    if state.in_progress:
         _render_execution_status(
             execution_placeholder,
             state,
             active=True,
         )
         return
-    if stored:
-        st.session_state[DECISIONS_KEY] = stored["decisions"]
-        st.session_state[AUTO_RUN_KEY] = stored["auto_run"]
-        st.session_state[PENDING_CLARIFICATIONS_KEY] = stored[
-            "pending_clarifications"
-        ]
-        st.session_state[EXECUTION_STEPS_KEY] = stored[
-            "execution_steps"
-        ]
-
-    pending_answers = st.session_state.get(PENDING_CLARIFICATIONS_KEY)
-    should_run = bool(st.session_state.get(AUTO_RUN_KEY))
-    if pending_answers is None and not should_run:
+    if not state.has_pending_clarifications and not state.auto_run:
         return
 
-    stored["in_progress"] = True
-    _task_store()[state.task_id] = stored
     try:
-        if pending_answers is not None:
-            _render_execution_status(
-                execution_placeholder,
-                state,
-                active=True,
-                action=OrchestratorAction.ANALYZE_REQUIREMENT.value,
-            )
-            started_at = time.perf_counter()
-            RequirementAnalyzer().reanalyze_with_clarifications(
-                state,
-                pending_answers,
-            )
-            st.session_state[DECISIONS_KEY].append(
-                OrchestratorDecision(
-                    action=OrchestratorAction.ANALYZE_REQUIREMENT,
-                    reason="已收到用户补充信息，重新执行结构化需求分析",
-                    duration_seconds=round(
-                        time.perf_counter() - started_at,
-                        2,
-                    ),
-                )
-            )
-            st.session_state[EXECUTION_STEPS_KEY] += 1
-            st.session_state[PENDING_CLARIFICATIONS_KEY] = None
-            st.session_state[AUTO_RUN_KEY] = (
-                state.status == AgentStatus.RUNNING
-            )
-        else:
-            _execute_next_orchestrator_node(
-                state,
-                execution_placeholder,
-            )
+        _render_execution_status(
+            execution_placeholder,
+            state,
+            active=True,
+            action=state.next_action,
+        )
+        _application_service().advance_task(state.task_id)
     except Exception as exc:
-        st.session_state[AUTO_RUN_KEY] = False
         _show_execution_error(exc, "Agent 执行失败")
-    finally:
-        stored = _task_store().get(state.task_id, {})
-        stored["in_progress"] = False
-        _task_store()[state.task_id] = stored
-        _persist_task()
 
     st.rerun()
 
 
-def _execute_next_orchestrator_node(
-    state: TestAnalysisState,
-    execution_placeholder,
-) -> None:
-    if st.session_state[EXECUTION_STEPS_KEY] >= MAX_PAGE_STEPS:
-        state.fail(
-            f"orchestration exceeded maximum step count: {MAX_PAGE_STEPS}"
-        )
-        st.session_state[AUTO_RUN_KEY] = False
-        return
-
-    orchestrator = AgentOrchestrator()
-    next_decision = orchestrator.decide_next(state)
-    _render_execution_status(
-        execution_placeholder,
-        state,
-        active=True,
-        action=next_decision.action.value,
-    )
-    decision = orchestrator.run_next(state)
-    st.session_state[DECISIONS_KEY].append(decision)
-    st.session_state[EXECUTION_STEPS_KEY] += 1
-
-    should_stop = (
-        decision.action
-        in {
-            OrchestratorAction.WAIT_FOR_USER,
-            OrchestratorAction.REVISION_LIMIT_REACHED,
-            OrchestratorAction.TERMINAL,
-        }
-        or state.status
-        in {
-            AgentStatus.WAITING_FOR_USER,
-            AgentStatus.COMPLETED,
-            AgentStatus.FAILED,
-        }
-    )
-    st.session_state[AUTO_RUN_KEY] = not should_stop
-
-
 def _show_execution_error(exc: Exception, prefix: str) -> None:
-    state = st.session_state.get(STATE_KEY)
+    state = _current_task()
     if state is not None and state.error_message:
         st.error(state.error_message)
     else:
         st.error(f"{prefix}：{exc}")
 
 
-def _load_default_knowledge() -> str:
-    return KnowledgeBaseManager().load_bug_experience()
-
-
-def _render_result_panel(state: TestAnalysisState | None):
+def _render_result_panel(state: TaskView | None):
     if state is None:
         st.subheader("任务概览")
         with st.container(height=RIGHT_RESULT_HEIGHT, border=False):
@@ -835,7 +722,7 @@ def _render_result_panel(state: TestAnalysisState | None):
         return st.empty()
 
     overview = task_overview(state)
-    decisions = st.session_state.get(DECISIONS_KEY, [])
+    decisions = list(state.decisions)
     header = task_header(
         state,
         decisions,
@@ -923,7 +810,7 @@ def _render_result_panel(state: TestAnalysisState | None):
 
 def _render_execution_status(
     placeholder,
-    state: TestAnalysisState,
+    state: TaskView,
     *,
     active: bool,
     action: str | None = None,
@@ -978,14 +865,14 @@ def _render_execution_status(
         )
 
 
-def _render_test_points_tab(state: TestAnalysisState) -> None:
+def _render_test_points_tab(state: TaskView) -> None:
     if state.test_points:
         _render_test_point_list(state)
     else:
         st.caption("当前尚未生成结构化测试点。")
 
 
-def _render_report_tab(state: TestAnalysisState) -> None:
+def _render_report_tab(state: TaskView) -> None:
     if state.report:
         st.download_button(
             "下载 Markdown 报告",
@@ -1001,7 +888,7 @@ def _render_report_tab(state: TestAnalysisState) -> None:
 
 @st.dialog("执行详情", width="large")
 def _render_execution_details_dialog(
-    state: TestAnalysisState,
+    state: TaskView,
     decisions: list[OrchestratorDecision],
 ) -> None:
     with st.container(height=EXECUTION_DETAILS_HEIGHT, border=False):
@@ -1034,7 +921,7 @@ def _render_test_point_details_dialog(test_point: dict) -> None:
         _render_detail_items("来源", test_point.get("sources", []))
 
 
-def _render_test_point_list(state: TestAnalysisState) -> None:
+def _render_test_point_list(state: TaskView) -> None:
     total_points = len(state.test_points)
     total_pages = max(1, math.ceil(total_points / TEST_POINT_PAGE_SIZE))
     current_page = min(
@@ -1118,7 +1005,7 @@ def _test_point_identity(test_point: dict) -> str:
 
 
 def _test_point_toggle_key(
-    state: TestAnalysisState,
+    state: TaskView,
     point_identity: str,
 ) -> str:
     digest = hashlib.sha256(
@@ -1141,7 +1028,7 @@ def _render_detail_items(label: str, values) -> None:
         st.markdown(f"- {item}")
 
 
-def _render_feedback_tab(state: TestAnalysisState) -> None:
+def _render_feedback_tab(state: TaskView) -> None:
     feedback_notice = st.session_state.pop(FEEDBACK_NOTICE_KEY, None)
     if feedback_notice:
         st.success(feedback_notice)
@@ -1155,9 +1042,7 @@ def _render_feedback_tab(state: TestAnalysisState) -> None:
     else:
         st.caption("当前尚未提交人工反馈。")
 
-    pending_business_feedback = (
-        HumanFeedbackHandler.pending_confirmation_feedback(state)
-    )
+    pending_business_feedback = state.pending_business_feedback
     if pending_business_feedback:
         st.info("请先在左侧需求工作台确认或取消待处理的业务规则。")
     elif _can_collect_feedback(state):
@@ -1167,25 +1052,20 @@ def _render_feedback_tab(state: TestAnalysisState) -> None:
         st.info("Agent 正在应用人工反馈，完成后会更新评审结果和最终报告。")
 
 
-def _render_blocked_state(state: TestAnalysisState) -> None:
+def _render_blocked_state(state: TaskView) -> None:
     if state.status == AgentStatus.WAITING_FOR_USER:
         return
     elif state.status == AgentStatus.FAILED:
         st.error(state.error_message or "Agent 执行失败")
     else:
-        decisions = st.session_state.get(DECISIONS_KEY, [])
-        if (
-            decisions
-            and decisions[-1].action
-            == OrchestratorAction.REVISION_LIMIT_REACHED
-        ):
+        if state.revision_limit_reached:
             st.warning(
                 "自动修正已达到上限，当前结果会保留且不会标记为质量通过。"
                 "请进入“人工反馈”Tab补充处理意见。"
             )
 
 
-def _render_quality(state: TestAnalysisState) -> None:
+def _render_quality(state: TaskView) -> None:
     if not state.review_result:
         st.caption("当前尚未产生 Reviewer 结果。")
         return
@@ -1222,17 +1102,16 @@ def _render_quality(state: TestAnalysisState) -> None:
 
 
 def _reset_session() -> None:
-    state = st.session_state.get(STATE_KEY)
-    if state is not None:
-        _task_store().pop(state.task_id, None)
+    task_id = st.session_state.get(CURRENT_TASK_ID_KEY)
+    if task_id:
+        try:
+            _application_service().delete_task(task_id)
+        except TaskNotFoundError:
+            pass
     st.query_params.clear()
     for key in list(st.session_state):
         if key in {
-            STATE_KEY,
-            DECISIONS_KEY,
-            AUTO_RUN_KEY,
-            PENDING_CLARIFICATIONS_KEY,
-            EXECUTION_STEPS_KEY,
+            CURRENT_TASK_ID_KEY,
             FEEDBACK_FORM_VERSION_KEY,
             FEEDBACK_NOTICE_KEY,
             "agent_requirement_input",
