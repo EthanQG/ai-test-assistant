@@ -1,6 +1,6 @@
 # Test Analysis Agent 当前开发状态
 
-更新时间：2026-07-29
+更新时间：2026-07-30
 
 本文档只保存最新接力信息。产品范围以
 [PRD_AGENT_V2.md](product/PRD_AGENT_V2.md) 为准，后续阶段以
@@ -10,8 +10,8 @@
 ## Git基线
 
 - 分支：`main`
-- 阶段2.12开发前提交：`0d7c36c 文档：修正学习复盘章节顺序`
-- 本轮阶段2.12代码和文档尚未提交
+- 阶段2.12提交：`caeb5af 阶段2.12：建立后端调用边界`
+- 当前正在进行2.12验收最小修正，尚未提交
 - 开发开始前工作区干净
 
 ## 当前阶段
@@ -23,6 +23,8 @@
 - 定义`TaskRepository`并实现会话级`InMemoryTaskRepository`
 - Streamlit只通过Application Service创建、推进、补充、确认和反馈
 - 移除页面`_task_store()`及对Orchestrator、节点和FeedbackHandler的直接调用
+- 补充信息后的重新分析也统一由AgentOrchestrator执行，Application Service不再直接依赖
+  RequirementAnalyzer
 - 页面布局、CSS、测试点分页、Dialog和Agent业务规则保持不变
 
 下一阶段为2.13 MySQL任务持久化与恢复。本轮未实现MySQL、FastAPI、后台任务、SSE或Vue。
@@ -95,11 +97,12 @@ LLM Token、模型、重试次数、Embedding和Milvus分层耗时尚未记录�
 
 ```text
 python -m unittest discover -s tests -v
-181 tests passed
+192 tests passed
 ```
 
 新增测试覆盖Application Service用例、Repository复制与会话隔离、业务规则门禁、评审与修正
-路径、失败指标，以及Streamlit架构边界。自动化测试不访问真实DeepSeek、Milvus或Embedding。
+路径、补充恢复的Orchestrator边界、完整Fake主流程、失败指标，以及Streamlit架构边界。
+自动化测试不访问真实DeepSeek、Milvus或Embedding。
 
 ## 当前限制
 

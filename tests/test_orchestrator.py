@@ -46,6 +46,18 @@ class RecordingNode:
     finalize = _run
 
 
+class ClarificationRecordingNode(RecordingNode):
+    def __init__(self, callback=None):
+        super().__init__()
+        self.clarification_calls = 0
+        self.clarification_callback = callback
+
+    def reanalyze_with_clarifications(self, state, answers):
+        self.clarification_calls += 1
+        if self.clarification_callback:
+            self.clarification_callback(state, answers)
+
+
 class AgentOrchestratorDecisionTests(unittest.TestCase):
     def setUp(self):
         node = RecordingNode()
@@ -175,6 +187,65 @@ class AgentOrchestratorDecisionTests(unittest.TestCase):
 
 
 class AgentOrchestratorExecutionTests(unittest.TestCase):
+    def test_resume_with_clarifications_executes_requirement_analyzer(self):
+        def resume(state, answers):
+            state.resume()
+            state.user_clarifications.append(
+                {
+                    "question": "是否允许叠加？",
+                    "answer": answers["是否允许叠加？"],
+                }
+            )
+            state.open_questions = []
+            state.requirement_summary = "补充后的优惠券需求"
+
+        analyzer = ClarificationRecordingNode(resume)
+        orchestrator = AgentOrchestrator(
+            requirement_analyzer=analyzer,
+        )
+        state = TestAnalysisState("优惠券需求")
+        state.wait_for_user(["是否允许叠加？"])
+
+        decision = orchestrator.resume_with_clarifications(
+            state,
+            {"是否允许叠加？": "最多叠加两张"},
+        )
+
+        self.assertEqual(analyzer.clarification_calls, 1)
+        self.assertEqual(
+            decision.action,
+            OrchestratorAction.ANALYZE_REQUIREMENT,
+        )
+        self.assertEqual(state.status, AgentStatus.RUNNING)
+        self.assertEqual(state.open_questions, [])
+
+    def test_resume_with_clarifications_rejects_illegal_state_and_answers(self):
+        analyzer = ClarificationRecordingNode()
+        orchestrator = AgentOrchestrator(
+            requirement_analyzer=analyzer,
+        )
+        running = TestAnalysisState("优惠券需求")
+        waiting = TestAnalysisState("优惠券需求")
+        waiting.wait_for_user(["是否允许叠加？"])
+
+        with self.assertRaises(OrchestrationError):
+            orchestrator.resume_with_clarifications(
+                running,
+                {"是否允许叠加？": "允许"},
+            )
+        with self.assertRaises(OrchestrationError):
+            orchestrator.resume_with_clarifications(
+                waiting,
+                {"其他问题": "允许"},
+            )
+        with self.assertRaises(OrchestrationError):
+            orchestrator.resume_with_clarifications(
+                waiting,
+                {"是否允许叠加？": "   "},
+            )
+
+        self.assertEqual(analyzer.clarification_calls, 0)
+
     def test_run_next_records_node_duration(self):
         analyzer = RecordingNode()
         orchestrator = AgentOrchestrator(

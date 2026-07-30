@@ -3621,3 +3621,37 @@ Token usage。这些需要在统一外部调用封装中记录，属于2.15，�
 - [ ] 能说明为什么页面只保存task_id和UI状态
 - [ ] 能解释会话隔离与刷新恢复之间的取舍
 - [ ] 能说明当前性能基线能证明什么、不能证明什么
+
+### 31.11 验收修正：特殊恢复路径也不能绕过Orchestrator
+
+首次2.12实现中，普通节点由Orchestrator执行，但补充答案后的重新分析由Application Service
+直接调用RequirementAnalyzer。这虽然已经让页面解耦，却仍留下了一个特殊节点入口：
+
+```text
+Application Service → RequirementAnalyzer
+```
+
+修正后，Orchestrator提供面向业务语义的恢复入口：
+
+```text
+Application Service
+→ AgentOrchestrator.resume_with_clarifications
+→ RequirementAnalyzer.reanalyze_with_clarifications
+```
+
+这个入口不是`execute_node(node_name)`。调用方不能选择任意节点，Orchestrator会检查：
+
+- 当前任务是否确实在等待用户
+- 答案是否覆盖当前全部问题
+- 非空答案是否包含有效内容
+
+Application Service仍负责Repository的加载和保存、自动推进、最大步数保护与耗时记录，但不再
+持有RequirementAnalyzer工厂。待处理答案在节点调用前被消费；如果重新分析再次提出问题，
+用户必须针对新问题提交新的一批答案，旧答案不会在rerun时重复执行。
+
+面试时可以这样解释：
+
+> Application Service负责“用例边界”，Orchestrator负责“节点执行权”。即使补充恢复属于特殊
+> 用户动作，也不能让Application Service直接调用节点，否则未来增加持久化和幂等保护时会
+> 出现两条执行链。通过语义明确的Orchestrator恢复入口，可以保持页面接口不变，同时把状态
+> 校验和具体节点执行收口到同一处。

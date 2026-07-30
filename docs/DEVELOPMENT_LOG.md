@@ -2046,3 +2046,50 @@ Application bootstrap中，页面不访问Repository。
 
 下一阶段只进入2.13 MySQL任务快照、事件、恢复和重复执行保护，不同时实现KnowledgeAsset、
 Milvus V2、FastAPI、后台任务、SSE或Vue。
+
+## 阶段 2.12 验收修正：补充恢复统一经过Orchestrator
+
+### 验收发现
+
+阶段2.12首次验收确认页面已经只调用Application Service，但补充信息后的重新分析仍由
+Application Service私有方法直接创建并调用RequirementAnalyzer。这条特殊路径绕过了
+AgentOrchestrator，与“所有Agent节点执行权统一收口到Orchestrator”的边界不一致。
+
+### 最小修正
+
+- AgentOrchestrator增加`resume_with_clarifications(state, answers)`语义入口
+- Orchestrator校验任务必须处于等待用户状态、答案问题集合必须完整匹配、非空答案不能是空白
+- Application Service移除RequirementAnalyzer导入和工厂，只调用Orchestrator恢复入口
+- 待处理补充答案在Orchestrator调用前从TaskRecord消费；成功、再次等待或失败后不会重复消费
+- 页面继续只调用`submit_clarifications()`和`advance_task()`，没有节点级接口或交互变化
+
+修正后的调用链：
+
+```text
+Streamlit
+→ TestAnalysisApplicationService
+→ AgentOrchestrator.resume_with_clarifications
+→ RequirementAnalyzer.reanalyze_with_clarifications
+```
+
+### 测试证据
+
+新增或加强：
+
+- Orchestrator恢复入口的合法状态、问题集合和空白答案校验
+- 补充恢复同一task_id、再次等待、充分后继续和失败保存
+- 同一批答案只消费一次
+- in_progress与终态不重复执行节点
+- retry_task、list_tasks和delete_task
+- 从创建、等待补充、重新分析、检索、生成、评审到最终完成的Application Service Fake主流程
+- AST边界测试：页面不得导入Repository和外部能力Service，Application Service不得引用
+  RequirementAnalyzer
+
+完整结果：
+
+```text
+python -m unittest discover -s tests -v
+192 tests passed
+```
+
+本次没有修改Streamlit页面、CSS、AgentState、节点业务规则或rerun节奏，也没有进入2.13。

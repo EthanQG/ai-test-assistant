@@ -9,8 +9,6 @@ from agent import (
     FeedbackStatus,
     HumanFeedbackHandler,
     OrchestratorAction,
-    OrchestratorDecision,
-    RequirementAnalyzer,
     TestAnalysisState,
 )
 from services.document_service import DocumentService
@@ -38,9 +36,6 @@ class TestAnalysisApplicationService:
         repository: TaskRepository,
         *,
         orchestrator_factory: Callable[[], AgentOrchestrator] | None = None,
-        requirement_analyzer_factory: (
-            Callable[[], RequirementAnalyzer] | None
-        ) = None,
         knowledge_loader: Callable[[], str] | None = None,
         max_execution_steps: int = 20,
     ):
@@ -49,9 +44,6 @@ class TestAnalysisApplicationService:
         self._repository = repository
         self._orchestrator_factory = (
             orchestrator_factory or AgentOrchestrator
-        )
-        self._requirement_analyzer_factory = (
-            requirement_analyzer_factory or RequirementAnalyzer
         )
         self._knowledge_loader = (
             knowledge_loader
@@ -107,7 +99,7 @@ class TestAnalysisApplicationService:
 
         try:
             if record.pending_clarifications is not None:
-                self._reanalyze_with_clarifications(record)
+                self._resume_with_clarifications(record)
             else:
                 self._run_next_orchestrator_node(record)
             succeeded = True
@@ -148,6 +140,17 @@ class TestAnalysisApplicationService:
         if set(command.answers) != expected_questions:
             raise ValueError(
                 "clarification answers must match current open questions"
+            )
+        if any(
+            answer is not None
+            and (
+                not isinstance(answer, str)
+                or not answer.strip()
+            )
+            for answer in command.answers.values()
+        ):
+            raise ValueError(
+                "clarification answers cannot contain blank strings"
             )
         record.pending_clarifications = dict(command.answers)
         record.auto_run = False
@@ -212,21 +215,20 @@ class TestAnalysisApplicationService:
     def delete_task(self, task_id: str) -> None:
         self._repository.delete(task_id)
 
-    def _reanalyze_with_clarifications(self, record: TaskRecord) -> None:
-        started_at = perf_counter()
-        self._requirement_analyzer_factory().reanalyze_with_clarifications(
-            record.state,
-            record.pending_clarifications or {},
-        )
-        record.decisions.append(
-            OrchestratorDecision(
-                action=OrchestratorAction.ANALYZE_REQUIREMENT,
-                reason="已收到用户补充信息，重新执行结构化需求分析",
-                duration_seconds=round(perf_counter() - started_at, 2),
+    def _resume_with_clarifications(self, record: TaskRecord) -> None:
+        answers = record.pending_clarifications
+        if answers is None:
+            raise ValueError("no pending clarification answers")
+
+        record.pending_clarifications = None
+        decision = (
+            self._orchestrator_factory().resume_with_clarifications(
+                record.state,
+                answers,
             )
         )
+        record.decisions.append(decision)
         record.execution_steps += 1
-        record.pending_clarifications = None
         record.auto_run = record.state.status == AgentStatus.RUNNING
         record.next_action = self._decide_next(record)
 

@@ -175,6 +175,43 @@ class AgentOrchestrator:
             duration_seconds=round(perf_counter() - started_at, 2),
         )
 
+    def resume_with_clarifications(
+        self,
+        state: TestAnalysisState,
+        answers: dict[str, str | None],
+    ) -> OrchestratorDecision:
+        """Resume a waiting task through the requirement-analysis node."""
+        if state.status != AgentStatus.WAITING_FOR_USER:
+            raise OrchestrationError(
+                "task must be waiting for user clarification"
+            )
+        if set(answers) != set(state.open_questions):
+            raise OrchestrationError(
+                "answers must match all current open questions"
+            )
+        if any(
+            answer is not None
+            and (
+                not isinstance(answer, str)
+                or not answer.strip()
+            )
+            for answer in answers.values()
+        ):
+            raise OrchestrationError(
+                "clarification answers cannot contain blank strings"
+            )
+
+        started_at = perf_counter()
+        self.requirement_analyzer.reanalyze_with_clarifications(
+            state,
+            answers,
+        )
+        return OrchestratorDecision(
+            action=OrchestratorAction.ANALYZE_REQUIREMENT,
+            reason="已收到用户补充信息，重新执行结构化需求分析",
+            duration_seconds=round(perf_counter() - started_at, 2),
+        )
+
     def run_until_blocked(
         self,
         state: TestAnalysisState,
