@@ -16,6 +16,14 @@ from .service import (
     TaskNotFoundError,
     TestAnalysisApplicationService,
 )
+from .snapshots import (
+    SNAPSHOT_SCHEMA_VERSION,
+    SnapshotError,
+    SnapshotValidationError,
+    TaskSnapshotSerializer,
+    UnsupportedSnapshotVersionError,
+    migrate_snapshot,
+)
 
 __all__ = [
     "ConfirmBusinessRulesCommand",
@@ -24,10 +32,16 @@ __all__ = [
     "NodeExecutionMetric",
     "SubmitClarificationsCommand",
     "SubmitFeedbackCommand",
+    "SNAPSHOT_SCHEMA_VERSION",
+    "SnapshotError",
+    "SnapshotValidationError",
     "TaskNotFoundError",
     "TaskRecord",
+    "TaskSnapshotSerializer",
     "TaskView",
     "TestAnalysisApplicationService",
+    "UnsupportedSnapshotVersionError",
     "UploadedDocument",
     "build_session_application_service",
+    "migrate_snapshot",
 ]

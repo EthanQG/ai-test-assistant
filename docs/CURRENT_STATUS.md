@@ -11,23 +11,25 @@
 
 - 分支：`main`
 - 阶段2.12提交：`caeb5af 阶段2.12：建立后端调用边界`
-- 当前正在进行2.12验收最小修正，尚未提交
-- 开发开始前工作区干净
+- 阶段2.12验收修正提交：`1503e59 修复：补充恢复统一经过编排器`
+- 阶段2.13.1版本化任务快照及恢复执行测试已经完成
+- 阶段开始前工作区干净
 
 ## 当前阶段
 
-阶段2.12“后端调用边界”已经完成：
+阶段2.13.1“AgentState版本化快照序列化”已经完成代码与测试：
 
-- 增加`TestAnalysisApplicationService`
-- 增加Command、只读`TaskView`和节点执行指标
-- 定义`TaskRepository`并实现会话级`InMemoryTaskRepository`
-- Streamlit只通过Application Service创建、推进、补充、确认和反馈
-- 移除页面`_task_store()`及对Orchestrator、节点和FeedbackHandler的直接调用
-- 补充信息后的重新分析也统一由AgentOrchestrator执行，Application Service不再直接依赖
-  RequirementAnalyzer
-- 页面布局、CSS、测试点分页、Dialog和Agent业务规则保持不变
+- 增加独立`TaskSnapshotSerializer`
+- 快照顶层固定为`schema_version`、`task_id`、`state`和`application`
+- AgentState全部业务字段、事件、枚举和时间可从JSON恢复为原领域类型
+- TaskRecord的决策、自动推进、待消费补充答案、执行步数、下一动作和节点指标可恢复
+- 时间强制带时区并统一输出UTC ISO 8601
+- 缺字段、未知字段、非法枚举、非法时间和未来未知版本均明确拒绝
+- `in_progress`属于进程内临时执行保护，不进入快照，恢复后固定为`False`
+- 不使用pickle、Python类路径、`default=str`或Streamlit状态
 
-下一阶段为2.13 MySQL任务持久化与恢复。本轮未实现MySQL、FastAPI、后台任务、SSE或Vue。
+下一阶段为2.13.2 MySQL任务与事件表。本轮未实现MySQL、乐观锁、execution_id、执行租约、
+FastAPI、后台任务、SSE或Vue。
 
 ## 当前依赖方向
 
@@ -97,12 +99,13 @@ LLM Token、模型、重试次数、Embedding和Milvus分层耗时尚未记录�
 
 ```text
 python -m unittest discover -s tests -v
-192 tests passed
+230 tests passed
 ```
 
-新增测试覆盖Application Service用例、Repository复制与会话隔离、业务规则门禁、评审与修正
-路径、补充恢复的Orchestrator边界、完整Fake主流程、失败指标，以及Streamlit架构边界。
-自动化测试不访问真实DeepSeek、Milvus或Embedding。
+新增33项快照格式与异常测试，以及5项恢复执行测试，覆盖完整字典/JSON往返、领域类型恢复、
+等待/完成/失败状态、人工反馈、RAG、性能指标、严格版本与字段校验、运行时对象拒绝和可变
+引用隔离。恢复任务会实际经过Application Service和AgentOrchestrator继续执行；自动化测试
+不访问真实DeepSeek、Milvus、Embedding或MySQL。
 
 ## 当前限制
 
@@ -110,20 +113,22 @@ python -m unittest discover -s tests -v
 - 新浏览器会话、硬刷新导致会话重建或Streamlit服务重启后，内存任务不可恢复
 - `expected_version`只在Repository接口中预留，当前内存实现没有并发版本控制
 - `in_progress`只能保护同一会话的同步调用，不能处理跨进程并发
-- AgentState仍只有`to_dict()`，缺少完整快照恢复
+- 快照只定义结构版本`schema_version=1`，尚无历史版本迁移
+- `in_progress`不持久化；跨进程执行保护留给后续执行租约
+- 快照尚未接入Repository，服务重启后仍无法恢复
+- RAG当前只保存拼接后的`rag_context`、命中数、最高分、状态和错误，没有逐条来源对象
 - 尚未记录LLM、Embedding、Milvus、Token和重试的分层指标
 - 尚未完成知识资产沉淀和真实离线评测
 
-## 下一步：阶段2.13
+## 下一步：阶段2.13.2
 
-1. 增加AgentState完整快照序列化与schema version
-2. 设计MySQL任务表与独立事件表
-3. 实现MySQLTaskRepository
-4. 每个节点完成后保存快照与新增事件
-5. 实现服务重启恢复
-6. 增加version、execution_id和执行租约
+1. 设计`agent_tasks`任务快照表与`agent_task_events`独立事件表
+2. 选择MySQL JSON列保存schema v1快照
+3. 实现MySQLTaskRepository并保持TaskRepository契约
+4. 在同一事务中保存快照与新增事件
+5. 服务重启恢复、version和execution_id仍按后续2.13.3/2.13.4实施
 
-进入2.13前不要实现KnowledgeAsset、Milvus V2、FastAPI或Vue。
+进入2.13.2时不要同时实现KnowledgeAsset、Milvus V2、FastAPI或Vue。
 
 ## 新电脑恢复方式
 

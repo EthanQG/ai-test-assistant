@@ -5,10 +5,10 @@
 | 项目 | 内容 |
 |---|---|
 | 产品名称 | Test Analysis Agent |
-| 文档版本 | V2.8 |
-| 更新时间 | 2026-07-29 |
+| 文档版本 | V2.9 |
+| 更新时间 | 2026-07-30 |
 | 文档状态 | 当前有效 |
-| 产品阶段 | Streamlit V1演示与后端调用边界完成，MySQL持久化待实施 |
+| 产品阶段 | Streamlit V1演示、后端调用边界和schema v1任务快照完成，MySQL持久化待实施 |
 | 当前界面 | Streamlit |
 | 当前模型 | DeepSeek 兼容 Chat Completions API |
 | 历史版本 | [Workflow PRD V1](../archive/PRD_WORKFLOW_V1.md) |
@@ -285,7 +285,7 @@ Agent 使用受控编排：
 |---|---|---:|---|---|
 | FR-601 | Application Service统一应用入口 | P0 | 已实现 | Streamlit只调用Application Service，不直接操作Agent节点、Orchestrator、Repository、MySQL、Milvus或LLM |
 | FR-602 | TaskRepository隔离存储实现 | P0 | 已实现（内存） | TaskRepository定义统一契约；会话级InMemory实现返回隔离副本，Application Service不依赖具体数据库 |
-| FR-603 | 任务快照和独立事件持久化 | P0 | 规划中 | 每个节点完成后原子保存AgentState快照、决策和新增事件 |
+| FR-603 | 任务快照和独立事件持久化 | P0 | 部分实现 | 已完成schema v1 JSON快照、严格恢复及恢复后继续执行验证；MySQL事务保存快照、决策和新增事件待2.13.2实施 |
 | FR-604 | version和execution_id重复保护 | P0 | 规划中 | 旧版本并发写入被拒绝，同一execution_id重复请求不重复提交节点结果 |
 | FR-605 | KnowledgeAsset准入和权威存储 | P0 | 规划中 | 只有Reviewer通过且经用户明确确认的结果才能作为完整知识资产保存到MySQL |
 | FR-606 | Milvus V2知识索引 | P0 | 规划中 | Milvus保存向量和asset_id等索引信息，检索命中后从MySQL读取完整资产 |
@@ -616,6 +616,7 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 ### M5：后端边界、任务与知识资产
 
 - [x] Application Service与内存Repository（阶段2.12）
+- [x] AgentState/TaskRecord schema v1 JSON快照与恢复（阶段2.13.1）
 - [ ] MySQL任务快照、事件与服务重启恢复（阶段2.13）
 - [ ] version、execution_id和执行租约（阶段2.13）
 - [ ] 用户确认后的KnowledgeAsset权威存储（阶段2.14）
@@ -704,3 +705,4 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 | V2.6 | 2026-07-29 | 增加可信执行状态与最近进展，完成固定操作栏后统一左右工作区为736px |
 | V2.7 | 2026-07-29 | 冻结Streamlit V1演示层，规划Application Service、MySQL任务恢复、KnowledgeAsset与Milvus V2知识闭环、上下文工程和离线评测 |
 | V2.8 | 2026-07-29 | 完成Application Service、TaskRepository内存实现、只读TaskView、Streamlit调用迁移和节点执行性能基线 |
+| V2.9 | 2026-07-30 | 完成schema v1任务快照、严格JSON校验、领域类型恢复和TaskRecord执行元数据恢复 |

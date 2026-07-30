@@ -49,7 +49,8 @@
 | 阶段 2.11.5C | 已完成 | 固定双栏工作区、有状态结果导航、测试点分页和执行详情Dialog | `2416da4` |
 | 阶段 2.11.5D | 已完成 | 动态执行状态、固定操作栏、结果浏览和页面展示收尾 | `c8477b9` |
 | 路线图校准 | 已完成（仅文档） | 冻结Streamlit V1，明确MySQL权威数据、Milvus索引和阶段2.12～2.17 | `e9c56b3` |
-| 阶段 2.12 | 已完成 | Application Service、TaskRepository、只读TaskView、页面入口迁移和节点耗时基线 | 待提交 |
+| 阶段 2.12 | 已完成 | Application Service、TaskRepository、只读TaskView、页面入口迁移和节点耗时基线 | `caeb5af`, `1503e59` |
+| 阶段 2.13.1 | 已完成 | schema v1任务快照、严格JSON校验、完整领域恢复和恢复执行验证 | 本次提交 |
 | 阶段 2.13 | 规划中 | MySQL任务快照、事件、服务重启恢复和重复执行保护 | - |
 | 阶段 2.14 | 规划中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
@@ -2093,3 +2094,107 @@ python -m unittest discover -s tests -v
 ```
 
 本次没有修改Streamlit页面、CSS、AgentState、节点业务规则或rerun节奏，也没有进入2.13。
+
+## 阶段 2.13.1：AgentState版本化快照序列化
+
+### 本阶段目标
+
+在不连接MySQL、不修改页面和Agent执行规则的前提下，先建立稳定、可读、可校验的任务快照
+契约。后续MySQL Repository只负责保存和读取该契约，不需要自行猜测如何重建领域对象。
+
+### 实际实现
+
+新增独立`TaskSnapshotSerializer`，以`TaskRecord`为完整恢复单元：
+
+```text
+TaskRecord
+├─ state：AgentState全部业务状态
+└─ application：决策、自动推进、待消费补充、执行步数、下一动作和节点指标
+```
+
+快照顶层固定为：
+
+```json
+{
+  "schema_version": 1,
+  "task_id": "task-id",
+  "state": {},
+  "application": {}
+}
+```
+
+序列化器提供`to_dict`、`from_dict`、`to_json`、`from_json`和预留的
+`migrate_snapshot`。它不使用pickle、Python类路径或`default=str`，所有枚举保存稳定value，
+所有时间强制带时区并统一输出UTC ISO 8601。
+
+### 恢复与校验边界
+
+- AgentStatus、AgentStep、KnowledgeRetrievalStatus、AgentEventType和OrchestratorAction恢复为枚举
+- AgentEvent、OrchestratorDecision和NodeExecutionMetric恢复为原类型
+- TestPoint、Reviewer结果、推导风险和HumanFeedback先通过现有领域模型校验，再写回State约定的
+  结构化字典
+- 评审历史、修正历史和Finalizer结果按当前真实字段严格校验
+- 缺少schema_version、未知版本、缺少必填字段、未知字段、非法枚举和无时区时间均拒绝
+- 快照恢复产生独立可变对象，不与原任务或输入字典共享引用
+
+`in_progress`没有进入快照。它只是当前Python进程中的同步重入保护，不是可靠的数据库执行
+租约；恢复时固定为`False`。数据库乐观锁version、execution_id、执行租约和数据库时间也不
+属于schema v1，本阶段没有把这些未来概念伪装成已实现能力。
+
+### AgentState与TaskRecord关系
+
+AgentState保存需求、RAG、测试点、评审、修正、反馈、报告、错误和事件等业务状态。
+TaskRecord在其外部补充应用执行元数据。仅保存AgentState会丢失待消费的补充答案、自动推进
+开关、下一动作、Orchestrator决策和节点耗时，因此快照以TaskRecord为边界，但仍把
+AgentState放在明确的`state`节点中。
+
+### 自动化测试
+
+新增33项快照格式与异常测试，覆盖：
+
+- 完整dict与JSON往返
+- 全部核心枚举、UTC时间和AgentEvent类型恢复
+- 测试点嵌套步骤、Reviewer结果、人工反馈、RAG和节点指标
+- 等待需求补充、等待业务规则确认、评审失败待修正、完成和失败任务
+- 空列表与可选字段
+- 缺失字段、非法枚举、非法时间、未知字段和未来版本
+- 标准`json.dumps`兼容、运行时对象拒绝和深复制隔离
+
+验收收尾另增加5项恢复执行测试，实际经过：
+
+```text
+TaskSnapshotSerializer
+→ InMemoryTaskRepository
+→ TestAnalysisApplicationService
+→ AgentOrchestrator
+→ Fake节点
+```
+
+覆盖补充信息后重新分析、业务规则确认与拒绝、Reviewer未通过后的Reviser/Reviewer闭环，
+以及completed/failed恢复后不重复调用Orchestrator和节点。
+
+完整回归结果：
+
+```text
+python -m unittest discover -s tests -v
+230 tests passed
+```
+
+Streamlit文件、页面布局、Agent节点、Orchestrator和Repository均未修改。
+
+### 对2.13.2的输入
+
+- 合成全字段测试任务的UTF-8快照约5.9 KB，仅用于结构验证，不代表真实生产分布
+- MySQL建议优先使用原生`JSON`列保存快照，便于合法JSON约束和必要字段排查；若真实大样本
+  证明频繁接近JSON列限制，再根据数据测量调整，而不是提前使用LONGTEXT
+- `task_id`、status、current_step、schema_version、version、created_at、updated_at和
+  error_type等查询/并发字段应独立成列，不依赖JSON路径完成常用查询
+- AgentEvent和节点执行记录应进入独立事件表，快照内事件用于完整恢复，事件表用于增量审计
+- Repository保存需要task_id、快照、expected_version和待追加事件；version仍留到后续实现
+- 快照更新与新增事件必须在同一数据库事务中提交
+- 首批索引应围绕task_id唯一键、status+updated_at和事件task_id+sequence设计
+
+### 下一步
+
+阶段2.13.2只设计并实现MySQL任务与事件持久化，不同时引入KnowledgeAsset、Milvus V2、
+FastAPI、SSE或Vue。服务重启恢复和重复执行保护继续按2.13.3、2.13.4独立验收。

@@ -146,7 +146,9 @@ Milvus 是语义检索索引，负责保存：
 ## 2.12 后端调用边界（已完成）
 
 完成证据：Streamlit只调用Application Service；TaskRepository提供会话级内存实现并返回
-隔离副本；页面只保存task_id和UI状态；181项离线自动化测试通过。当前内存实现不提供跨新
+隔离副本；页面只保存task_id和UI状态；schema v1任务快照已可严格恢复并继续受控执行；
+230项离线自动化
+测试通过。当前内存实现不提供跨新
 会话或服务重启恢复，该能力按计划留到2.13。
 
 ### 2.12.1 Application Service 接口
@@ -171,9 +173,12 @@ Milvus 是语义检索索引，负责保存：
 
 ### 2.13.1 AgentState 快照序列化
 
-- 增加完整 `from_dict()` 或独立 Serializer
-- 恢复枚举、时间、AgentEvent 和新增字段默认值
-- 引入 `snapshot_schema_version`
+- **已完成（2026-07-30）**
+- 独立`TaskSnapshotSerializer`保存AgentState业务状态和TaskRecord恢复元数据
+- 恢复枚举、UTC时间、AgentEvent、决策和节点指标
+- 引入`schema_version=1`并严格拒绝未知版本、缺失字段和非法数据
+- 进程内`in_progress`不作为数据库租约持久化
+- 恢复任务通过Application Service和AgentOrchestrator继续执行的Fake集成测试
 
 ### 2.13.2 MySQL 任务与事件表
 
