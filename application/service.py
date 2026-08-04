@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from time import perf_counter
 from typing import Callable
+from uuid import uuid4
 
 from agent import (
     AgentOrchestrator,
@@ -15,6 +16,8 @@ from services.document_service import DocumentService
 from utils.knowledge_base import KnowledgeBaseManager
 
 from repositories.task_repository import (
+    TaskExecutionAlreadyFinishedError,
+    TaskExecutionBusyError,
     TaskNotFoundError,
     TaskRepository,
 )
@@ -38,9 +41,13 @@ class TestAnalysisApplicationService:
         orchestrator_factory: Callable[[], AgentOrchestrator] | None = None,
         knowledge_loader: Callable[[], str] | None = None,
         max_execution_steps: int = 20,
+        worker_id: str | None = None,
+        execution_lease_seconds: int = 600,
     ):
         if max_execution_steps <= 0:
             raise ValueError("max_execution_steps must be positive")
+        if execution_lease_seconds <= 0:
+            raise ValueError("execution_lease_seconds must be positive")
         self._repository = repository
         self._orchestrator_factory = (
             orchestrator_factory or AgentOrchestrator
@@ -50,6 +57,8 @@ class TestAnalysisApplicationService:
             or KnowledgeBaseManager().load_bug_experience
         )
         self._max_execution_steps = max_execution_steps
+        self._worker_id = worker_id or str(uuid4())
+        self._execution_lease_seconds = execution_lease_seconds
 
     def create_task(self, command: CreateTaskCommand) -> TaskView:
         requirement = command.requirement.strip()
@@ -79,8 +88,14 @@ class TestAnalysisApplicationService:
             for record in self._repository.list()
         )
 
-    def advance_task(self, task_id: str) -> TaskView:
-        record = self._repository.get(task_id)
+    def advance_task(
+        self,
+        task_id: str,
+        *,
+        execution_id: str | None = None,
+    ) -> TaskView:
+        loaded = self._repository.get_versioned(task_id)
+        record = loaded.record
         if record.in_progress:
             return TaskView.from_record(record)
         if (
@@ -89,9 +104,25 @@ class TestAnalysisApplicationService:
         ):
             return TaskView.from_record(record)
 
-        record.in_progress = True
-        self._repository.save(record)
         action = self._next_action(record)
+        request_execution_id = execution_id or str(uuid4())
+        try:
+            lease = self._repository.acquire_execution(
+                task_id,
+                execution_id=request_execution_id,
+                owner_id=self._worker_id,
+                action=action,
+                lease_seconds=self._execution_lease_seconds,
+                expected_version=loaded.version,
+            )
+        except TaskExecutionAlreadyFinishedError:
+            return TaskView.from_record(self._repository.get(task_id))
+        except TaskExecutionBusyError:
+            busy_record = self._repository.get(task_id)
+            busy_record.in_progress = True
+            return TaskView.from_record(busy_record)
+
+        record.in_progress = True
         started_at = datetime.now(timezone.utc)
         started_counter = perf_counter()
         succeeded = False
@@ -122,7 +153,14 @@ class TestAnalysisApplicationService:
                 )
             )
             record.in_progress = False
-            self._repository.save(record)
+            self._repository.complete_execution(
+                record,
+                lease,
+                succeeded=succeeded,
+                error_type=(
+                    None if error is None else type(error).__name__
+                ),
+            )
 
         if error is not None:
             raise error
@@ -133,7 +171,8 @@ class TestAnalysisApplicationService:
         task_id: str,
         command: SubmitClarificationsCommand,
     ) -> TaskView:
-        record = self._repository.get(task_id)
+        loaded = self._repository.get_versioned(task_id)
+        record = loaded.record
         if record.state.status != AgentStatus.WAITING_FOR_USER:
             raise ValueError("task is not waiting for clarifications")
         expected_questions = set(record.state.open_questions)
@@ -155,7 +194,7 @@ class TestAnalysisApplicationService:
         record.pending_clarifications = dict(command.answers)
         record.auto_run = False
         record.next_action = OrchestratorAction.ANALYZE_REQUIREMENT.value
-        self._repository.save(record)
+        self._repository.save(record, expected_version=loaded.version)
         return TaskView.from_record(record)
 
     def confirm_business_rules(
@@ -163,7 +202,8 @@ class TestAnalysisApplicationService:
         task_id: str,
         command: ConfirmBusinessRulesCommand,
     ) -> TaskView:
-        record = self._repository.get(task_id)
+        loaded = self._repository.get_versioned(task_id)
+        record = loaded.record
         handler = HumanFeedbackHandler()
         if command.confirmed:
             handler.confirm_business_rule(
@@ -178,7 +218,7 @@ class TestAnalysisApplicationService:
         record.auto_run = True
         record.execution_steps = 0
         record.next_action = self._decide_next(record)
-        self._repository.save(record)
+        self._repository.save(record, expected_version=loaded.version)
         return TaskView.from_record(record)
 
     def submit_feedback(
@@ -186,7 +226,8 @@ class TestAnalysisApplicationService:
         task_id: str,
         command: SubmitFeedbackCommand,
     ) -> TaskView:
-        record = self._repository.get(task_id)
+        loaded = self._repository.get_versioned(task_id)
+        record = loaded.record
         feedback = HumanFeedbackHandler().submit(
             record.state,
             {
@@ -201,7 +242,7 @@ class TestAnalysisApplicationService:
         record.pending_clarifications = None
         record.execution_steps = 0
         record.next_action = self._decide_next(record)
-        self._repository.save(record)
+        self._repository.save(record, expected_version=loaded.version)
         return TaskView.from_record(record)
 
     def retry_task(self, task_id: str) -> TaskView:

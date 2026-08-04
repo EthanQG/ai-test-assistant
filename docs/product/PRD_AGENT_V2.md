@@ -8,7 +8,7 @@
 | 文档版本 | V2.11 |
 | 更新时间 | 2026-08-04 |
 | 文档状态 | 当前有效 |
-| 产品阶段 | Streamlit V1演示、后端边界、schema v1快照和MySQL任务恢复完成，重复执行保护待实现 |
+| 产品阶段 | Streamlit V1演示、后端边界、schema v1快照、MySQL任务恢复和重复执行保护完成 |
 | 当前界面 | Streamlit |
 | 当前模型 | DeepSeek 兼容 Chat Completions API |
 | 历史版本 | [Workflow PRD V1](../archive/PRD_WORKFLOW_V1.md) |
@@ -286,7 +286,7 @@ Agent 使用受控编排：
 | FR-601 | Application Service统一应用入口 | P0 | 已实现 | Streamlit只调用Application Service，不直接操作Agent节点、Orchestrator、Repository、MySQL、Milvus或LLM |
 | FR-602 | TaskRepository隔离存储实现 | P0 | 已实现 | TaskRepository定义统一契约；InMemory和MySQL实现可替换，Application Service不依赖具体数据库 |
 | FR-603 | 任务快照和独立事件持久化 | P0 | 已实现（后端） | agent_tasks保存完整快照，agent_task_events按序保存新增事件；同事务提交、真实CRUD和恢复测试均通过 |
-| FR-604 | version和execution_id重复保护 | P0 | 规划中 | 旧版本并发写入被拒绝，同一execution_id重复请求不重复提交节点结果 |
+| FR-604 | version和execution_id重复保护 | P0 | 已实现 | 旧版本并发写入被拒绝，同一execution_id重复请求不重复提交节点结果，未过期租约阻止并发节点执行 |
 | FR-605 | KnowledgeAsset准入和权威存储 | P0 | 规划中 | 只有Reviewer通过且经用户明确确认的结果才能作为完整知识资产保存到MySQL |
 | FR-606 | Milvus V2知识索引 | P0 | 规划中 | Milvus保存向量和asset_id等索引信息，检索命中后从MySQL读取完整资产 |
 | FR-607 | 节点级ContextBuilder和Token预算 | P0 | 规划中 | 每个节点只接收必要字段；RAG、输入和输出均有可验证预算与裁剪记录 |
@@ -619,7 +619,7 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 - [x] Application Service与内存Repository（阶段2.12）
 - [x] AgentState/TaskRecord schema v1 JSON快照与恢复（阶段2.13.1）
 - [x] MySQL任务快照、事件与跨Application Service实例恢复（阶段2.13.2～2.13.3）
-- [ ] version、execution_id和执行租约（阶段2.13）
+- [x] version、execution_id和执行租约（阶段2.13.4，真实MySQL已验收）
 - [ ] 用户确认后的KnowledgeAsset权威存储（阶段2.14）
 - [ ] Milvus V2索引、来源追踪、去重和失败重试（阶段2.14）
 

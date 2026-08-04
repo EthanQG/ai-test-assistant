@@ -3956,3 +3956,124 @@ Service实例A提交补充信息
 - [ ] 能说明跨Application Service实例恢复的步骤
 - [ ] 能说明为什么集成测试必须隔离和清理数据
 - [ ] 能准确描述2.13.3已完成、2.13.4未完成的能力
+
+## 三十五、阶段2.13.4：为什么需要三层重复执行保护
+
+### 35.1 先看一个重复执行例子
+
+假设任务当前数据库version是5，下一步是生成测试点：
+
+```text
+服务A读取 version=5
+服务B也读取 version=5
+服务A调用LLM并保存，数据库变成 version=6
+服务B随后也调用LLM，想用旧的 version=5 保存
+```
+
+没有保护时，B可能覆盖A的测试点和事件。有了乐观锁，B的条件更新找不到
+`task_id相同且version仍为5`的记录，因此明确冲突，不能覆盖version=6的结果。
+
+### 35.2 version解决什么
+
+`version`回答：“你要保存的内容，是不是基于数据库最新状态计算出来的？”
+
+Repository读取时返回`VersionedTaskRecord(record, version)`；保存时传回`expected_version`。
+MySQL更新条件包含：
+
+```sql
+WHERE task_id = ? AND version = ?
+```
+
+如果受影响行数不是1，说明读取后已有其他执行者改过任务，抛出`TaskVersionConflictError`。
+这叫乐观锁，因为读取时不长期占用数据库锁，只在提交时检查数据有没有变化。
+
+### 35.3 execution_id解决什么
+
+`execution_id`回答：“这是不是同一次请求的重发？”
+
+例如浏览器超时后重试同一个API请求，如果仍携带原来的execution_id，Repository发现该编号已经
+完成，就直接返回已经保存的任务，不再调用一次LLM。当前Streamlit没有网络幂等键，因此未传入时
+Application Service自动生成UUID；未来FastAPI可以从请求头或请求体接收并复用该编号。
+
+### 35.4 执行租约解决什么
+
+租约回答：“现在谁有权执行和提交这个节点？”
+
+```text
+worker-A领取租约，10分钟内拥有执行权
+worker-B发现租约未过期，不能执行节点
+如果worker-A进程崩溃，租约到期
+worker-B把旧记录标记为expired，再领取新租约
+worker-A即使晚到，也不能提交旧结果
+```
+
+它与永久锁不同：进程崩溃后不需要人工解锁，到期即可恢复。但租约时间必须覆盖常见模型调用时长；
+未来改成后台任务后，还应由worker定期续租。
+
+### 35.5 为什么要新增第三张表
+
+三张表职责如下：
+
+| 表 | 保存内容 | 主要用途 |
+|---|---|---|
+| `agent_tasks` | 最新TaskRecord快照、状态、version | 恢复任务与并发版本校验 |
+| `agent_task_events` | 按序追加的AgentEvent | 审计完整执行轨迹 |
+| `agent_task_executions` | execution_id、worker、租约、执行结果 | 幂等和跨进程执行权控制 |
+
+执行记录不属于Agent的业务判断，所以没有放进AgentState快照。这样数据库并发策略变化时，不需要升级
+`schema_version=1`的业务快照。
+
+### 35.6 一次推进的完整调用链
+
+```text
+页面调用 advance_task(task_id)
+→ Service读取TaskRecord和version
+→ Repository领取execution_id租约，并递增version
+→ Service让Orchestrator选择并执行节点
+→ Repository校验version、execution_id、owner和过期时间
+→ 同一事务保存快照、新事件和执行完成状态
+→ 页面收到只读TaskView
+```
+
+页面仍然不知道具体执行哪个节点，Orchestrator的受控编排边界没有变化。
+
+### 35.7 这是否等于Exactly Once
+
+不等于。当前能保证的是：合法的节点结果只提交一次。
+
+如果LLM请求已经发出后进程崩溃，租约到期后新worker可能再次调用LLM。数据库可以拒绝旧worker提交，
+但无法撤回已经发送到外部模型的请求。因此简历和面试中应描述为“幂等结果提交与租约保护”，不能说
+“LLM Exactly Once”。
+
+### 35.8 面试问题与参考答案
+
+#### 问：乐观锁和执行租约是否重复？
+
+> 不重复。乐观锁防止旧快照覆盖新状态；执行租约在耗时节点开始前分配执行权，尽量避免两个worker
+> 同时调用节点。即使租约边界发生竞争，最终保存仍要经过version校验。
+
+#### 问：为什么不把`in_progress=True`写进AgentState？
+
+> `in_progress`不是业务事实，而是运行时执行控制。简单布尔值无法表达由谁持有、何时过期，也可能在
+> 进程崩溃后永远残留。独立执行记录包含owner和expires_at，才能安全恢复。
+
+#### 问：为什么租约领取也要递增version？
+
+> 领取租约改变了任务的持久化执行状态。递增version可以让领取前读到的旧副本全部失效，防止它们
+> 在节点完成后绕过当前执行者提交结果。
+
+### 35.9 动手练习
+
+- [ ] 画出两个worker同时读取version=5时的冲突过程
+- [ ] 在`InMemoryTaskRepository`中找到版本递增的三个位置
+- [ ] 在MySQL Repository中找到领取租约和完成租约的两个事务
+- [ ] 解释相同execution_id与不同execution_id并发请求的处理差异
+- [ ] 说明租约过期后旧执行者为什么不能覆盖新执行者
+
+### 35.10 掌握检查
+
+- [ ] 能区分schema_version、数据库version和execution_id
+- [ ] 能解释乐观锁、幂等键和租约各自解决的问题
+- [ ] 能说明第三张表为什么不属于AgentState快照
+- [ ] 能准确描述“结果幂等提交”与“外部请求Exactly Once”的区别
+- [ ] 能指出当前600秒固定租约和无后台续租的限制

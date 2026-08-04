@@ -1,9 +1,15 @@
 from .task_repository import (
     InMemoryTaskRepository,
     TaskAlreadyExistsError,
+    TaskExecutionAlreadyFinishedError,
+    TaskExecutionBusyError,
+    TaskExecutionLease,
+    TaskExecutionLeaseLostError,
     TaskNotFoundError,
     TaskRepository,
     TaskRepositoryError,
+    TaskVersionConflictError,
+    VersionedTaskRecord,
 )
 from .mysql_task_repository import (
     MySQLSettings,
@@ -16,8 +22,14 @@ __all__ = [
     "MySQLSettings",
     "MySQLTaskRepository",
     "TaskAlreadyExistsError",
+    "TaskExecutionAlreadyFinishedError",
+    "TaskExecutionBusyError",
+    "TaskExecutionLease",
+    "TaskExecutionLeaseLostError",
     "TaskNotFoundError",
     "TaskRepository",
     "TaskRepositoryError",
+    "TaskVersionConflictError",
+    "VersionedTaskRecord",
     "build_mysql_connection_factory",
 ]

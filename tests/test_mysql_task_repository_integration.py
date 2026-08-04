@@ -1,5 +1,7 @@
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from dotenv import load_dotenv
 
@@ -20,7 +22,9 @@ from application import (
 from repositories import (
     MySQLSettings,
     MySQLTaskRepository,
+    TaskExecutionAlreadyFinishedError,
     TaskNotFoundError,
+    TaskVersionConflictError,
     build_mysql_connection_factory,
 )
 
@@ -252,6 +256,129 @@ class MySQLTaskRepositoryIntegrationTests(unittest.TestCase):
             failed_view.error_message,
             "集成测试模拟错误",
         )
+
+    def test_real_mysql_rejects_stale_snapshot_save(self):
+        record = TaskRecord(state=TestAnalysisState("optimistic lock test"))
+        self._create(record)
+        first = self._repository().get_versioned(record.state.task_id)
+        stale = self._repository().get_versioned(record.state.task_id)
+
+        first.record.state.requirement_summary = "first writer"
+        self._repository().save(
+            first.record,
+            expected_version=first.version,
+        )
+
+        stale.record.state.requirement_summary = "stale writer"
+        with self.assertRaises(TaskVersionConflictError):
+            self._repository().save(
+                stale.record,
+                expected_version=stale.version,
+            )
+
+    def test_real_mysql_execution_id_is_committed_once(self):
+        record = TaskRecord(state=TestAnalysisState("idempotency test"))
+        self._create(record)
+        repository = self._repository()
+        loaded = repository.get_versioned(record.state.task_id)
+        execution_id = str(uuid4())
+        lease = repository.acquire_execution(
+            record.state.task_id,
+            execution_id=execution_id,
+            owner_id="integration-worker",
+            action="analyze_requirement",
+            lease_seconds=300,
+            expected_version=loaded.version,
+        )
+        repository.complete_execution(
+            loaded.record,
+            lease,
+            succeeded=True,
+        )
+
+        current = repository.get_versioned(record.state.task_id)
+        with self.assertRaises(TaskExecutionAlreadyFinishedError):
+            repository.acquire_execution(
+                record.state.task_id,
+                execution_id=execution_id,
+                owner_id="integration-worker",
+                action="analyze_requirement",
+                lease_seconds=300,
+                expected_version=current.version,
+            )
+
+    def test_real_mysql_expired_lease_can_be_reclaimed(self):
+        record = TaskRecord(state=TestAnalysisState("lease recovery test"))
+        self._create(record)
+        repository = self._repository()
+        loaded = repository.get_versioned(record.state.task_id)
+        old_execution_id = str(uuid4())
+        repository.acquire_execution(
+            record.state.task_id,
+            execution_id=old_execution_id,
+            owner_id="old-worker",
+            action="analyze_requirement",
+            lease_seconds=300,
+            expected_version=loaded.version,
+        )
+        self._expire_execution(old_execution_id)
+
+        current = repository.get_versioned(record.state.task_id)
+        new_lease = repository.acquire_execution(
+            record.state.task_id,
+            execution_id=str(uuid4()),
+            owner_id="new-worker",
+            action="analyze_requirement",
+            lease_seconds=300,
+            expected_version=current.version,
+        )
+        repository.complete_execution(
+            current.record,
+            new_lease,
+            succeeded=True,
+        )
+
+        self.assertEqual(
+            self._execution_status(old_execution_id),
+            "expired",
+        )
+
+    def _expire_execution(self, execution_id):
+        connection = self.connection_factory()
+        cursor = connection.cursor()
+        try:
+            expired_at = (
+                datetime.now(timezone.utc) - timedelta(minutes=1)
+            ).replace(tzinfo=None)
+            cursor.execute(
+                """
+                UPDATE agent_task_executions
+                SET lease_expires_at = %s
+                WHERE execution_id = %s
+                """,
+                (expired_at, execution_id),
+            )
+            connection.commit()
+        finally:
+            cursor.close()
+            connection.close()
+
+    def _execution_status(self, execution_id):
+        connection = self.connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT status
+                FROM agent_task_executions
+                WHERE execution_id = %s
+                """,
+                (execution_id,),
+            )
+            return cursor.fetchone()["status"]
+        finally:
+            cursor.close()
+            connection.close()
 
     def _database_counts(self, task_id):
         connection = self.connection_factory()

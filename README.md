@@ -123,7 +123,7 @@ MYSQL_PASSWORD=your_mysql_password
 MYSQL_DATABASE=ai_test_assistant
 ```
 
-应用启动时会创建`agent_tasks`和`agent_task_events`。建表SQL、TaskRecord真实CRUD、事件级联删除
+应用启动时会创建`agent_tasks`、`agent_task_events`和`agent_task_executions`。建表SQL、TaskRecord真实CRUD、事件级联删除
 以及等待补充/完成/失败任务的跨Application Service实例恢复已在真实MySQL 8.0.32验证。
 
 日常单元测试不会访问MySQL。如需在本机显式运行真实数据库集成测试：
@@ -133,8 +133,8 @@ $env:RUN_MYSQL_INTEGRATION_TESTS='1'
 python -m unittest tests.test_mysql_task_repository_integration -v
 ```
 
-集成测试使用独立UUID并在结束后按`task_id`清理测试数据。2.13.4的乐观锁、`execution_id`
-和执行租约尚未实现，因此当前不能宣称已解决跨进程并发和重复节点执行。
+集成测试使用独立UUID并在结束后按`task_id`清理测试数据。2.13.4已实现并通过真实MySQL验证乐观锁、
+`execution_id`和可过期执行租约；当前保证节点结果幂等提交，但不宣称外部LLM请求Exactly Once。
 
 ## 外部依赖
 
@@ -151,11 +151,12 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 1. 阶段2.13.1：已完成版本化JSON任务快照，可恢复AgentState、事件、决策和节点指标
 2. 阶段2.13.2：已实现MySQL任务快照与独立事件Repository，真实连接和建表已验证
 3. 阶段2.13.3：已完成真实MySQL CRUD和跨Application Service实例恢复验证
-4. 阶段2.13.4：实现version、execution_id与执行租约保护
-5. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
-6. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
-7. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
-8. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+4. 阶段2.13.4：已实现version、execution_id与执行租约保护
+5. 阶段2.13.5：使用pytest统一测试入口、marker与fixture，保留现有unittest兼容
+6. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
+7. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
+8. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
+9. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。

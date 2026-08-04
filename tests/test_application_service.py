@@ -145,6 +145,56 @@ class TestAnalysisApplicationServiceTests(unittest.TestCase):
         self.assertEqual(len(result.metrics), 1)
         self.assertTrue(result.metrics[0].succeeded)
 
+    def test_duplicate_execution_id_does_not_run_node_twice(self):
+        orchestrator = ScriptedOrchestrator(
+            [(OrchestratorAction.ANALYZE_REQUIREMENT, lambda state: None)]
+        )
+        service, _ = _create_service(orchestrator)
+        task = service.create_task(
+            CreateTaskCommand(requirement="idempotent requirement")
+        )
+
+        first = service.advance_task(
+            task.task_id,
+            execution_id="same-execution-id",
+        )
+        duplicate = service.advance_task(
+            task.task_id,
+            execution_id="same-execution-id",
+        )
+
+        self.assertEqual(orchestrator.run_calls, 1)
+        self.assertEqual(len(first.metrics), 1)
+        self.assertEqual(len(duplicate.metrics), 1)
+
+    def test_active_repository_lease_prevents_duplicate_node_run(self):
+        orchestrator = ScriptedOrchestrator(
+            [(OrchestratorAction.ANALYZE_REQUIREMENT, lambda state: None)]
+        )
+        service, repository = _create_service(orchestrator)
+        task = service.create_task(
+            CreateTaskCommand(requirement="concurrent requirement")
+        )
+        loaded = repository.get_versioned(task.task_id)
+        repository.acquire_execution(
+            task.task_id,
+            execution_id="running-execution",
+            owner_id="other-worker",
+            action="analyze_requirement",
+            lease_seconds=60,
+            expected_version=loaded.version,
+        )
+
+        unchanged = service.advance_task(
+            task.task_id,
+            execution_id="second-execution",
+        )
+
+        self.assertEqual(orchestrator.run_calls, 0)
+        self.assertEqual(unchanged.task_id, task.task_id)
+        self.assertTrue(unchanged.in_progress)
+        self.assertEqual(len(unchanged.metrics), 0)
+
     def test_clarifications_resume_same_task(self):
         orchestrator = ScriptedOrchestrator([])
         service, repository = _create_service(orchestrator)

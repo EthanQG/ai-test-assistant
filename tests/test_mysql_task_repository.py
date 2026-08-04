@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 from agent import AgentStep, TestAnalysisState
@@ -11,8 +12,11 @@ from repositories import (
     MySQLSettings,
     MySQLTaskRepository,
     TaskAlreadyExistsError,
+    TaskExecutionAlreadyFinishedError,
+    TaskExecutionBusyError,
     TaskNotFoundError,
     TaskRepositoryError,
+    TaskVersionConflictError,
 )
 
 
@@ -90,6 +94,10 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
             "CREATE TABLE IF NOT EXISTS agent_task_events",
             statements[1],
         )
+        self.assertIn(
+            "CREATE TABLE IF NOT EXISTS agent_task_executions",
+            statements[2],
+        )
         self.assertEqual(connection.commits, 1)
         self.assertEqual(connection.rollbacks, 0)
         self.assertTrue(connection.closed)
@@ -142,7 +150,10 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
         record = _record()
         record.state.requirement_summary = "订单提交"
         connection.cursor_instance.fetchone_results.append(
-            {"snapshot_json": TaskSnapshotSerializer.to_json(record)}
+            {
+                "snapshot_json": TaskSnapshotSerializer.to_json(record),
+                "version": 1,
+            }
         )
 
         restored = _repository(connection).get(record.state.task_id)
@@ -163,7 +174,7 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
         record = _record()
         record.state.start_step(AgentStep.ANALYZE_REQUIREMENT, "开始分析")
         connection.cursor_instance.fetchone_results.append(
-            {"event_count": 1}
+            {"event_count": 1, "version": 1}
         )
 
         _repository(connection).save(record)
@@ -182,7 +193,7 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
     def test_save_rejects_shrinking_audit_history_and_rolls_back(self):
         connection = _FakeConnection()
         connection.cursor_instance.fetchone_results.append(
-            {"event_count": 2}
+            {"event_count": 2, "version": 1}
         )
 
         with self.assertRaisesRegex(
@@ -193,6 +204,123 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
 
         self.assertEqual(connection.rollbacks, 1)
         self.assertEqual(connection.commits, 0)
+
+    def test_save_rejects_stale_expected_version(self):
+        connection = _FakeConnection()
+        connection.cursor_instance.fetchone_results.append(
+            {"event_count": 1, "version": 3}
+        )
+
+        with self.assertRaises(TaskVersionConflictError) as context:
+            _repository(connection).save(
+                _record(),
+                expected_version=2,
+            )
+
+        self.assertEqual(context.exception.actual, 3)
+        self.assertEqual(connection.rollbacks, 1)
+
+    def test_acquire_and_complete_execution_use_lease_transaction(self):
+        connection = _FakeConnection()
+        record = _record()
+        future = datetime.now(timezone.utc) + timedelta(minutes=5)
+        connection.cursor_instance.fetchone_results.extend(
+            [
+                {"version": 1},
+                None,
+                None,
+                {"event_count": 1, "version": 2},
+                {
+                    "task_id": record.state.task_id,
+                    "status": "running",
+                    "lease_owner": "worker-1",
+                    "lease_expires_at": future,
+                },
+            ]
+        )
+        repository = _repository(connection)
+
+        lease = repository.acquire_execution(
+            record.state.task_id,
+            execution_id="execution-1",
+            owner_id="worker-1",
+            action="analyze_requirement",
+            lease_seconds=300,
+            expected_version=1,
+        )
+        new_version = repository.complete_execution(
+            record,
+            lease,
+            succeeded=True,
+        )
+
+        self.assertEqual(lease.version, 2)
+        self.assertEqual(new_version, 3)
+        statements = [
+            sql for sql, _ in connection.cursor_instance.executed
+        ]
+        self.assertTrue(
+            any("INSERT INTO agent_task_executions" in sql for sql in statements)
+        )
+        self.assertTrue(
+            any(
+                "SET status = %s, finished_at" in sql
+                for sql in statements
+            )
+        )
+        self.assertEqual(connection.commits, 2)
+
+    def test_acquire_rejects_finished_execution_id(self):
+        connection = _FakeConnection()
+        record = _record()
+        connection.cursor_instance.fetchone_results.extend(
+            [
+                {"version": 4},
+                {
+                    "task_id": record.state.task_id,
+                    "status": "succeeded",
+                    "lease_expires_at": datetime.now(timezone.utc),
+                },
+            ]
+        )
+
+        with self.assertRaises(TaskExecutionAlreadyFinishedError):
+            _repository(connection).acquire_execution(
+                record.state.task_id,
+                execution_id="execution-1",
+                owner_id="worker-1",
+                action="analyze_requirement",
+                lease_seconds=60,
+                expected_version=4,
+            )
+        self.assertEqual(connection.rollbacks, 1)
+
+    def test_acquire_rejects_unexpired_active_lease(self):
+        connection = _FakeConnection()
+        record = _record()
+        connection.cursor_instance.fetchone_results.extend(
+            [
+                {"version": 2},
+                None,
+                {
+                    "execution_id": "other-execution",
+                    "lease_expires_at": (
+                        datetime.now(timezone.utc) + timedelta(minutes=5)
+                    ),
+                },
+            ]
+        )
+
+        with self.assertRaises(TaskExecutionBusyError):
+            _repository(connection).acquire_execution(
+                record.state.task_id,
+                execution_id="execution-2",
+                owner_id="worker-2",
+                action="analyze_requirement",
+                lease_seconds=60,
+                expected_version=2,
+            )
+        self.assertEqual(connection.rollbacks, 1)
 
     def test_list_restores_records_in_database_order(self):
         connection = _FakeConnection()

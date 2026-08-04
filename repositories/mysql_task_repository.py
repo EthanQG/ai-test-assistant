@@ -3,14 +3,20 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 from .task_repository import (
+    TaskExecutionAlreadyFinishedError,
+    TaskExecutionBusyError,
+    TaskExecutionLease,
+    TaskExecutionLeaseLostError,
     TaskAlreadyExistsError,
     TaskNotFoundError,
     TaskRepository,
     TaskRepositoryError,
+    TaskVersionConflictError,
+    VersionedTaskRecord,
 )
 
 if TYPE_CHECKING:
@@ -59,6 +65,27 @@ CREATE TABLE IF NOT EXISTS agent_task_events (
     UNIQUE KEY uq_agent_task_events_sequence (task_id, sequence_no),
     INDEX idx_agent_task_events_occurred (task_id, occurred_at),
     CONSTRAINT fk_agent_task_events_task
+        FOREIGN KEY (task_id) REFERENCES agent_tasks(task_id)
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+""".strip()
+
+
+CREATE_EXECUTIONS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS agent_task_executions (
+    execution_id VARCHAR(36) NOT NULL PRIMARY KEY,
+    task_id VARCHAR(36) NOT NULL,
+    action VARCHAR(64) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    lease_owner VARCHAR(64) NOT NULL,
+    lease_expires_at DATETIME(6) NOT NULL,
+    started_at DATETIME(6) NOT NULL,
+    finished_at DATETIME(6) NULL,
+    error_type VARCHAR(128) NULL,
+    INDEX idx_agent_task_executions_active (
+        task_id, status, lease_expires_at
+    ),
+    CONSTRAINT fk_agent_task_executions_task
         FOREIGN KEY (task_id) REFERENCES agent_tasks(task_id)
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -145,6 +172,7 @@ class MySQLTaskRepository(TaskRepository):
         try:
             cursor.execute(CREATE_TASKS_TABLE_SQL)
             cursor.execute(CREATE_EVENTS_TABLE_SQL)
+            cursor.execute(CREATE_EXECUTIONS_TABLE_SQL)
             connection.commit()
         except Exception as exc:
             connection.rollback()
@@ -185,17 +213,27 @@ class MySQLTaskRepository(TaskRepository):
             connection.close()
 
     def get(self, task_id: str) -> TaskRecord:
+        return self.get_versioned(task_id).record
+
+    def get_versioned(self, task_id: str) -> VersionedTaskRecord:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
             cursor.execute(
-                "SELECT snapshot_json FROM agent_tasks WHERE task_id = %s",
+                """
+                SELECT snapshot_json, version
+                FROM agent_tasks
+                WHERE task_id = %s
+                """,
                 (task_id,),
             )
             row = cursor.fetchone()
             if row is None:
                 raise TaskNotFoundError(task_id)
-            return self._record_from_snapshot(row["snapshot_json"])
+            return VersionedTaskRecord(
+                record=self._record_from_snapshot(row["snapshot_json"]),
+                version=int(row["version"]),
+            )
         except TaskNotFoundError:
             raise
         except Exception as exc:
@@ -208,9 +246,7 @@ class MySQLTaskRepository(TaskRepository):
         self,
         record: TaskRecord,
         expected_version: int | None = None,
-    ) -> None:
-        # Version conflict detection is intentionally deferred to stage 2.13.4.
-        del expected_version
+    ) -> int:
         snapshot = self._snapshot_codec.to_dict(record)
         task_id = record.state.task_id
         connection = self._connection_factory()
@@ -218,7 +254,7 @@ class MySQLTaskRepository(TaskRepository):
         try:
             cursor.execute(
                 """
-                SELECT event_count
+                SELECT event_count, version
                 FROM agent_tasks
                 WHERE task_id = %s
                 FOR UPDATE
@@ -228,6 +264,16 @@ class MySQLTaskRepository(TaskRepository):
             row = cursor.fetchone()
             if row is None:
                 raise TaskNotFoundError(task_id)
+            stored_version = int(row["version"])
+            if (
+                expected_version is not None
+                and expected_version != stored_version
+            ):
+                raise TaskVersionConflictError(
+                    task_id,
+                    expected_version,
+                    stored_version,
+                )
             stored_event_count = int(row["event_count"])
             current_event_count = len(snapshot["state"]["events"])
             if current_event_count < stored_event_count:
@@ -246,7 +292,7 @@ class MySQLTaskRepository(TaskRepository):
                     event_count = %s,
                     version = version + 1,
                     updated_at = %s
-                WHERE task_id = %s
+                WHERE task_id = %s AND version = %s
                 """,
                 (
                     int(snapshot["schema_version"]),
@@ -257,8 +303,15 @@ class MySQLTaskRepository(TaskRepository):
                     current_event_count,
                     _mysql_datetime(record.state.updated_at),
                     task_id,
+                    stored_version,
                 ),
             )
+            if cursor.rowcount != 1:
+                raise TaskVersionConflictError(
+                    task_id,
+                    stored_version,
+                    stored_version + 1,
+                )
             self._insert_events(
                 cursor,
                 task_id,
@@ -266,6 +319,7 @@ class MySQLTaskRepository(TaskRepository):
                 stored_event_count,
             )
             connection.commit()
+            return stored_version + 1
         except TaskNotFoundError:
             connection.rollback()
             raise
@@ -274,6 +328,305 @@ class MySQLTaskRepository(TaskRepository):
             if isinstance(exc, TaskRepositoryError):
                 raise
             raise TaskRepositoryError("failed to save MySQL task") from exc
+        finally:
+            cursor.close()
+            connection.close()
+
+    def acquire_execution(
+        self,
+        task_id: str,
+        *,
+        execution_id: str,
+        owner_id: str,
+        action: str,
+        lease_seconds: int,
+        expected_version: int,
+    ) -> TaskExecutionLease:
+        if lease_seconds <= 0:
+            raise ValueError("lease_seconds must be positive")
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(seconds=lease_seconds)
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT version
+                FROM agent_tasks
+                WHERE task_id = %s
+                FOR UPDATE
+                """,
+                (task_id,),
+            )
+            task_row = cursor.fetchone()
+            if task_row is None:
+                raise TaskNotFoundError(task_id)
+            stored_version = int(task_row["version"])
+            if stored_version != expected_version:
+                raise TaskVersionConflictError(
+                    task_id,
+                    expected_version,
+                    stored_version,
+                )
+
+            cursor.execute(
+                """
+                SELECT task_id, status, lease_expires_at
+                FROM agent_task_executions
+                WHERE execution_id = %s
+                FOR UPDATE
+                """,
+                (execution_id,),
+            )
+            existing = cursor.fetchone()
+            if existing is not None:
+                if existing["task_id"] != task_id:
+                    raise TaskRepositoryError(
+                        "execution_id belongs to another task"
+                    )
+                if existing["status"] != "running":
+                    raise TaskExecutionAlreadyFinishedError(
+                        task_id,
+                        execution_id,
+                    )
+                if _aware_mysql_datetime(
+                    existing["lease_expires_at"]
+                ) > now:
+                    raise TaskExecutionBusyError(task_id)
+
+            cursor.execute(
+                """
+                SELECT execution_id, lease_expires_at
+                FROM agent_task_executions
+                WHERE task_id = %s AND status = 'running'
+                ORDER BY started_at DESC
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (task_id,),
+            )
+            active = cursor.fetchone()
+            if active is not None:
+                if _aware_mysql_datetime(active["lease_expires_at"]) > now:
+                    raise TaskExecutionBusyError(task_id)
+                cursor.execute(
+                    """
+                    UPDATE agent_task_executions
+                    SET status = 'expired', finished_at = %s
+                    WHERE execution_id = %s AND status = 'running'
+                    """,
+                    (_mysql_datetime(now), active["execution_id"]),
+                )
+
+            if existing is None:
+                cursor.execute(
+                    """
+                    INSERT INTO agent_task_executions (
+                        execution_id, task_id, action, status,
+                        lease_owner, lease_expires_at, started_at
+                    ) VALUES (%s, %s, %s, 'running', %s, %s, %s)
+                    """,
+                    (
+                        execution_id,
+                        task_id,
+                        action,
+                        owner_id,
+                        _mysql_datetime(expires_at),
+                        _mysql_datetime(now),
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE agent_task_executions
+                    SET action = %s, status = 'running',
+                        lease_owner = %s, lease_expires_at = %s,
+                        started_at = %s, finished_at = NULL,
+                        error_type = NULL
+                    WHERE execution_id = %s
+                    """,
+                    (
+                        action,
+                        owner_id,
+                        _mysql_datetime(expires_at),
+                        _mysql_datetime(now),
+                        execution_id,
+                    ),
+                )
+
+            cursor.execute(
+                """
+                UPDATE agent_tasks
+                SET version = version + 1, updated_at = %s
+                WHERE task_id = %s AND version = %s
+                """,
+                (_mysql_datetime(now), task_id, stored_version),
+            )
+            if cursor.rowcount != 1:
+                raise TaskVersionConflictError(
+                    task_id,
+                    stored_version,
+                    stored_version + 1,
+                )
+            connection.commit()
+            return TaskExecutionLease(
+                task_id=task_id,
+                execution_id=execution_id,
+                owner_id=owner_id,
+                action=action,
+                version=stored_version + 1,
+                expires_at=expires_at,
+            )
+        except (
+            TaskNotFoundError,
+            TaskRepositoryError,
+        ):
+            connection.rollback()
+            raise
+        except Exception as exc:
+            connection.rollback()
+            raise TaskRepositoryError(
+                "failed to acquire MySQL execution lease"
+            ) from exc
+        finally:
+            cursor.close()
+            connection.close()
+
+    def complete_execution(
+        self,
+        record: TaskRecord,
+        lease: TaskExecutionLease,
+        *,
+        succeeded: bool,
+        error_type: str | None = None,
+    ) -> int:
+        snapshot = self._snapshot_codec.to_dict(record)
+        task_id = record.state.task_id
+        now = datetime.now(timezone.utc)
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT event_count, version
+                FROM agent_tasks
+                WHERE task_id = %s
+                FOR UPDATE
+                """,
+                (task_id,),
+            )
+            task_row = cursor.fetchone()
+            if task_row is None:
+                raise TaskNotFoundError(task_id)
+            stored_version = int(task_row["version"])
+            if stored_version != lease.version:
+                raise TaskVersionConflictError(
+                    task_id,
+                    lease.version,
+                    stored_version,
+                )
+
+            cursor.execute(
+                """
+                SELECT task_id, status, lease_owner, lease_expires_at
+                FROM agent_task_executions
+                WHERE execution_id = %s
+                FOR UPDATE
+                """,
+                (lease.execution_id,),
+            )
+            execution = cursor.fetchone()
+            if (
+                execution is None
+                or execution["task_id"] != task_id
+                or execution["status"] != "running"
+                or execution["lease_owner"] != lease.owner_id
+                or _aware_mysql_datetime(
+                    execution["lease_expires_at"]
+                ) <= now
+            ):
+                raise TaskExecutionLeaseLostError(
+                    task_id,
+                    lease.execution_id,
+                )
+
+            stored_event_count = int(task_row["event_count"])
+            current_event_count = len(snapshot["state"]["events"])
+            if current_event_count < stored_event_count:
+                raise TaskRepositoryError(
+                    "task event history cannot shrink during save"
+                )
+            cursor.execute(
+                """
+                UPDATE agent_tasks
+                SET schema_version = %s,
+                    status = %s,
+                    current_step = %s,
+                    requirement_summary = %s,
+                    snapshot_json = %s,
+                    event_count = %s,
+                    version = version + 1,
+                    updated_at = %s
+                WHERE task_id = %s AND version = %s
+                """,
+                (
+                    int(snapshot["schema_version"]),
+                    record.state.status.value,
+                    record.state.current_step.value,
+                    record.state.requirement_summary[:512],
+                    _json_text(snapshot),
+                    current_event_count,
+                    _mysql_datetime(record.state.updated_at),
+                    task_id,
+                    stored_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise TaskVersionConflictError(
+                    task_id,
+                    stored_version,
+                    stored_version + 1,
+                )
+            self._insert_events(
+                cursor,
+                task_id,
+                snapshot,
+                stored_event_count,
+            )
+            cursor.execute(
+                """
+                UPDATE agent_task_executions
+                SET status = %s, finished_at = %s, error_type = %s
+                WHERE execution_id = %s
+                  AND status = 'running'
+                  AND lease_owner = %s
+                """,
+                (
+                    "succeeded" if succeeded else "failed",
+                    _mysql_datetime(now),
+                    error_type,
+                    lease.execution_id,
+                    lease.owner_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise TaskExecutionLeaseLostError(
+                    task_id,
+                    lease.execution_id,
+                )
+            connection.commit()
+            return stored_version + 1
+        except (
+            TaskNotFoundError,
+            TaskRepositoryError,
+        ):
+            connection.rollback()
+            raise
+        except Exception as exc:
+            connection.rollback()
+            raise TaskRepositoryError(
+                "failed to complete MySQL execution"
+            ) from exc
         finally:
             cursor.close()
             connection.close()
@@ -392,6 +745,21 @@ def _mysql_datetime(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise TaskRepositoryError("persisted datetime must include timezone")
     return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _aware_mysql_datetime(value: Any) -> datetime:
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise TaskRepositoryError(
+                "MySQL lease datetime is invalid"
+            ) from exc
+    if not isinstance(value, datetime):
+        raise TaskRepositoryError("MySQL lease datetime is invalid")
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _mysql_datetime_text(value: str) -> datetime:

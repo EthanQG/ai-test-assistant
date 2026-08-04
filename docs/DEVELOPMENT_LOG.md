@@ -52,8 +52,10 @@
 | 阶段 2.12 | 已完成 | Application Service、TaskRepository、只读TaskView、页面入口迁移和节点耗时基线 | `caeb5af`, `1503e59` |
 | 阶段 2.13.1 | 已完成 | schema v1任务快照、严格JSON校验、完整领域恢复和恢复执行验证 | `5f50110` |
 | 阶段 2.13.2 | 已完成 | MySQL任务快照、独立事件表、事务保存和可切换Repository装配 | `885c5ca` |
-| 阶段 2.13.3 | 已完成，待提交 | 真实MySQL CRUD、事件一致性和跨Application Service实例恢复 | 本次提交 |
-| 阶段 2.13 | 进行中 | MySQL任务恢复已完成，重复执行保护待2.13.4 | - |
+| 阶段 2.13.3 | 已完成 | 真实MySQL CRUD、事件一致性和跨Application Service实例恢复 | `bb30a5b` |
+| 阶段 2.13.4 | 已完成 | 乐观锁、execution_id幂等与可过期执行租约 | 本次提交 |
+| 阶段 2.13.5 | 规划中 | pytest统一测试入口、marker与fixture | - |
+| 阶段 2.13 | 进行中 | 持久化、恢复和重复执行保护已完成，待测试工程升级 | - |
 | 阶段 2.14 | 规划中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 脱敏离线评测、RAG/Reviewer专项评测和三组消融实验 | - |
@@ -2310,3 +2312,67 @@ execution_id和执行租约留到2.13.4，也不宣称外部LLM请求Exactly Onc
 
 阶段2.13.4只处理重复执行保护：让expected_version参与条件更新，增加execution_id和可过期
 执行租约及其并发测试。知识资产、Milvus V2、FastAPI和Vue不进入该阶段。
+
+## 阶段 2.13.4：乐观锁、execution_id与执行租约
+
+### 本阶段目标
+
+解决“任务能够从MySQL恢复，但两个应用实例仍可能读取同一旧快照并重复执行节点”的问题。
+本阶段只增加Repository和Application Service执行保护，不修改AgentState、Orchestrator决策、节点顺序或页面布局。
+
+### 实际实现
+
+- `TaskRepository`增加`get_versioned`，同时返回隔离的`TaskRecord`和数据库版本
+- InMemory与MySQL的`save(record, expected_version)`都执行版本校验并返回新版本
+- MySQL保存使用`WHERE task_id = ? AND version = ?`条件更新，受影响行数不为1时报告版本冲突
+- 新增`agent_task_executions`表，记录execution_id、task_id、动作、状态、worker、租约时间、错误和完成时间
+- Repository增加`acquire_execution`与`complete_execution`，领取和提交都在数据库事务中完成
+- Application Service推进节点前领取租约，节点结束后使用同一租约保存快照、增量事件和执行状态
+- 相同execution_id已经完成时直接返回当前任务；存在其他未过期租约时不调用Orchestrator
+- 补充需求、业务规则确认和人工反馈等普通写操作也使用读取到的expected_version
+
+### 三个编号的区别
+
+- `schema_version`：JSON快照结构版本，当前仍为1
+- `version`：某条数据库任务记录的并发版本，每次持久化控制操作递增
+- `execution_id`：一次推进请求的幂等编号，用于识别网络重试或重复请求
+
+三者互相独立。本阶段没有修改快照schema，也没有把数据库租约塞进AgentState。
+
+### 租约恢复规则
+
+执行者领取租约时写入owner和过期时间。其他执行者在租约有效期内只能看到任务正在执行，不能调用节点；
+租约过期后，新执行者可以将旧记录标记为`expired`并领取新租约。旧执行者即使稍后返回，也会因版本或租约校验失败而不能覆盖新结果。
+
+默认租约为600秒，当前同步架构没有后台续租。因此它用于进程异常后的可恢复互斥，但不保证外部LLM只被调用一次：
+如果调用超过租约并发生接管，外部请求可能重复，最终只有仍持有合法租约的结果可以提交。
+
+### 自动化测试
+
+新增或加强的测试覆盖：
+
+- 旧TaskRecord保存时触发`TaskVersionConflictError`
+- 相同execution_id完成后不能再次领取
+- 未过期租约阻止另一执行进入
+- 租约过期后新执行者接管，旧租约不能提交
+- Application Service重复请求不再次调用Orchestrator节点
+- Fake MySQL事务包含执行记录创建、快照提交和执行状态完成
+- 新增3项显式真实MySQL用例：乐观锁冲突、execution_id幂等和过期租约接管
+
+验证结果：
+
+```text
+python -m unittest discover -s tests -v
+260 tests passed（6项真实MySQL测试默认跳过）
+$env:RUN_MYSQL_INTEGRATION_TESTS='1'
+python -m unittest tests.test_mysql_task_repository_integration -v
+6 integration tests passed
+```
+
+真实MySQL 8.0.32已完成6项集成验证，`agent_task_executions`建表、乐观锁冲突、execution_id幂等和
+租约过期接管均通过；临时任务已精确清理。本轮未访问真实DeepSeek、Embedding或Milvus。
+
+### 下一步
+
+阶段2.13.5进行低风险pytest测试工程升级：先让pytest兼容收集现有unittest，增加marker和fixture，
+不一次性重写260项测试。完成后再进入2.14 KnowledgeAsset和Milvus知识沉淀闭环。

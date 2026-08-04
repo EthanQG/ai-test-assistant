@@ -1,11 +1,16 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from agent import TestAnalysisState
 from application import TaskRecord
 from repositories import (
     InMemoryTaskRepository,
     TaskAlreadyExistsError,
+    TaskExecutionAlreadyFinishedError,
+    TaskExecutionBusyError,
+    TaskExecutionLeaseLostError,
     TaskNotFoundError,
+    TaskVersionConflictError,
 )
 
 
@@ -61,6 +66,110 @@ class InMemoryTaskRepositoryTests(unittest.TestCase):
             repository.save(
                 TaskRecord(TestAnalysisState("另一个任务"))
             )
+
+    def test_versioned_save_rejects_stale_snapshot(self):
+        repository = InMemoryTaskRepository()
+        record = TaskRecord(TestAnalysisState("versioned task"))
+        repository.create(record)
+        first = repository.get_versioned(record.state.task_id)
+        stale = repository.get_versioned(record.state.task_id)
+
+        first.record.state.requirement_summary = "first update"
+        new_version = repository.save(
+            first.record,
+            expected_version=first.version,
+        )
+
+        self.assertEqual(new_version, 2)
+        stale.record.state.requirement_summary = "stale update"
+        with self.assertRaises(TaskVersionConflictError):
+            repository.save(
+                stale.record,
+                expected_version=stale.version,
+            )
+        self.assertEqual(
+            repository.get(record.state.task_id).state.requirement_summary,
+            "first update",
+        )
+
+    def test_execution_id_is_committed_only_once(self):
+        repository = InMemoryTaskRepository()
+        record = TaskRecord(TestAnalysisState("idempotent task"))
+        repository.create(record)
+        loaded = repository.get_versioned(record.state.task_id)
+        lease = repository.acquire_execution(
+            record.state.task_id,
+            execution_id="execution-1",
+            owner_id="worker-1",
+            action="analyze_requirement",
+            lease_seconds=60,
+            expected_version=loaded.version,
+        )
+        repository.complete_execution(
+            loaded.record,
+            lease,
+            succeeded=True,
+        )
+
+        current = repository.get_versioned(record.state.task_id)
+        with self.assertRaises(TaskExecutionAlreadyFinishedError):
+            repository.acquire_execution(
+                record.state.task_id,
+                execution_id="execution-1",
+                owner_id="worker-1",
+                action="analyze_requirement",
+                lease_seconds=60,
+                expected_version=current.version,
+            )
+
+    def test_active_lease_blocks_other_execution_until_expired(self):
+        now = datetime(2026, 8, 4, tzinfo=timezone.utc)
+        clock_value = [now]
+        repository = InMemoryTaskRepository(clock=lambda: clock_value[0])
+        record = TaskRecord(TestAnalysisState("leased task"))
+        repository.create(record)
+        loaded = repository.get_versioned(record.state.task_id)
+        first_lease = repository.acquire_execution(
+            record.state.task_id,
+            execution_id="execution-1",
+            owner_id="worker-1",
+            action="analyze_requirement",
+            lease_seconds=30,
+            expected_version=loaded.version,
+        )
+
+        current = repository.get_versioned(record.state.task_id)
+        with self.assertRaises(TaskExecutionBusyError):
+            repository.acquire_execution(
+                record.state.task_id,
+                execution_id="execution-2",
+                owner_id="worker-2",
+                action="analyze_requirement",
+                lease_seconds=30,
+                expected_version=current.version,
+            )
+
+        clock_value[0] += timedelta(seconds=31)
+        with self.assertRaises(TaskExecutionLeaseLostError):
+            repository.complete_execution(
+                loaded.record,
+                first_lease,
+                succeeded=True,
+            )
+        current = repository.get_versioned(record.state.task_id)
+        second_lease = repository.acquire_execution(
+            record.state.task_id,
+            execution_id="execution-2",
+            owner_id="worker-2",
+            action="analyze_requirement",
+            lease_seconds=30,
+            expected_version=current.version,
+        )
+        repository.complete_execution(
+            current.record,
+            second_lease,
+            succeeded=True,
+        )
 
 
 if __name__ == "__main__":

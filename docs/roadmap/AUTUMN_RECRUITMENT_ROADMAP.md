@@ -58,8 +58,8 @@ Python Orchestrator 负责合法步骤、状态转换、最大修正次数和终
 
 ### 3.3 部分实现
 
-- MySQL已支持任务持久化和跨Application Service实例恢复，但尚无乐观锁、execution_id和执行租约
-- `in_progress` 只在单会话内防止重复节点
+- MySQL已支持任务持久化、跨Application Service实例恢复、乐观锁、execution_id和可过期执行租约
+- `in_progress`只用于页面展示；跨进程执行权以Repository租约为准
 - schema v1快照可完整恢复，尚无历史schema迁移样本
 - Application Service已记录节点成功/失败耗时，缺少外部调用分层耗时
 - PromptService 已按节点构造输入，但尚无集中 ContextBuilder 和输入预算
@@ -198,10 +198,18 @@ Milvus 是语义检索索引，负责保存：
 
 ### 2.13.4 重复执行保护
 
+- **已完成（2026-08-04），Fake与真实MySQL测试均通过**
 - version 负责检测基于旧快照的并发写入
 - execution_id 负责请求幂等
 - 执行租约负责进程异常后的锁恢复
 - 第一版保证节点结果最多提交一次，不宣称外部 LLM 请求 Exactly Once
+
+### 2.13.5 测试工程升级
+
+- 保留现有 unittest 用例，先用 pytest 统一收集和运行
+- 增加 unit、AppTest、integration marker 与公共 fixture
+- 只示范迁移重复样板较多的测试，不进行一次性大改写
+- MySQL 集成测试继续显式开启，不把外部数据库变成日常测试前置条件
 
 ## 2.14 知识资产沉淀与 Milvus 闭环
 
