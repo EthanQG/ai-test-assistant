@@ -58,9 +58,9 @@ Python Orchestrator 负责合法步骤、状态转换、最大修正次数和终
 
 ### 3.3 部分实现
 
-- 任务只保存在当前Streamlit会话内，会话重建或服务重启后丢失
+- MySQL已支持任务持久化和跨Application Service实例恢复，但尚无乐观锁、execution_id和执行租约
 - `in_progress` 只在单会话内防止重复节点
-- AgentState 只有 `to_dict()`，尚无完整快照恢复
+- schema v1快照可完整恢复，尚无历史schema迁移样本
 - Application Service已记录节点成功/失败耗时，缺少外部调用分层耗时
 - PromptService 已按节点构造输入，但尚无集中 ContextBuilder 和输入预算
 - 旧 Workflow 仍保留写入 Milvus 的兼容方法，当前 Agent 页面没有知识沉淀入口
@@ -147,9 +147,8 @@ Milvus 是语义检索索引，负责保存：
 
 完成证据：Streamlit只调用Application Service；TaskRepository提供会话级内存实现并返回
 隔离副本；页面只保存task_id和UI状态；schema v1任务快照已可严格恢复并继续受控执行；
-245项离线自动化
-测试通过。当前内存实现不提供跨新
-会话或服务重启恢复，该能力按计划留到2.13。
+245项离线自动化测试通过。阶段2.13.2～2.13.3另已完成MySQL Repository和真实恢复验证；
+本节保留的是2.12自身的交付边界。
 
 ### 2.12.1 Application Service 接口
 
@@ -182,7 +181,7 @@ Milvus 是语义检索索引，负责保存：
 
 ### 2.13.2 MySQL 任务与事件表
 
-- **代码和真实MySQL 8.0.32建表已完成（2026-08-04），CRUD与恢复待2.13.3验证**
+- **已完成（2026-08-04）**
 - `agent_tasks` 保存完整 State 快照和决策
 - `agent_task_events` 保存独立事件和执行元数据
 - 实现 MySQLTaskRepository
@@ -190,8 +189,12 @@ Milvus 是语义检索索引，负责保存：
 
 ### 2.13.3 服务重启恢复
 
+- **已完成（2026-08-04）**
 - 每个节点完成后原子保存快照和新增事件
 - 等待用户、完成和失败任务均可按 task_id 恢复
+- 真实MySQL验证create/get/save/list/delete、version递增、事件数量一致和外键级联删除
+- 销毁并重建Repository与Application Service后，同一task_id仍按原状态机继续或保持终态
+- 3项真实数据库测试需显式开关运行，日常单元测试不依赖外部数据库
 
 ### 2.13.4 重复执行保护
 
@@ -351,7 +354,7 @@ FastAPI、后台任务、SSE、Vue、多 Agent 和自主规划不属于最小完
 
 ### 尚未完成前不能描述
 
-- MySQL 跨服务恢复
+- version、execution_id和执行租约的重复执行保护
 - 可靠知识资产闭环
 - RAG 或 Reviewer 的具体提升比例
 - 后台任务、SSE 和前后端分离

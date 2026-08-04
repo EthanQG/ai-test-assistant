@@ -15,23 +15,22 @@
 - 阶段2.13.1版本化任务快照及恢复执行测试已经完成
 - 阶段2.13.1提交：`5f50110 阶段2.13.1：实现版本化任务快照与恢复验证`
 - 阶段2.13.2 MySQL任务与事件Repository代码、真实连接和建表验证已经完成
+- 阶段2.13.2提交：`885c5ca 阶段2.13.2：实现MySQL任务与事件持久化`
+- 阶段2.13.3真实MySQL CRUD与跨Application Service实例恢复验证已经完成，待提交
 
 ## 当前阶段
 
-阶段2.13.2“MySQL任务与事件表”已经完成代码、Fake数据库测试和真实建表验证：
+阶段2.13.3“真实MySQL CRUD与任务恢复”已经完成：
 
-- 新增`agent_tasks`任务表，保存schema v1完整JSON快照和常用查询摘要
-- 新增`agent_task_events`事件表，使用`task_id + sequence_no`保证事件顺序唯一
-- 新增`MySQLTaskRepository`，实现`create/get/save/list/delete`统一契约
-- 创建和保存时在同一事务中写入快照与新增Agent事件，任一步失败均回滚
-- 保存时只追加快照中尚未写入的事件，并拒绝事件历史倒退
-- 数据库`version`列已预留并随保存递增，但尚未启用`expected_version`冲突校验
-- 通过`TASK_REPOSITORY_BACKEND`选择`memory`或`mysql`，默认仍为内存模式
-- MySQL连接参数只从环境变量读取，不提交真实账号和密码
-- 已连接真实MySQL 8.0.32并成功创建`agent_tasks`和`agent_task_events`，两表初始为空
+- 使用真实MySQL 8.0.32验证TaskRecord的create/get/save/list/delete
+- 验证`agent_tasks.version`随保存从1递增到2，`event_count`与事件表记录数量一致
+- 验证删除任务后外键级联删除对应`agent_task_events`
+- 第一个Application Service创建任务、推进到等待状态并提交用户补充后，重新创建Repository和Application Service，仍可按同一task_id恢复并通过Orchestrator继续
+- 新Application Service可恢复completed和failed任务，调用`advance_task`不会创建Orchestrator或重复执行节点
+- 新增3项显式开启的真实MySQL集成测试，使用独立UUID并在结束后精确清理
+- 日常完整测试默认跳过真实MySQL集成测试，避免单元测试依赖网络和本机配置
 
-本轮尚未使用真实MySQL验证TaskRecord的create/save/get/delete和服务重启恢复，也未实现乐观锁、execution_id、执行租约、
-FastAPI、后台任务、SSE或Vue。
+本轮没有实现乐观锁、execution_id、执行租约、FastAPI、后台任务、SSE或Vue。
 
 ## 当前依赖方向
 
@@ -104,35 +103,36 @@ LLM Token、模型、重试次数、Embedding和Milvus分层耗时尚未记录�
 
 ```text
 python -m unittest discover -s tests -v
-245 tests passed
+248 tests discovered, OK（其中3项真实MySQL测试默认跳过）
+
+$env:RUN_MYSQL_INTEGRATION_TESTS='1'
+python -m unittest tests.test_mysql_task_repository_integration -v
+3 integration tests passed
 ```
 
-新增15项MySQL Repository与配置测试，覆盖建表、快照与事件同事务写入、增量事件、读取恢复、
-列表、删除、重复任务、回滚、配置校验以及默认内存/显式MySQL装配。测试使用Fake DB-API，
-不访问真实DeepSeek、Milvus、Embedding或MySQL。
+3项真实MySQL测试只访问MySQL，不调用DeepSeek、Milvus或Embedding；测试数据使用独立UUID并已清理。
 
 ## 当前限制
 
 - 默认仍为InMemory Repository；只有显式配置MySQL后才会持久化任务
-- MySQL建表SQL已在真实MySQL 8.0.32执行成功；Repository真实CRUD和跨实例恢复尚未验证
 - `expected_version`仍未执行并发版本校验；当前`version`只递增，不能阻止旧快照覆盖
 - `in_progress`只能保护同一会话的同步调用，不能处理跨进程并发
 - 快照只定义结构版本`schema_version=1`，尚无历史版本迁移
 - `in_progress`不持久化；跨进程执行保护留给后续执行租约
-- MySQL Repository可以按task_id读取快照，但服务重启恢复场景尚未进行正式集成验收
+- 当前证据验证了销毁并重建Repository/Application Service后的恢复；尚未引入独立Worker或多进程执行模型
 - RAG当前只保存拼接后的`rag_context`、命中数、最高分、状态和错误，没有逐条来源对象
 - 尚未记录LLM、Embedding、Milvus、Token和重试的分层指标
 - 尚未完成知识资产沉淀和真实离线评测
 
-## 下一步：阶段2.13.3
+## 下一步：阶段2.13.4
 
-1. 在隔离测试数据库验证建表SQL和MySQLTaskRepository真实读写
-2. 通过第一个Application Service实例创建并推进任务
-3. 销毁应用实例后重新装配，通过同一task_id加载快照
-4. 验证等待用户、完成和失败任务的恢复语义
-5. version冲突、execution_id和执行租约仍留到2.13.4
+1. 让Repository的`expected_version`参与条件更新，旧快照保存时明确冲突
+2. 设计并保存`execution_id`，避免同一执行请求重复提交节点结果
+3. 增加有过期时间的执行租约，处理进程异常后的任务释放
+4. 明确只能保证节点结果幂等提交，不宣称外部LLM请求Exactly Once
+5. 增加并发、重复请求和租约过期恢复测试
 
-进入2.13.3时不要同时实现KnowledgeAsset、Milvus V2、FastAPI或Vue。
+进入2.13.4时不要同时实现KnowledgeAsset、Milvus V2、FastAPI或Vue。
 
 ## 新电脑恢复方式
 

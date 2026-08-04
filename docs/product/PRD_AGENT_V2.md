@@ -5,10 +5,10 @@
 | 项目 | 内容 |
 |---|---|
 | 产品名称 | Test Analysis Agent |
-| 文档版本 | V2.10 |
+| 文档版本 | V2.11 |
 | 更新时间 | 2026-08-04 |
 | 文档状态 | 当前有效 |
-| 产品阶段 | Streamlit V1演示、后端边界、schema v1快照和MySQL Repository完成，真实连接建表通过、任务恢复待验收 |
+| 产品阶段 | Streamlit V1演示、后端边界、schema v1快照和MySQL任务恢复完成，重复执行保护待实现 |
 | 当前界面 | Streamlit |
 | 当前模型 | DeepSeek 兼容 Chat Completions API |
 | 历史版本 | [Workflow PRD V1](../archive/PRD_WORKFLOW_V1.md) |
@@ -273,9 +273,9 @@ Agent 使用受控编排：
 | FR-507 | 结构化人工反馈 | P0 | 已实现（Agent 页面） | 支持增加、删除、修改和调整测试点优先级；提交后显示受理状态并重置表单，避免误重复提交 |
 | FR-508 | 区分测试建议与业务规则 | P0 | 已实现（Agent 页面） | 新业务规则必须明确确认后才能写入需求状态，用户也可以取消 |
 | FR-509 | 人工反馈驱动Reviser | P0 | 已实现（Agent 页面） | Reviser只处理当前已确认人工意见，按反馈动作限制增量操作类型和数量，随后必须重新经过Reviewer与Finalizer |
-| FR-510 | MySQL历史任务持久化 | P0 | 已实现（代码） | MySQLTaskRepository保存schema v1完整快照，真实MySQL 8.0.32连接与建表通过；CRUD和跨实例恢复留到2.13.3验收 |
+| FR-510 | MySQL历史任务持久化 | P0 | 已实现（后端） | MySQLTaskRepository保存schema v1完整快照；真实MySQL 8.0.32已验证CRUD、事件追加和级联删除 |
 | FR-511 | 历史任务列表与查看 | P1 | 规划中 | 用户可按时间查看历史任务并打开结构化结果与报告 |
-| FR-512 | 服务重启后恢复任务 | P0 | 规划中 | 通过任务ID从MySQL恢复可继续执行的AgentState |
+| FR-512 | 服务重启后恢复任务 | P0 | 已实现（后端） | 新Application Service和Repository实例可通过同一task_id恢复等待补充、完成和失败任务；跨进程并发保护另见FR-604 |
 | FR-513 | 双栏信息架构 | P1 | 已实现（Agent 页面） | 所有状态共用最大1360px宽屏区域和统一736px左右工作区；左侧承载需求输入、原始需求对照、待确认问题和业务规则，右侧使用四个结果导航组织主结果；左右底部在主要任务状态下对齐 |
 | FR-514 | 任务阶段与阻塞原因展示 | P1 | 已实现（Agent 页面） | 使用面向用户的状态与阶段文案；执行中显示Spinner、当前节点处理内容和合理等待说明；等待、完成和失败时停止Spinner，不显示虚假百分比或剩余时间 |
 
@@ -284,8 +284,8 @@ Agent 使用受控编排：
 | 编号 | 需求 | 优先级 | 状态 | 验收标准 |
 |---|---|---:|---|---|
 | FR-601 | Application Service统一应用入口 | P0 | 已实现 | Streamlit只调用Application Service，不直接操作Agent节点、Orchestrator、Repository、MySQL、Milvus或LLM |
-| FR-602 | TaskRepository隔离存储实现 | P0 | 已实现（内存） | TaskRepository定义统一契约；会话级InMemory实现返回隔离副本，Application Service不依赖具体数据库 |
-| FR-603 | 任务快照和独立事件持久化 | P0 | 已实现（代码） | agent_tasks保存完整快照，agent_task_events按序保存新增事件；同事务提交通过Fake测试，两张表已在真实MySQL创建 |
+| FR-602 | TaskRepository隔离存储实现 | P0 | 已实现 | TaskRepository定义统一契约；InMemory和MySQL实现可替换，Application Service不依赖具体数据库 |
+| FR-603 | 任务快照和独立事件持久化 | P0 | 已实现（后端） | agent_tasks保存完整快照，agent_task_events按序保存新增事件；同事务提交、真实CRUD和恢复测试均通过 |
 | FR-604 | version和execution_id重复保护 | P0 | 规划中 | 旧版本并发写入被拒绝，同一execution_id重复请求不重复提交节点结果 |
 | FR-605 | KnowledgeAsset准入和权威存储 | P0 | 规划中 | 只有Reviewer通过且经用户明确确认的结果才能作为完整知识资产保存到MySQL |
 | FR-606 | Milvus V2知识索引 | P0 | 规划中 | Milvus保存向量和asset_id等索引信息，检索命中后从MySQL读取完整资产 |
@@ -496,7 +496,8 @@ pending
 
 当前尚不支持：
 
-- MySQL历史任务列表与跨服务重启恢复
+- MySQL历史任务的页面搜索与列表
+- 基于乐观锁、execution_id和执行租约的跨进程重复执行保护
 - 单个LLM响应的Token级流式展示
 - 当前Agent结果经确认后沉淀为MySQL KnowledgeAsset并建立Milvus索引
 - 节点级输入预算、真实Token统计和分层性能事件
@@ -617,7 +618,7 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 
 - [x] Application Service与内存Repository（阶段2.12）
 - [x] AgentState/TaskRecord schema v1 JSON快照与恢复（阶段2.13.1）
-- [ ] MySQL任务快照、事件与服务重启恢复（阶段2.13）
+- [x] MySQL任务快照、事件与跨Application Service实例恢复（阶段2.13.2～2.13.3）
 - [ ] version、execution_id和执行租约（阶段2.13）
 - [ ] 用户确认后的KnowledgeAsset权威存储（阶段2.14）
 - [ ] Milvus V2索引、来源追踪、去重和失败重试（阶段2.14）
@@ -675,13 +676,14 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 - 测试点结构化人工反馈、业务规则二次确认和重新评审
 - Finalizer结构化汇总、表格报告与Markdown下载
 - Fake Service 单元测试
+- 真实MySQL 8.0.32中的TaskRecord CRUD、事件持久化和跨Application Service实例任务恢复
 
 ### 完成后才能描述
 
 - Agent 自主选择工具
 - Agent自主规划和不受控反思
 - 多 Agent 协作
-- 真实MySQL环境中的跨服务任务恢复
+- 基于version、execution_id和执行租约的并发与重复执行保护
 - 用户确认后的MySQL KnowledgeAsset与Milvus V2索引闭环
 - ContextBuilder、真实Token和分层耗时统计
 - RAG、Reviewer和三组方案的离线评测结果
@@ -707,3 +709,4 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 | V2.8 | 2026-07-29 | 完成Application Service、TaskRepository内存实现、只读TaskView、Streamlit调用迁移和节点执行性能基线 |
 | V2.9 | 2026-07-30 | 完成schema v1任务快照、严格JSON校验、领域类型恢复和TaskRecord执行元数据恢复 |
 | V2.10 | 2026-08-04 | 实现MySQL任务快照与独立事件Repository、事务回滚和环境切换，真实MySQL恢复待验收 |
+| V2.11 | 2026-08-04 | 完成真实MySQL CRUD、事件级联删除以及等待、完成、失败任务的跨Application Service实例恢复验收 |

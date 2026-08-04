@@ -51,8 +51,9 @@
 | 路线图校准 | 已完成（仅文档） | 冻结Streamlit V1，明确MySQL权威数据、Milvus索引和阶段2.12～2.17 | `e9c56b3` |
 | 阶段 2.12 | 已完成 | Application Service、TaskRepository、只读TaskView、页面入口迁移和节点耗时基线 | `caeb5af`, `1503e59` |
 | 阶段 2.13.1 | 已完成 | schema v1任务快照、严格JSON校验、完整领域恢复和恢复执行验证 | `5f50110` |
-| 阶段 2.13.2 | 已完成（代码） | MySQL任务快照、独立事件表、事务保存和可切换Repository装配 | 本次提交 |
-| 阶段 2.13 | 规划中 | MySQL任务快照、事件、服务重启恢复和重复执行保护 | - |
+| 阶段 2.13.2 | 已完成 | MySQL任务快照、独立事件表、事务保存和可切换Repository装配 | `885c5ca` |
+| 阶段 2.13.3 | 已完成，待提交 | 真实MySQL CRUD、事件一致性和跨Application Service实例恢复 | 本次提交 |
+| 阶段 2.13 | 进行中 | MySQL任务恢复已完成，重复执行保护待2.13.4 | - |
 | 阶段 2.14 | 规划中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 脱敏离线评测、RAG/Reviewer专项评测和三组消融实验 | - |
@@ -2261,3 +2262,51 @@ python -m unittest discover -s tests -v
 阶段2.13.3仍需在隔离测试数据上完成TaskRecord真实CRUD，并通过销毁和重新装配Application
 Service验证同一task_id的等待、完成和失败任务可以恢复。随后2.13.4再处理version冲突、
 execution_id和执行租约，不同时进入FastAPI或知识资产沉淀。
+
+## 阶段 2.13.3：真实MySQL CRUD与跨实例任务恢复
+
+### 本阶段目标
+
+不修改Agent业务规则和页面，通过真实MySQL证明阶段2.13.2的Repository不仅能建表，还能保存、
+恢复和清理完整TaskRecord，并证明新的Application Service实例可以继续同一个task_id。
+
+### 实际实现
+
+- 新增显式开启的真实MySQL集成测试，默认单元测试不会连接外部数据库
+- 使用独立UUID验证`create/get/save/list/delete`完整CRUD
+- 保存后核对`agent_tasks.version`从1递增到2，`event_count`与事件表实际记录数一致
+- 删除任务后核对外键级联清理`agent_task_events`
+- 第一个Application Service创建任务、推进到等待状态并提交用户补充信息后，重新创建Repository和Application Service
+- 新实例按同一task_id恢复待消费答案，通过Orchestrator恢复需求分析并进入知识检索
+- 新实例恢复completed和failed任务后，调用`advance_task`不会创建Orchestrator或重复执行节点
+- 每项集成测试结束后按精确task_id清理数据，不修改或扫描其他任务内容
+
+### 测试分层
+
+日常回归仍然快速且不依赖网络：
+
+```text
+python -m unittest discover -s tests -v
+248 tests discovered, OK (skipped=3)
+```
+
+真实MySQL验证必须显式开启：
+
+```text
+$env:RUN_MYSQL_INTEGRATION_TESTS='1'
+python -m unittest tests.test_mysql_task_repository_integration -v
+3 integration tests passed
+```
+
+真实测试没有调用DeepSeek、Embedding或Milvus，也没有使用公司需求或其他敏感业务数据。
+
+### 能力边界
+
+本阶段证明的是“持久化后的任务可以由新的应用服务实例读取并按原状态继续”。它不等于已经
+解决两个进程同时推进一个任务的问题。数据库version当前仍只是递增记录；可靠冲突检测、
+execution_id和执行租约留到2.13.4，也不宣称外部LLM请求Exactly Once。
+
+### 下一步
+
+阶段2.13.4只处理重复执行保护：让expected_version参与条件更新，增加execution_id和可过期
+执行租约及其并发测试。知识资产、Milvus V2、FastAPI和Vue不进入该阶段。

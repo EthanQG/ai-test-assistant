@@ -42,6 +42,7 @@
 - TaskRepository隔离任务存储，当前InMemory实现按Streamlit会话装配并返回隔离副本
 - 页面只持有当前task_id和纯UI状态，通过只读TaskView渲染Agent结果
 - Application Service记录每次节点执行的开始、结束、耗时、成功/失败和错误类型，并汇总单任务执行耗时
+- MySQL Repository已经通过真实CRUD和跨Application Service实例恢复验证，可按同一`task_id`恢复等待补充、完成和失败任务
 
 当前 Agent 页面只接入了 Milvus 历史资产检索，尚未接入“用户确认后沉淀知识资产”的入口。
 旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
@@ -122,8 +123,18 @@ MYSQL_PASSWORD=your_mysql_password
 MYSQL_DATABASE=ai_test_assistant
 ```
 
-应用启动时会创建`agent_tasks`和`agent_task_events`。建表SQL已在真实MySQL 8.0.32执行成功，
-Repository真实CRUD和服务重启恢复将在阶段2.13.3单独验收。
+应用启动时会创建`agent_tasks`和`agent_task_events`。建表SQL、TaskRecord真实CRUD、事件级联删除
+以及等待补充/完成/失败任务的跨Application Service实例恢复已在真实MySQL 8.0.32验证。
+
+日常单元测试不会访问MySQL。如需在本机显式运行真实数据库集成测试：
+
+```powershell
+$env:RUN_MYSQL_INTEGRATION_TESTS='1'
+python -m unittest tests.test_mysql_task_repository_integration -v
+```
+
+集成测试使用独立UUID并在结束后按`task_id`清理测试数据。2.13.4的乐观锁、`execution_id`
+和执行租约尚未实现，因此当前不能宣称已解决跨进程并发和重复节点执行。
 
 ## 外部依赖
 
@@ -139,11 +150,12 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 
 1. 阶段2.13.1：已完成版本化JSON任务快照，可恢复AgentState、事件、决策和节点指标
 2. 阶段2.13.2：已实现MySQL任务快照与独立事件Repository，真实连接和建表已验证
-3. 阶段2.13.3～2.13.4：验证重启恢复，并实现version与execution_id保护
-4. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
-5. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
-6. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
-7. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+3. 阶段2.13.3：已完成真实MySQL CRUD和跨Application Service实例恢复验证
+4. 阶段2.13.4：实现version、execution_id与执行租约保护
+5. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
+6. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
+7. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
+8. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。

@@ -3869,3 +3869,90 @@ Streamlit → Application Service → TaskRepository
 - [ ] 能说明事务、event_count和version分别解决什么问题
 - [ ] 能准确说明Fake数据库测试能证明什么、不能证明什么
 - [ ] 能说明2.13.3和2.13.4还需要补哪些证据
+
+## 三十四、阶段2.13.3：真实MySQL恢复验证
+
+### 34.1 这一阶段为什么几乎不改生产代码
+
+2.13.2已经实现了MySQLTaskRepository，2.13.3的任务是验证这个边界在真实MySQL中成立。测试
+能够直接通过，说明Application Service只依赖TaskRepository抽象的设计有效，不需要为了连接
+真实数据库再改页面、Agent节点或状态机。
+
+### 34.2 “跨实例恢复”是什么意思
+
+可以把Application Service理解为一次应用运行期间的业务入口：
+
+```text
+Service实例A提交补充信息
+→ MySQL保存TaskRecord快照
+→ 丢弃实例A
+→ 创建Repository实例B和Service实例B
+→ B使用同一个task_id读取快照
+→ Orchestrator继续合法下一步
+```
+
+实例B没有使用实例A的内存对象，所以恢复依据确实来自MySQL。这个测试近似验证应用重启后的
+装配过程，但不涉及后台Worker和多进程并发。
+
+### 34.3 两张表在真实测试里如何配合
+
+- `agent_tasks`读取完整`snapshot_json`，一次重建TaskRecord
+- `agent_task_events`独立保存事件顺序，便于审计和排障
+- `event_count`连接二者：它应等于当前快照事件数和事件表记录数
+- 删除任务时，外键`ON DELETE CASCADE`自动删除对应事件
+
+真实CRUD测试在保存一次后看到version从1变成2、event_count等于3、事件表也有3条，说明快照
+和审计轨迹在这个样本中保持一致。
+
+### 34.4 为什么真实MySQL测试默认跳过
+
+单元测试应该在没有网络、没有云数据库账号的电脑上也能稳定运行。因此真实集成测试只有设置
+`RUN_MYSQL_INTEGRATION_TESTS=1`才执行；默认测试仍会发现这些用例，但标记为skip。这样既保留
+真实证据，又不会让CI或新电脑因为外部环境不可用而失败。
+
+### 34.5 为什么测试数据使用UUID并主动清理
+
+每个TestAnalysisState自动产生独立task_id。测试只删除自己记录下来的精确ID，不使用清空表、
+模糊条件或批量删除。这可以避免集成测试误删已有任务，也是测试外部数据库时的重要安全习惯。
+
+### 34.6 当前还不能解决什么
+
+跨实例“读取并继续”不等于跨进程“不会重复执行”。如果两个实例同时读取相同旧快照，它们仍
+可能分别调用同一节点。2.13.4需要：
+
+- `expected_version`检测旧快照写入
+- `execution_id`识别重复执行请求
+- 执行租约声明当前由哪个执行者处理，并支持超时释放
+
+### 34.7 面试问题与参考答案
+
+#### 问：如何证明任务不是从原进程内存恢复的？
+
+> 第一个Application Service保存后被丢弃，测试重新创建MySQL Repository和Application
+> Service，只传入原task_id。新实例能恢复待确认答案、领域枚举和下一动作，并继续经过真实
+> Orchestrator边界，因此恢复来源是数据库快照，不是原内存对象。
+
+#### 问：为什么集成测试不直接跑真实LLM？
+
+> 本阶段验证的是持久化和恢复边界。节点使用Fake可以稳定断言下一动作由Orchestrator决定，
+> 同时避免模型延迟、费用和输出波动掩盖数据库问题。真实模型质量属于后续离线评测范围。
+
+#### 问：完成任务恢复后为什么还要调用advance_task？
+
+> 这是为了证明终态保护仍然有效。completed和failed快照被新Service读取后，advance_task不会
+> 构造Orchestrator或执行节点，最终报告和错误信息保持不变。
+
+### 34.8 动手练习
+
+- [ ] 手动画出Service A、MySQL、Service B之间的数据流
+- [ ] 找出集成测试中如何核对version、event_count和事件表数量
+- [ ] 解释为什么删除任务后事件应自动删除
+- [ ] 关闭集成测试开关，观察3项测试为什么显示skip
+- [ ] 说明跨实例恢复与重复执行保护的区别
+
+### 34.9 掌握检查
+
+- [ ] 能解释真实CRUD测试比Fake DB测试多证明了什么
+- [ ] 能说明跨Application Service实例恢复的步骤
+- [ ] 能说明为什么集成测试必须隔离和清理数据
+- [ ] 能准确描述2.13.3已完成、2.13.4未完成的能力
