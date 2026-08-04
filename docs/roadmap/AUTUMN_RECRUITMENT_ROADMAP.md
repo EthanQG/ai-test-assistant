@@ -206,6 +206,7 @@ Milvus 是语义检索索引，负责保存：
 
 ### 2.13.5 测试工程升级
 
+- **已完成（2026-08-04）**
 - 保留现有 unittest 用例，先用 pytest 统一收集和运行
 - 增加 unit、AppTest、integration marker 与公共 fixture
 - 只示范迁移重复样板较多的测试，不进行一次性大改写

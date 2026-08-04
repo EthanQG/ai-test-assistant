@@ -54,8 +54,8 @@
 | 阶段 2.13.2 | 已完成 | MySQL任务快照、独立事件表、事务保存和可切换Repository装配 | `885c5ca` |
 | 阶段 2.13.3 | 已完成 | 真实MySQL CRUD、事件一致性和跨Application Service实例恢复 | `bb30a5b` |
 | 阶段 2.13.4 | 已完成 | 乐观锁、execution_id幂等与可过期执行租约 | 本次提交 |
-| 阶段 2.13.5 | 规划中 | pytest统一测试入口、marker与fixture | - |
-| 阶段 2.13 | 进行中 | 持久化、恢复和重复执行保护已完成，待测试工程升级 | - |
+| 阶段 2.13.5 | 已完成 | pytest统一测试入口、marker与fixture | 本次提交 |
+| 阶段 2.13 | 已完成 | 持久化、恢复、重复执行保护和测试工程入口 | - |
 | 阶段 2.14 | 规划中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 脱敏离线评测、RAG/Reviewer专项评测和三组消融实验 | - |
@@ -2376,3 +2376,64 @@ python -m unittest tests.test_mysql_task_repository_integration -v
 
 阶段2.13.5进行低风险pytest测试工程升级：先让pytest兼容收集现有unittest，增加marker和fixture，
 不一次性重写260项测试。完成后再进入2.14 KnowledgeAsset和Milvus知识沉淀闭环。
+
+## 阶段 2.13.5：pytest统一测试入口
+
+### 本阶段目标
+
+在不修改Agent业务行为、不废弃原有unittest的前提下，为持续增长的测试建立统一分类、公共fixture和
+pytest运行入口。本阶段只升级测试工程，不实施KnowledgeAsset、FastAPI或前端改造。
+
+### 实际实现
+
+- 新增`requirements-dev.txt`，通过`-r requirements.txt`复用运行依赖，并单独声明pytest 8.x
+- 新增`pytest.ini`，固定`tests/`为收集目录，启用严格marker校验
+- 将测试类规则收紧为`*Tests`，避免把导入的`TestAnalysisState`等领域类误当测试类
+- 新增`tests/conftest.py`，集中提供全新InMemoryTaskRepository和TaskRecord工厂fixture
+- 通过`pytest_collection_modifyitems`按文件自动标记unit、app和integration
+- 新增3项pytest原生示例，演示fixture注入、普通assert和`pytest.raises`
+- 对Presenter导入函数使用不以`test_`开头的别名，并将Reviser测试辅助构造器从`test_point`改为
+  `make_test_point`，解决pytest比unittest更广的函数收集规则
+
+### 为什么不一次迁移全部测试
+
+pytest能够直接运行`unittest.TestCase`，因此没有必要为了语法统一重写260项稳定用例。批量改写会制造
+大量无业务价值的diff并增加误删断言的风险。当前采用渐进策略：旧测试继续提供回归证据，新测试优先使用
+pytest fixture和assert；只有某个旧文件确实因重复setup难维护时再局部迁移。
+
+### 测试分类
+
+```text
+unit：不访问真实基础设施的快速测试，包括Repository Fake和Agent节点Fake
+app：Streamlit AppTest页面行为测试
+integration：必须显式开启的真实MySQL测试
+```
+
+分类由测试文件确定，不依赖人工逐项标注；`--strict-markers`可防止拼错marker后悄悄失效。
+
+### 验证结果
+
+```text
+python -m unittest discover -s tests -v
+260 tests，OK（6 skipped）
+
+python -m pytest
+257 passed，6 skipped，共收集263项
+
+python -m pytest -m unit
+234 passed，29 deselected
+
+python -m pytest -m app
+23 passed，240 deselected
+
+python -m pytest -m integration
+6 skipped，257 deselected
+```
+
+pytest比unittest多3项，是新增的pytest原生基础设施测试；真实MySQL、DeepSeek、Embedding和Milvus均未
+被默认测试调用。
+
+### 下一步
+
+阶段2.14.1只实现KnowledgeAsset领域模型、准入规则和Repository边界；2.14.2再接MySQL权威存储，
+2.14.3再建立Milvus V2索引，避免把模型、数据库和向量索引一次性混在同一提交中。

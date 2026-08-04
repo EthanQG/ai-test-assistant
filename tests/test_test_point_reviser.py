@@ -10,7 +10,7 @@ from agent.test_point_reviser import (
 )
 
 
-def test_point(
+def make_test_point(
     title: str,
     expected_results: list[str],
 ) -> dict:
@@ -33,7 +33,7 @@ def ready_state() -> TestAnalysisState:
     state.requirement_facts = ["库存不足时不允许提交订单"]
     state.business_rules = ["库存不足时不允许提交"]
     state.test_points = [
-        test_point("库存不足时提交订单", ["订单提交失败"])
+        make_test_point("库存不足时提交订单", ["订单提交失败"])
     ]
     state.review_result = {
         "overall_score": 70,
@@ -53,7 +53,7 @@ def revised_response() -> str:
                 {
                     "action": "replace",
                     "target_title": "库存不足时提交订单",
-                    "test_point": test_point(
+                    "test_point": make_test_point(
                         "库存不足时提交订单",
                         ["订单提交失败", "商品库存保持为0"],
                     ),
@@ -198,7 +198,7 @@ class TestPointReviserTests(unittest.TestCase):
     def test_delta_revision_preserves_untouched_points(self):
         state = ready_state()
         state.test_points.append(
-            test_point("库存充足时提交订单", ["订单提交成功"])
+            make_test_point("库存充足时提交订单", ["订单提交成功"])
         )
 
         TestPointReviser(

@@ -23,8 +23,8 @@ from views.agent_presenter import (
     static_table_html,
     task_header,
     task_overview,
-    test_point_summary_html,
-    test_point_rows,
+    test_point_summary_html as render_test_point_summary_html,
+    test_point_rows as build_test_point_rows,
 )
 
 
@@ -279,7 +279,7 @@ class AgentPresenterTests(unittest.TestCase):
             }
         ]
 
-        rows = test_point_rows(state)
+        rows = build_test_point_rows(state)
 
         self.assertEqual(rows[0]["分类"], "异常")
         self.assertEqual(rows[0]["步骤"], "第一次提交\n再次提交")
@@ -289,7 +289,7 @@ class AgentPresenterTests(unittest.TestCase):
         )
 
     def test_test_point_summary_html_is_aligned_and_escaped(self):
-        html = test_point_summary_html(
+        html = render_test_point_summary_html(
             {
                 "title": "<script>异常标题</script>",
                 "category": "exception",

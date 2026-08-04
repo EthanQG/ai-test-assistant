@@ -4077,3 +4077,110 @@ worker-A即使晚到，也不能提交旧结果
 - [ ] 能说明第三张表为什么不属于AgentState快照
 - [ ] 能准确描述“结果幂等提交”与“外部请求Exactly Once”的区别
 - [ ] 能指出当前600秒固定租约和无后台续租的限制
+
+## 三十六、阶段2.13.5：为什么从unittest渐进升级到pytest
+
+### 36.1 unittest和pytest是什么关系
+
+它们不是只能二选一。现有测试继承：
+
+```python
+class AgentStateTests(unittest.TestCase):
+    ...
+```
+
+pytest可以直接收集并执行这些用例。因此本阶段没有删除unittest，而是让pytest成为上层统一入口：
+
+```text
+现有unittest.TestCase ─┐
+                       ├→ pytest统一收集、分类和报告
+新增pytest函数测试 ────┘
+```
+
+原来的`python -m unittest discover`仍然可以运行，便于确认迁移没有破坏历史测试。
+
+### 36.2 fixture解决什么问题
+
+测试经常重复创建Repository和TaskRecord。pytest fixture把公共准备逻辑集中起来：
+
+```python
+def test_example(in_memory_task_repository, task_record_factory):
+    record = task_record_factory("订单需求")
+    in_memory_task_repository.create(record)
+```
+
+每个测试都会获得新的Repository，因此不会共享任务状态。它类似JUnit中的测试前置方法和依赖注入，
+但可以按参数名组合使用，不必让测试类继承统一基类。
+
+### 36.3 marker为什么有用
+
+项目现在包含三种成本不同的测试：
+
+- `unit`：快速、没有真实外部依赖
+- `app`：启动Streamlit AppTest，速度稍慢
+- `integration`：连接真实MySQL，必须显式开启
+
+通过marker可以选择运行：
+
+```powershell
+python -m pytest -m unit
+python -m pytest -m app
+python -m pytest -m integration
+```
+
+以后CI可以先跑unit，再跑app；integration只在配置了安全测试数据库的环境中运行。
+
+### 36.4 为什么pytest第一次收集会报错
+
+pytest默认会收集测试文件里名字以`test_`开头的函数。原测试中存在：
+
+- 从Presenter导入的`test_point_rows`
+- 从Presenter导入的`test_point_summary_html`
+- 名为`test_point`、实际只是构造数据的辅助函数
+
+unittest只寻找`TestCase`方法，所以以前没有问题；pytest把这些函数误认为测试，并把函数参数当成fixture，
+于是报告“fixture不存在”。解决方法是给导入函数使用普通别名，并把辅助函数改名为`make_test_point`，
+而不是伪造无意义fixture。
+
+### 36.5 为什么不重写全部260项测试
+
+测试的价值来自断言和覆盖场景，不来自使用哪一种语法。一次性重写会带来：
+
+- 大量难审查的机械diff
+- 可能遗漏setUp、patch和异常断言
+- 业务代码没有收益，却增加回归风险
+
+因此当前策略是：旧测试不动，新测试优先使用pytest；发现某个测试文件重复setup过多时，再局部迁移。
+
+### 36.6 面试问题与参考答案
+
+#### 问：为什么项目同时保留unittest和pytest？
+
+> pytest原生兼容unittest.TestCase。保留旧用例可以避免一次性重写造成回归，同时使用pytest提供fixture、
+> marker和统一报告。新用例采用pytest风格，旧用例按维护收益逐步迁移。
+
+#### 问：如何保证集成测试不会误连真实数据库？
+
+> 文件被标记为integration还不等于允许连接。测试内部继续检查`RUN_MYSQL_INTEGRATION_TESTS=1`，默认会
+> skip。因此marker负责分类，环境开关负责授权，两层边界同时存在。
+
+#### 问：为什么pytest完整数量比unittest多3项？
+
+> 新增3项pytest原生函数测试不会被unittest discover收集，但pytest会同时收集旧TestCase和新函数。
+> 所以unittest是260项，pytest总计263项，其中6项真实MySQL默认跳过。
+
+### 36.7 动手练习
+
+- [ ] 运行`python -m pytest -m unit`并观察deselected数量
+- [ ] 查看`tests/conftest.py`，解释两个fixture为什么不会共享状态
+- [ ] 故意把marker拼错，观察`--strict-markers`如何报错，然后撤销修改
+- [ ] 对比一个unittest异常断言与`pytest.raises`写法
+- [ ] 说明marker分类和真实MySQL环境开关为什么不能互相替代
+
+### 36.8 掌握检查
+
+- [ ] 能解释pytest如何兼容现有unittest
+- [ ] 能说明fixture、marker和普通assert的作用
+- [ ] 能解释为什么采用渐进迁移而不是全部重写
+- [ ] 能说清unit、app和integration三类测试边界
+- [ ] 能解释pytest首次收集错误的根因和修复方式

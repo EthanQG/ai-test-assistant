@@ -102,6 +102,12 @@ Copy-Item .env.example .env
 streamlit run main.py
 ```
 
+如需运行完整开发测试，安装包含pytest的开发依赖：
+
+```powershell
+pip install -r requirements-dev.txt
+```
+
 也可以使用无头模式启动：
 
 ```powershell
@@ -136,6 +142,20 @@ python -m unittest tests.test_mysql_task_repository_integration -v
 集成测试使用独立UUID并在结束后按`task_id`清理测试数据。2.13.4已实现并通过真实MySQL验证乐观锁、
 `execution_id`和可过期执行租约；当前保证节点结果幂等提交，但不宣称外部LLM请求Exactly Once。
 
+### 测试命令
+
+pytest现在是推荐的统一测试入口，同时继续兼容原有unittest：
+
+```powershell
+python -m pytest
+python -m pytest -m unit
+python -m pytest -m app
+python -m pytest -m integration
+python -m unittest discover -s tests -v
+```
+
+`integration`默认不会访问真实MySQL；仍需设置`RUN_MYSQL_INTEGRATION_TESTS=1`才会执行。
+
 ## 外部依赖
 
 测试资产检索当前依赖：
@@ -152,7 +172,7 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 2. 阶段2.13.2：已实现MySQL任务快照与独立事件Repository，真实连接和建表已验证
 3. 阶段2.13.3：已完成真实MySQL CRUD和跨Application Service实例恢复验证
 4. 阶段2.13.4：已实现version、execution_id与执行租约保护
-5. 阶段2.13.5：使用pytest统一测试入口、marker与fixture，保留现有unittest兼容
+5. 阶段2.13.5：已使用pytest统一测试入口、marker与fixture，并保留现有unittest兼容
 6. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
 7. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
 8. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
