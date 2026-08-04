@@ -50,7 +50,8 @@
 | 阶段 2.11.5D | 已完成 | 动态执行状态、固定操作栏、结果浏览和页面展示收尾 | `c8477b9` |
 | 路线图校准 | 已完成（仅文档） | 冻结Streamlit V1，明确MySQL权威数据、Milvus索引和阶段2.12～2.17 | `e9c56b3` |
 | 阶段 2.12 | 已完成 | Application Service、TaskRepository、只读TaskView、页面入口迁移和节点耗时基线 | `caeb5af`, `1503e59` |
-| 阶段 2.13.1 | 已完成 | schema v1任务快照、严格JSON校验、完整领域恢复和恢复执行验证 | 本次提交 |
+| 阶段 2.13.1 | 已完成 | schema v1任务快照、严格JSON校验、完整领域恢复和恢复执行验证 | `5f50110` |
+| 阶段 2.13.2 | 已完成（代码） | MySQL任务快照、独立事件表、事务保存和可切换Repository装配 | 本次提交 |
 | 阶段 2.13 | 规划中 | MySQL任务快照、事件、服务重启恢复和重复执行保护 | - |
 | 阶段 2.14 | 规划中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
@@ -2198,3 +2199,65 @@ Streamlit文件、页面布局、Agent节点、Orchestrator和Repository均未�
 
 阶段2.13.2只设计并实现MySQL任务与事件持久化，不同时引入KnowledgeAsset、Milvus V2、
 FastAPI、SSE或Vue。服务重启恢复和重复执行保护继续按2.13.3、2.13.4独立验收。
+
+## 阶段 2.13.2：MySQL任务快照与独立事件Repository
+
+### 本阶段目标
+
+在不修改Agent业务规则、不实现乐观锁和执行租约的前提下，把阶段2.13.1的schema v1快照接入
+可替换的MySQL Repository，并保证任务快照与新增Agent事件原子保存。
+
+### 实际实现
+
+- 新增`MySQLTaskRepository`，实现`TaskRepository`的`create/get/save/list/delete`契约
+- `agent_tasks`使用MySQL原生JSON列保存完整TaskRecord快照，同时独立保存status、current_step、
+  requirement_summary、schema_version、version和UTC数据库时间等查询字段
+- `agent_task_events`按`task_id + sequence_no`保存事件类型、步骤、说明、data和发生时间
+- 创建任务时，任务快照和初始事件在同一事务写入
+- 更新任务时先锁定任务行并读取`event_count`，只追加尚未持久化的新事件
+- 如果待保存快照的事件数量小于数据库记录，明确拒绝审计历史倒退
+- 快照更新或事件插入任一步失败时回滚整个事务
+- 通过`TASK_REPOSITORY_BACKEND`选择`memory`或`mysql`；未配置时继续使用会话级内存实现
+- MySQL账号、密码、库名和连接超时只通过`.env`读取
+
+### 数据库version的当前边界
+
+任务表已经预留`version`并在每次保存时递增，但本阶段没有使用`expected_version`生成条件更新。
+因此它当前只能记录更新次数，不能阻止两个旧快照互相覆盖。可靠乐观锁、execution_id和执行租约
+仍属于2.13.4，文档和简历不能提前描述为已实现。
+
+### 测试证据
+
+新增15项不访问真实数据库的测试，使用Fake DB-API验证：
+
+- 两张表的建表语句和初始化事务
+- schema v1快照与初始事件同事务创建
+- 事件写入失败时快照整体回滚
+- 重复task_id映射为领域重复错误
+- 从JSON列恢复完整TaskRecord及领域枚举
+- save只追加新增事件并递增数据库version
+- 审计事件历史不能倒退
+- list、delete和不存在任务语义
+- MySQL环境变量校验
+- 默认内存装配、显式MySQL装配和非法后端拒绝
+- Streamlit AppTest显式固定为内存Repository，避免本机`.env`选择MySQL后让单元测试误连真实数据库
+
+完整回归结果：
+
+```text
+python -m unittest discover -s tests -v
+245 tests passed
+```
+
+测试没有连接真实DeepSeek、Milvus、Embedding或MySQL。页面布局、AgentState、Orchestrator、
+节点顺序和人工反馈规则均未修改。
+
+### 当前限制与下一步
+
+本阶段除Fake事务测试外，还使用本机`.env`连接真实MySQL 8.0.32，成功创建`ai_test_assistant`
+数据库以及`agent_tasks`、`agent_task_events`两张空表，确认网络、认证和DDL可用。真实账号、
+密码和服务器地址均未写入代码或文档。
+
+阶段2.13.3仍需在隔离测试数据上完成TaskRecord真实CRUD，并通过销毁和重新装配Application
+Service验证同一task_id的等待、完成和失败任务可以恢复。随后2.13.4再处理version冲突、
+execution_id和执行租约，不同时进入FastAPI或知识资产沉淀。

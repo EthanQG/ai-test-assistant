@@ -5,10 +5,10 @@
 | 项目 | 内容 |
 |---|---|
 | 产品名称 | Test Analysis Agent |
-| 文档版本 | V2.9 |
-| 更新时间 | 2026-07-30 |
+| 文档版本 | V2.10 |
+| 更新时间 | 2026-08-04 |
 | 文档状态 | 当前有效 |
-| 产品阶段 | Streamlit V1演示、后端调用边界和schema v1任务快照完成，MySQL持久化待实施 |
+| 产品阶段 | Streamlit V1演示、后端边界、schema v1快照和MySQL Repository完成，真实连接建表通过、任务恢复待验收 |
 | 当前界面 | Streamlit |
 | 当前模型 | DeepSeek 兼容 Chat Completions API |
 | 历史版本 | [Workflow PRD V1](../archive/PRD_WORKFLOW_V1.md) |
@@ -273,7 +273,7 @@ Agent 使用受控编排：
 | FR-507 | 结构化人工反馈 | P0 | 已实现（Agent 页面） | 支持增加、删除、修改和调整测试点优先级；提交后显示受理状态并重置表单，避免误重复提交 |
 | FR-508 | 区分测试建议与业务规则 | P0 | 已实现（Agent 页面） | 新业务规则必须明确确认后才能写入需求状态，用户也可以取消 |
 | FR-509 | 人工反馈驱动Reviser | P0 | 已实现（Agent 页面） | Reviser只处理当前已确认人工意见，按反馈动作限制增量操作类型和数量，随后必须重新经过Reviewer与Finalizer |
-| FR-510 | MySQL历史任务持久化 | P0 | 规划中 | 保存任务状态、结构化结果、事件、决策和最终报告，数据库配置不进入Git |
+| FR-510 | MySQL历史任务持久化 | P0 | 已实现（代码） | MySQLTaskRepository保存schema v1完整快照，真实MySQL 8.0.32连接与建表通过；CRUD和跨实例恢复留到2.13.3验收 |
 | FR-511 | 历史任务列表与查看 | P1 | 规划中 | 用户可按时间查看历史任务并打开结构化结果与报告 |
 | FR-512 | 服务重启后恢复任务 | P0 | 规划中 | 通过任务ID从MySQL恢复可继续执行的AgentState |
 | FR-513 | 双栏信息架构 | P1 | 已实现（Agent 页面） | 所有状态共用最大1360px宽屏区域和统一736px左右工作区；左侧承载需求输入、原始需求对照、待确认问题和业务规则，右侧使用四个结果导航组织主结果；左右底部在主要任务状态下对齐 |
@@ -285,7 +285,7 @@ Agent 使用受控编排：
 |---|---|---:|---|---|
 | FR-601 | Application Service统一应用入口 | P0 | 已实现 | Streamlit只调用Application Service，不直接操作Agent节点、Orchestrator、Repository、MySQL、Milvus或LLM |
 | FR-602 | TaskRepository隔离存储实现 | P0 | 已实现（内存） | TaskRepository定义统一契约；会话级InMemory实现返回隔离副本，Application Service不依赖具体数据库 |
-| FR-603 | 任务快照和独立事件持久化 | P0 | 部分实现 | 已完成schema v1 JSON快照、严格恢复及恢复后继续执行验证；MySQL事务保存快照、决策和新增事件待2.13.2实施 |
+| FR-603 | 任务快照和独立事件持久化 | P0 | 已实现（代码） | agent_tasks保存完整快照，agent_task_events按序保存新增事件；同事务提交通过Fake测试，两张表已在真实MySQL创建 |
 | FR-604 | version和execution_id重复保护 | P0 | 规划中 | 旧版本并发写入被拒绝，同一execution_id重复请求不重复提交节点结果 |
 | FR-605 | KnowledgeAsset准入和权威存储 | P0 | 规划中 | 只有Reviewer通过且经用户明确确认的结果才能作为完整知识资产保存到MySQL |
 | FR-606 | Milvus V2知识索引 | P0 | 规划中 | Milvus保存向量和asset_id等索引信息，检索命中后从MySQL读取完整资产 |
@@ -681,7 +681,7 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 - Agent 自主选择工具
 - Agent自主规划和不受控反思
 - 多 Agent 协作
-- MySQL历史任务持久化
+- 真实MySQL环境中的跨服务任务恢复
 - 用户确认后的MySQL KnowledgeAsset与Milvus V2索引闭环
 - ContextBuilder、真实Token和分层耗时统计
 - RAG、Reviewer和三组方案的离线评测结果
@@ -706,3 +706,4 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 | V2.7 | 2026-07-29 | 冻结Streamlit V1演示层，规划Application Service、MySQL任务恢复、KnowledgeAsset与Milvus V2知识闭环、上下文工程和离线评测 |
 | V2.8 | 2026-07-29 | 完成Application Service、TaskRepository内存实现、只读TaskView、Streamlit调用迁移和节点执行性能基线 |
 | V2.9 | 2026-07-30 | 完成schema v1任务快照、严格JSON校验、领域类型恢复和TaskRecord执行元数据恢复 |
+| V2.10 | 2026-08-04 | 实现MySQL任务快照与独立事件Repository、事务回滚和环境切换，真实MySQL恢复待验收 |

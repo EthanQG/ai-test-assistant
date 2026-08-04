@@ -111,6 +111,20 @@ python -m streamlit run main.py --server.headless=true
 
 运行前请在 `.env` 中填写真实的 `DEEPSEEK_API_KEY`。`.env` 已加入 Git 忽略规则，请勿提交真实密钥。
 
+任务存储默认使用会话级内存。如需启用阶段2.13.2新增的MySQL Repository，在本机`.env`中设置：
+
+```text
+TASK_REPOSITORY_BACKEND=mysql
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=your_mysql_user
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_DATABASE=ai_test_assistant
+```
+
+应用启动时会创建`agent_tasks`和`agent_task_events`。建表SQL已在真实MySQL 8.0.32执行成功，
+Repository真实CRUD和服务重启恢复将在阶段2.13.3单独验收。
+
 ## 外部依赖
 
 测试资产检索当前依赖：
@@ -124,11 +138,12 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 ## 后续计划
 
 1. 阶段2.13.1：已完成版本化JSON任务快照，可恢复AgentState、事件、决策和节点指标
-2. 阶段2.13.2～2.13.4：使用MySQL保存任务快照和事件，实现重启恢复、version与execution_id保护
-3. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
-4. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
-5. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
-6. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+2. 阶段2.13.2：已实现MySQL任务快照与独立事件Repository，真实连接和建表已验证
+3. 阶段2.13.3～2.13.4：验证重启恢复，并实现version与execution_id保护
+4. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
+5. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
+6. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
+7. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。

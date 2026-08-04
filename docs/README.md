@@ -4,9 +4,9 @@
 
 ## 当前产品定义
 
-- [Test Analysis Agent 产品需求说明书 V2.9](product/PRD_AGENT_V2.md)
+- [Test Analysis Agent 产品需求说明书 V2.10](product/PRD_AGENT_V2.md)
 
-V2.9 PRD 是当前有效的产品范围和验收依据。新增 Agent 节点、用户流程或产品能力前，应先确认与 V2.9 PRD 一致。
+V2.10 PRD 是当前有效的产品范围和验收依据。新增 Agent 节点、用户流程或产品能力前，应先确认与 V2.10 PRD 一致。
 
 ## 当前路线图
 

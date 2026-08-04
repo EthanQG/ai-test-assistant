@@ -27,7 +27,7 @@
 - [ ] 能解释 `yield` 为什么适合流式输出
 - [ ] 能解释 AgentState 和 AgentEvent 的区别
 - [ ] 能解释受控 Agent 与固定 Workflow 的区别
-- [ ] 能理解现有230项单元测试分别保护哪些业务边界
+- [ ] 能理解现有245项单元测试分别保护哪些业务边界
 - [ ] 能独立增加一个状态字段、事件或测试
 
 ---
@@ -47,9 +47,9 @@
 ```text
 用户输入文本或上传PRD
   → views/tab_test_points.py
-  → DocumentService（上传文件时）
-  → TestAnalysisState
-  → 页面循环调用AgentOrchestrator.run_next()
+  → TestAnalysisApplicationService
+  → TaskRepository加载/保存TaskRecord
+  → Application Service调用AgentOrchestrator
       → RequirementAnalyzer
       → KnowledgeRetriever
           → RAGService / Embedding / Milvus
@@ -57,6 +57,7 @@
       → TestPointReviewer
       → TestPointReviser（未达标且未达到上限时）
       → Finalizer
+  → Application Service返回只读TaskView
   → Streamlit展示状态、轨迹、测试点、评分和报告
 ```
 
@@ -65,7 +66,7 @@
 以下能力暂时不能写成“已经实现”：
 
 - Agent 自主选择工具
-- MySQL历史任务持久化与跨服务重启恢复
+- MySQL Repository代码已经实现，但真实MySQL跨服务重启恢复尚未验收
 - 单个LLM响应的Token级流式展示
 - 多 Agent 协作
 - FastAPI + React/Vue 前后端分离
@@ -3782,3 +3783,89 @@ AgentOrchestrator边界：
 
 节点使用Fake避免真实外部调用，但“下一动作由谁决定”仍由生产AgentOrchestrator验证。这比
 只比较JSON字符串更能证明快照具有可继续执行的业务语义。
+
+## 三十三、阶段2.13.2：MySQL任务与事件持久化边界
+
+### 33.1 为什么MySQL只需要替换Repository
+
+Application Service只依赖`TaskRepository`抽象，所以创建、推进、补充和反馈用例不需要知道
+任务保存在字典还是MySQL：
+
+```text
+Streamlit → Application Service → TaskRepository
+                                 ├─ InMemoryTaskRepository
+                                 └─ MySQLTaskRepository
+```
+
+这就是阶段2.12先做调用边界的价值。阶段2.13.2没有把SQL写进页面或Agent节点，也没有重新实现
+一套状态机。
+
+### 33.2 为什么快照和事件要保存两份
+
+`agent_tasks.snapshot_json`用于一次读取后完整恢复TaskRecord；`agent_task_events`用于按顺序查询
+执行轨迹和审计。前者偏向恢复，后者偏向检索与排障。事件虽然在快照内也存在，但独立表避免
+每次查看轨迹都解析整份快照。
+
+### 33.3 为什么必须同一事务提交
+
+如果先更新快照后写事件，而事件插入失败，系统会出现“任务已经前进，但审计轨迹缺失”；反过来
+则可能出现“轨迹显示完成，但任务快照仍停留在旧状态”。所以一次`save()`遵循：
+
+```text
+锁定任务行并读取event_count
+→ 更新完整快照
+→ 追加新增事件
+→ 全部成功才commit
+→ 任一步失败都rollback
+```
+
+### 33.4 event_count解决什么问题
+
+快照里保存全部AgentEvent，事件表只需要追加数据库尚未拥有的部分。`event_count`记录已提交的
+事件数量。保存时从该位置之后追加，并拒绝当前事件数小于数据库值，避免程序错误删除历史审计。
+
+### 33.5 当前version为什么还不是乐观锁
+
+数据库表中的`version`目前会随保存递增，但SQL尚未使用
+`WHERE task_id = ? AND version = expected_version`，因此还不能检测调用方是否基于旧快照写入。
+阶段2.13.4加入条件更新并检查受影响行数后，才能称为乐观锁。`schema_version`仍只表示JSON
+结构版本，两者不能混淆。
+
+### 33.6 为什么测试不连接真实云MySQL
+
+单元测试需要快速、稳定且不依赖网络。Fake DB-API用于验证SQL调用顺序、参数、commit、rollback
+和异常映射。本阶段已经额外验证真实MySQL 8.0.32连接和两张表的DDL，但仍未验证TaskRecord
+真实CRUD和跨Application Service实例恢复，因此不能描述成已经完成服务重启恢复。
+
+### 33.7 面试问题与参考答案
+
+#### 问：为什么不用MySQL每个字段拆一列？
+
+> AgentState结构复杂且仍可能演进，第一版用版本化JSON保存完整权威快照，减少恢复时的多表拼装。
+> status、current_step、version和时间等高频查询或并发字段独立成列，兼顾恢复可靠性与查询效率。
+
+#### 问：MySQL和Milvus在项目中分别负责什么？
+
+> MySQL保存完整、可审计、可恢复的任务和未来KnowledgeAsset；Milvus只保存向量及asset_id等
+> 检索索引。向量命中后再按asset_id从MySQL读取完整资产，不能把Milvus当权威文档数据库。
+
+#### 问：当前MySQL能力已经能防止重复节点执行吗？
+
+> 不能。当前阶段完成了持久化与事务边界，version只有递增记录。跨进程并发还需要2.13.4的
+> expected_version条件更新、execution_id幂等和执行租约。
+
+### 33.8 动手练习
+
+- [ ] 从Application Service的`advance_task()`追踪到MySQL Repository的两次save
+- [ ] 解释为什么节点开始前和结束后都可能保存快照
+- [ ] 找出创建任务时初始`task_created`事件如何进入事件表
+- [ ] 让Fake事件插入失败，观察任务事务为何回滚
+- [ ] 对比schema_version、数据库version、event_count和execution_id的职责
+
+### 33.9 掌握检查
+
+- [ ] 能画出MySQLTaskRepository的依赖方向
+- [ ] 能解释完整快照和独立事件表为什么同时存在
+- [ ] 能说明事务、event_count和version分别解决什么问题
+- [ ] 能准确说明Fake数据库测试能证明什么、不能证明什么
+- [ ] 能说明2.13.3和2.13.4还需要补哪些证据

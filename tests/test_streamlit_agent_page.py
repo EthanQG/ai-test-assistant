@@ -1,5 +1,7 @@
+import os
 import unittest
 from copy import deepcopy
+from unittest.mock import patch
 
 from agent import (
     AgentStatus,
@@ -79,6 +81,16 @@ def _seed_app(
 
 
 class StreamlitAgentPageTests(unittest.TestCase):
+    def setUp(self):
+        self._repository_backend = patch.dict(
+            os.environ,
+            {"TASK_REPOSITORY_BACKEND": "memory"},
+        )
+        self._repository_backend.start()
+
+    def tearDown(self):
+        self._repository_backend.stop()
+
     def test_text_input_creates_task_with_requirement(self):
         app = AppTest.from_file(
             "tests/fixtures/task_creation_app.py"

@@ -1,6 +1,6 @@
 # Test Analysis Agent 当前开发状态
 
-更新时间：2026-07-30
+更新时间：2026-08-04
 
 本文档只保存最新接力信息。产品范围以
 [PRD_AGENT_V2.md](product/PRD_AGENT_V2.md) 为准，后续阶段以
@@ -13,22 +13,24 @@
 - 阶段2.12提交：`caeb5af 阶段2.12：建立后端调用边界`
 - 阶段2.12验收修正提交：`1503e59 修复：补充恢复统一经过编排器`
 - 阶段2.13.1版本化任务快照及恢复执行测试已经完成
-- 阶段开始前工作区干净
+- 阶段2.13.1提交：`5f50110 阶段2.13.1：实现版本化任务快照与恢复验证`
+- 阶段2.13.2 MySQL任务与事件Repository代码、真实连接和建表验证已经完成
 
 ## 当前阶段
 
-阶段2.13.1“AgentState版本化快照序列化”已经完成代码与测试：
+阶段2.13.2“MySQL任务与事件表”已经完成代码、Fake数据库测试和真实建表验证：
 
-- 增加独立`TaskSnapshotSerializer`
-- 快照顶层固定为`schema_version`、`task_id`、`state`和`application`
-- AgentState全部业务字段、事件、枚举和时间可从JSON恢复为原领域类型
-- TaskRecord的决策、自动推进、待消费补充答案、执行步数、下一动作和节点指标可恢复
-- 时间强制带时区并统一输出UTC ISO 8601
-- 缺字段、未知字段、非法枚举、非法时间和未来未知版本均明确拒绝
-- `in_progress`属于进程内临时执行保护，不进入快照，恢复后固定为`False`
-- 不使用pickle、Python类路径、`default=str`或Streamlit状态
+- 新增`agent_tasks`任务表，保存schema v1完整JSON快照和常用查询摘要
+- 新增`agent_task_events`事件表，使用`task_id + sequence_no`保证事件顺序唯一
+- 新增`MySQLTaskRepository`，实现`create/get/save/list/delete`统一契约
+- 创建和保存时在同一事务中写入快照与新增Agent事件，任一步失败均回滚
+- 保存时只追加快照中尚未写入的事件，并拒绝事件历史倒退
+- 数据库`version`列已预留并随保存递增，但尚未启用`expected_version`冲突校验
+- 通过`TASK_REPOSITORY_BACKEND`选择`memory`或`mysql`，默认仍为内存模式
+- MySQL连接参数只从环境变量读取，不提交真实账号和密码
+- 已连接真实MySQL 8.0.32并成功创建`agent_tasks`和`agent_task_events`，两表初始为空
 
-下一阶段为2.13.2 MySQL任务与事件表。本轮未实现MySQL、乐观锁、execution_id、执行租约、
+本轮尚未使用真实MySQL验证TaskRecord的create/save/get/delete和服务重启恢复，也未实现乐观锁、execution_id、执行租约、
 FastAPI、后台任务、SSE或Vue。
 
 ## 当前依赖方向
@@ -41,7 +43,10 @@ views/
   → services/LLM、RAG、Prompt与文档解析
 
 Streamlit会话装配
-  → InMemoryTaskRepository
+  → TASK_REPOSITORY_BACKEND=memory：InMemoryTaskRepository
+  → TASK_REPOSITORY_BACKEND=mysql：MySQLTaskRepository
+      → TaskSnapshotSerializer
+      → agent_tasks + agent_task_events
 ```
 
 页面只能获得`TaskView`。View从Repository隔离副本生成；页面读取列表或字典后进行修改，不会
@@ -99,36 +104,35 @@ LLM Token、模型、重试次数、Embedding和Milvus分层耗时尚未记录�
 
 ```text
 python -m unittest discover -s tests -v
-230 tests passed
+245 tests passed
 ```
 
-新增33项快照格式与异常测试，以及5项恢复执行测试，覆盖完整字典/JSON往返、领域类型恢复、
-等待/完成/失败状态、人工反馈、RAG、性能指标、严格版本与字段校验、运行时对象拒绝和可变
-引用隔离。恢复任务会实际经过Application Service和AgentOrchestrator继续执行；自动化测试
+新增15项MySQL Repository与配置测试，覆盖建表、快照与事件同事务写入、增量事件、读取恢复、
+列表、删除、重复任务、回滚、配置校验以及默认内存/显式MySQL装配。测试使用Fake DB-API，
 不访问真实DeepSeek、Milvus、Embedding或MySQL。
 
 ## 当前限制
 
-- InMemory Repository按Streamlit会话装配，只支持当前会话内的rerun和task_id恢复
-- 新浏览器会话、硬刷新导致会话重建或Streamlit服务重启后，内存任务不可恢复
-- `expected_version`只在Repository接口中预留，当前内存实现没有并发版本控制
+- 默认仍为InMemory Repository；只有显式配置MySQL后才会持久化任务
+- MySQL建表SQL已在真实MySQL 8.0.32执行成功；Repository真实CRUD和跨实例恢复尚未验证
+- `expected_version`仍未执行并发版本校验；当前`version`只递增，不能阻止旧快照覆盖
 - `in_progress`只能保护同一会话的同步调用，不能处理跨进程并发
 - 快照只定义结构版本`schema_version=1`，尚无历史版本迁移
 - `in_progress`不持久化；跨进程执行保护留给后续执行租约
-- 快照尚未接入Repository，服务重启后仍无法恢复
+- MySQL Repository可以按task_id读取快照，但服务重启恢复场景尚未进行正式集成验收
 - RAG当前只保存拼接后的`rag_context`、命中数、最高分、状态和错误，没有逐条来源对象
 - 尚未记录LLM、Embedding、Milvus、Token和重试的分层指标
 - 尚未完成知识资产沉淀和真实离线评测
 
-## 下一步：阶段2.13.2
+## 下一步：阶段2.13.3
 
-1. 设计`agent_tasks`任务快照表与`agent_task_events`独立事件表
-2. 选择MySQL JSON列保存schema v1快照
-3. 实现MySQLTaskRepository并保持TaskRepository契约
-4. 在同一事务中保存快照与新增事件
-5. 服务重启恢复、version和execution_id仍按后续2.13.3/2.13.4实施
+1. 在隔离测试数据库验证建表SQL和MySQLTaskRepository真实读写
+2. 通过第一个Application Service实例创建并推进任务
+3. 销毁应用实例后重新装配，通过同一task_id加载快照
+4. 验证等待用户、完成和失败任务的恢复语义
+5. version冲突、execution_id和执行租约仍留到2.13.4
 
-进入2.13.2时不要同时实现KnowledgeAsset、Milvus V2、FastAPI或Vue。
+进入2.13.3时不要同时实现KnowledgeAsset、Milvus V2、FastAPI或Vue。
 
 ## 新电脑恢复方式
 

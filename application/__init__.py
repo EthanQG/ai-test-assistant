@@ -5,7 +5,10 @@ from .commands import (
     SubmitFeedbackCommand,
     UploadedDocument,
 )
-from .bootstrap import build_session_application_service
+from .bootstrap import (
+    build_session_application_service,
+    build_task_repository,
+)
 from .models import (
     FeedbackView,
     NodeExecutionMetric,
@@ -43,5 +46,6 @@ __all__ = [
     "UnsupportedSnapshotVersionError",
     "UploadedDocument",
     "build_session_application_service",
+    "build_task_repository",
     "migrate_snapshot",
 ]
