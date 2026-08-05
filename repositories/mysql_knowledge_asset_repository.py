@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
-from knowledge_assets import KnowledgeAsset
+from knowledge_assets import KnowledgeAsset, KnowledgeAssetStatus
 
 from .knowledge_asset_repository import (
     KnowledgeAssetAlreadyExistsError,
     KnowledgeAssetNotFoundError,
     KnowledgeAssetRepository,
     KnowledgeAssetRepositoryError,
+    KnowledgeAssetStatusConflictError,
 )
 
 
@@ -184,6 +186,71 @@ class MySQLKnowledgeAssetRepository(KnowledgeAssetRepository):
         except Exception as exc:
             raise KnowledgeAssetRepositoryError(
                 "failed to list MySQL knowledge assets"
+            ) from exc
+        finally:
+            cursor.close()
+            connection.close()
+
+    def update_status(
+        self,
+        asset_id: str,
+        status: KnowledgeAssetStatus,
+        *,
+        expected_status: KnowledgeAssetStatus,
+    ) -> KnowledgeAsset:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT asset_json
+                FROM knowledge_assets
+                WHERE asset_id = %s
+                FOR UPDATE
+                """,
+                (asset_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise KnowledgeAssetNotFoundError(asset_id)
+            current = self._asset_from_row(row)
+            if current.status is not expected_status:
+                raise KnowledgeAssetStatusConflictError(
+                    asset_id,
+                    expected_status,
+                    current.status,
+                )
+            updated = replace(current, status=status)
+            snapshot = self._snapshot_codec.to_dict(updated)
+            cursor.execute(
+                """
+                UPDATE knowledge_assets
+                SET status = %s, asset_json = %s, updated_at = %s
+                WHERE asset_id = %s AND status = %s
+                """,
+                (
+                    status.value,
+                    _json_text(snapshot),
+                    _mysql_datetime(datetime.now(timezone.utc)),
+                    asset_id,
+                    expected_status.value,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise KnowledgeAssetStatusConflictError(
+                    asset_id,
+                    expected_status,
+                    current.status,
+                )
+            connection.commit()
+            return updated
+        except (KnowledgeAssetNotFoundError, KnowledgeAssetStatusConflictError):
+            connection.rollback()
+            raise
+        except Exception as exc:
+            connection.rollback()
+            raise KnowledgeAssetRepositoryError(
+                "failed to update MySQL knowledge asset status"
             ) from exc
         finally:
             cursor.close()

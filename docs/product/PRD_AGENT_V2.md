@@ -5,10 +5,10 @@
 | 项目 | 内容 |
 |---|---|
 | 产品名称 | Test Analysis Agent |
-| 文档版本 | V2.13 |
+| 文档版本 | V2.14 |
 | 更新时间 | 2026-08-05 |
 | 文档状态 | 当前有效 |
-| 产品阶段 | Streamlit V1演示、MySQL任务恢复、重复执行保护和KnowledgeAsset MySQL存储实现完成 |
+| 产品阶段 | Streamlit V1演示、MySQL任务恢复、KnowledgeAsset权威存储和Milvus V2索引写入完成 |
 | 当前界面 | Streamlit |
 | 当前模型 | DeepSeek 兼容 Chat Completions API |
 | 历史版本 | [Workflow PRD V1](../archive/PRD_WORKFLOW_V1.md) |
@@ -288,7 +288,7 @@ Agent 使用受控编排：
 | FR-603 | 任务快照和独立事件持久化 | P0 | 已实现（后端） | agent_tasks保存完整快照，agent_task_events按序保存新增事件；同事务提交、真实CRUD和恢复测试均通过 |
 | FR-604 | version和execution_id重复保护 | P0 | 已实现 | 旧版本并发写入被拒绝，同一execution_id重复请求不重复提交节点结果，未过期租约阻止并发节点执行 |
 | FR-605 | KnowledgeAsset准入和权威存储 | P0 | 已实现（后端） | 完成准入、schema v1资产快照、MySQL完整JSON、摘要列、内容哈希与来源版本唯一约束；真实MySQL CRUD测试需显式开启 |
-| FR-606 | Milvus V2知识索引 | P0 | 规划中 | Milvus保存向量和asset_id等索引信息，检索命中后从MySQL读取完整资产 |
+| FR-606 | Milvus V2知识索引 | P0 | 部分实现（后端） | 已完成有界语义Chunk、批量Embedding、V2集合upsert和索引状态更新；查询、聚合与MySQL回查留到2.14.4 |
 | FR-607 | 节点级ContextBuilder和Token预算 | P0 | 规划中 | 每个节点只接收必要字段；RAG、输入和输出均有可验证预算与裁剪记录 |
 | FR-608 | 节点与外部服务可观测性 | P0 | 部分实现 | Application Service已记录节点开始、结束、耗时、成功/失败和错误类型；LLM、Embedding、Milvus、Token与重试分层指标留到2.15 |
 | FR-609 | 脱敏离线评测与消融实验 | P0 | 规划中 | 使用10～20份脱敏需求对比基础LLM、LLM+RAG和完整质量闭环 |
@@ -622,7 +622,8 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 - [x] version、execution_id和执行租约（阶段2.13.4，真实MySQL已验收）
 - [x] KnowledgeAsset模型、准入规则和内存Repository边界（阶段2.14.1）
 - [x] 用户确认后的KnowledgeAsset MySQL权威存储实现（阶段2.14.2）
-- [ ] Milvus V2索引、来源追踪、去重和失败重试（阶段2.14）
+- [x] Milvus V2索引写入、来源元数据和状态更新（阶段2.14.3）
+- [ ] Milvus V2检索、MySQL回查和失败重试（阶段2.14.4～2.14.5）
 
 ### M6：上下文、可观测性与评测
 
@@ -713,3 +714,4 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 | V2.11 | 2026-08-04 | 完成真实MySQL CRUD、事件级联删除以及等待、完成、失败任务的跨Application Service实例恢复验收 |
 | V2.12 | 2026-08-05 | 完成KnowledgeAsset模型、双重用户确认准入、稳定内容哈希、内存Repository和应用服务边界 |
 | V2.13 | 2026-08-05 | 完成KnowledgeAsset schema v1快照、MySQL权威表、唯一索引、Repository实现和隔离测试 |
+| V2.14 | 2026-08-05 | 完成有界语义Chunk、Ollama批量Embedding、Milvus V2 upsert和MySQL索引状态更新 |

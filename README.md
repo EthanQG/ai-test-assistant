@@ -43,11 +43,11 @@
 - 页面只持有当前task_id和纯UI状态，通过只读TaskView渲染Agent结果
 - Application Service记录每次节点执行的开始、结束、耗时、成功/失败和错误类型，并汇总单任务执行耗时
 - MySQL Repository已经通过真实CRUD和跨Application Service实例恢复验证，可按同一`task_id`恢复等待补充、完成和失败任务
-- 后端已建立KnowledgeAsset模型、双重用户确认准入、稳定内容哈希、版本化JSON快照和MySQL Repository；尚未接入页面按钮或Milvus V2索引
+- 后端已建立KnowledgeAsset准入、版本化JSON、MySQL权威存储和Milvus V2索引写入边界；尚未接入页面按钮或V2历史资产查询
 
 当前 Agent 页面只接入了 Milvus 历史资产检索，尚未接入“用户确认后沉淀知识资产”的入口。
-阶段2.14.2已经完成KnowledgeAsset的MySQL权威存储实现，可保存并恢复完整资产；页面尚未触发该用例，
-Milvus V2索引也尚未实现，因此当前还不代表资产已经可以被后续任务检索。
+阶段2.14.3已经完成有界语义Chunk、一次批量Embedding和Milvus V2 upsert；页面尚未触发该用例，
+V2查询、阈值过滤和MySQL回查也尚未实现，因此当前还不代表新资产已经被KnowledgeRetriever使用。
 旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
 知识闭环。后续将由 MySQL 保存完整、可审计的知识资产，Milvus 只承担向量候选检索。
 
@@ -59,7 +59,7 @@ Milvus V2索引也尚未实现，因此当前还不代表资产已经可以被�
 ├── main.py                 # Streamlit 应用入口
 ├── application/            # 应用用例、Command、只读TaskView与会话装配
 ├── agent/                  # Agent状态、事件及后续节点
-├── knowledge_assets/       # 知识资产模型、准入规则、内容哈希与版本化快照
+├── knowledge_assets/       # 知识资产模型、准入、快照与有界语义Chunk
 ├── repositories/           # Task/KnowledgeAsset Repository抽象与实现
 ├── views/                  # 页面与交互状态
 ├── services/               # LLM、RAG、文档解析应用服务
@@ -149,6 +149,19 @@ KNOWLEDGE_ASSET_REPOSITORY_BACKEND=mysql
 资产Repository初始化时会创建`knowledge_assets`表。当前Streamlit尚未接入“保存到知识库”按钮，因此启动页面不会自动发布资产；
 本阶段提供的是可由后续页面或FastAPI复用的MySQL存储边界。
 
+KnowledgeAsset V2索引使用独立配置：
+
+```text
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_TIMEOUT=60
+MILVUS_URI=http://127.0.0.1:19530
+MILVUS_ASSET_COLLECTION=knowledge_assets_v2
+MILVUS_TOKEN=
+```
+
+索引用例使用一次批量`/api/embed`请求并限制最多32个Chunk；旧`ai_test_cases`集合保持不动。
+
 日常单元测试不会访问MySQL。如需在本机显式运行真实数据库集成测试：
 
 ```powershell
@@ -193,10 +206,11 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 6. 阶段2.13.6：已按unit、architecture、app和integration整理测试目录，测试内容保持不变
 7. 阶段2.14.1：已完成KnowledgeAsset模型、准入策略、内容哈希和内存Repository边界
 8. 阶段2.14.2：已完成完整KnowledgeAsset的MySQL权威存储实现
-9. 阶段2.14.3：建立Milvus V2向量索引
-10. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
-11. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
-12. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+9. 阶段2.14.3：已完成有界Chunk、批量Embedding和Milvus V2索引写入边界
+10. 阶段2.14.4：实现V2候选召回、MySQL回查和来源验证
+11. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
+12. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
+13. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。

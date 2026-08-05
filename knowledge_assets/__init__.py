@@ -6,6 +6,12 @@ from .models import (
     StructuredRequirement,
     build_content_hash,
 )
+from .indexing import (
+    KnowledgeAssetChunk,
+    KnowledgeAssetChunkBuilder,
+    KnowledgeAssetChunkBuildResult,
+    KnowledgeAssetChunkType,
+)
 from .policy import (
     KnowledgeAssetAdmissionError,
     KnowledgeAssetAdmissionPolicy,
@@ -20,6 +26,10 @@ from .snapshots import (
 
 __all__ = [
     "KnowledgeAsset",
+    "KnowledgeAssetChunk",
+    "KnowledgeAssetChunkBuilder",
+    "KnowledgeAssetChunkBuildResult",
+    "KnowledgeAssetChunkType",
     "KnowledgeAssetAdmissionError",
     "KnowledgeAssetAdmissionPolicy",
     "KnowledgeAssetStatus",

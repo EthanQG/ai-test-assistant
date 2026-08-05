@@ -41,7 +41,7 @@ application/
   创建、推进、补充、确认、反馈等应用用例；向页面返回只读 TaskView
 
 knowledge_assets/
-  用户确认后的知识资产模型、准入规则、稳定内容哈希和版本化快照
+  用户确认后的知识资产模型、准入规则、版本化快照和有界索引Chunk
 
 repositories/
   TaskRepository、KnowledgeAssetRepository 抽象及其 InMemory/MySQL 存储实现
@@ -50,7 +50,7 @@ utils/TestAssistantManager
   旧 Workflow 兼容入口；当前 Agent 页面不再调用
 
 services/
-  LLM、RAG、Prompt 和文档解析的应用服务
+  LLM、RAG、Prompt、文档解析、Embedding 和 Milvus 适配服务
 
 agent/
   Agent 状态、执行事件，以及后续的节点和编排器

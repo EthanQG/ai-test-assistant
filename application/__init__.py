@@ -10,8 +10,14 @@ from .knowledge_asset_service import (
     KnowledgeAssetApplicationService,
     KnowledgeAssetView,
 )
+from .knowledge_asset_indexing_service import (
+    KnowledgeAssetIndexingError,
+    KnowledgeAssetIndexingResult,
+    KnowledgeAssetIndexingService,
+)
 from .bootstrap import (
     build_knowledge_asset_application_service,
+    build_knowledge_asset_indexing_service,
     build_knowledge_asset_repository,
     build_session_application_service,
     build_task_repository,
@@ -42,6 +48,9 @@ __all__ = [
     "FeedbackView",
     "NodeExecutionMetric",
     "KnowledgeAssetApplicationService",
+    "KnowledgeAssetIndexingError",
+    "KnowledgeAssetIndexingResult",
+    "KnowledgeAssetIndexingService",
     "KnowledgeAssetView",
     "SubmitClarificationsCommand",
     "SubmitFeedbackCommand",
@@ -57,6 +66,7 @@ __all__ = [
     "UploadedDocument",
     "build_session_application_service",
     "build_knowledge_asset_application_service",
+    "build_knowledge_asset_indexing_service",
     "build_knowledge_asset_repository",
     "build_task_repository",
     "migrate_snapshot",

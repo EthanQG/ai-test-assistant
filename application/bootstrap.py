@@ -14,7 +14,16 @@ from repositories import (
 )
 
 from knowledge_assets import KnowledgeAssetSnapshotSerializer
+from services.embedding_service import (
+    OllamaBatchEmbeddingService,
+    OllamaEmbeddingSettings,
+)
+from services.milvus_asset_index import (
+    MilvusAssetIndexSettings,
+    MilvusKnowledgeAssetIndex,
+)
 
+from .knowledge_asset_indexing_service import KnowledgeAssetIndexingService
 from .knowledge_asset_service import KnowledgeAssetApplicationService
 from .service import TestAnalysisApplicationService
 from .snapshots import TaskSnapshotSerializer
@@ -73,4 +82,17 @@ def build_knowledge_asset_application_service(
     return KnowledgeAssetApplicationService(
         task_repository,
         build_knowledge_asset_repository(),
+    )
+
+
+def build_knowledge_asset_indexing_service(
+    asset_repository: KnowledgeAssetRepository,
+) -> KnowledgeAssetIndexingService:
+    """Compose the explicit KnowledgeAsset indexing use case."""
+
+    load_dotenv()
+    return KnowledgeAssetIndexingService(
+        asset_repository,
+        OllamaBatchEmbeddingService(OllamaEmbeddingSettings.from_env()),
+        MilvusKnowledgeAssetIndex(MilvusAssetIndexSettings.from_env()),
     )

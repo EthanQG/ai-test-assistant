@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from threading import RLock
 
-from knowledge_assets import KnowledgeAsset
+from knowledge_assets import KnowledgeAsset, KnowledgeAssetStatus
 
 
 class KnowledgeAssetRepositoryError(RuntimeError):
@@ -21,6 +21,22 @@ class KnowledgeAssetAlreadyExistsError(KnowledgeAssetRepositoryError):
     def __init__(self, reason: str):
         super().__init__(f"knowledge asset already exists: {reason}")
         self.reason = reason
+
+
+class KnowledgeAssetStatusConflictError(KnowledgeAssetRepositoryError):
+    def __init__(
+        self,
+        asset_id: str,
+        expected: KnowledgeAssetStatus,
+        actual: KnowledgeAssetStatus,
+    ):
+        super().__init__(
+            "knowledge asset status conflict: "
+            f"{asset_id}, expected={expected.value}, actual={actual.value}"
+        )
+        self.asset_id = asset_id
+        self.expected = expected
+        self.actual = actual
 
 
 class KnowledgeAssetRepository(ABC):
@@ -48,6 +64,16 @@ class KnowledgeAssetRepository(ABC):
 
     @abstractmethod
     def list(self) -> list[KnowledgeAsset]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def update_status(
+        self,
+        asset_id: str,
+        status: KnowledgeAssetStatus,
+        *,
+        expected_status: KnowledgeAssetStatus,
+    ) -> KnowledgeAsset:
         raise NotImplementedError
 
 
@@ -117,3 +143,26 @@ class InMemoryKnowledgeAssetRepository(KnowledgeAssetRepository):
     def list(self) -> list[KnowledgeAsset]:
         with self._lock:
             return [deepcopy(asset) for asset in self._assets.values()]
+
+    def update_status(
+        self,
+        asset_id: str,
+        status: KnowledgeAssetStatus,
+        *,
+        expected_status: KnowledgeAssetStatus,
+    ) -> KnowledgeAsset:
+        from dataclasses import replace
+
+        with self._lock:
+            if asset_id not in self._assets:
+                raise KnowledgeAssetNotFoundError(asset_id)
+            current = self._assets[asset_id]
+            if current.status is not expected_status:
+                raise KnowledgeAssetStatusConflictError(
+                    asset_id,
+                    expected_status,
+                    current.status,
+                )
+            updated = replace(current, status=status)
+            self._assets[asset_id] = updated
+            return deepcopy(updated)

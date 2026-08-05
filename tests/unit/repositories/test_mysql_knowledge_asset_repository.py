@@ -8,11 +8,13 @@ from application.bootstrap import build_knowledge_asset_repository
 from knowledge_assets import (
     KnowledgeAssetAdmissionPolicy,
     KnowledgeAssetSnapshotSerializer,
+    KnowledgeAssetStatus,
 )
 from repositories import (
     KnowledgeAssetAlreadyExistsError,
     KnowledgeAssetNotFoundError,
     KnowledgeAssetRepositoryError,
+    KnowledgeAssetStatusConflictError,
     MySQLKnowledgeAssetRepository,
 )
 from tests.unit.knowledge_assets.support import make_eligible_state
@@ -29,6 +31,7 @@ class _FakeCursor:
         self.fetchall_result = []
         self.fail_exception = None
         self.closed = False
+        self.rowcount = 1
 
     def execute(self, sql, params=None):
         normalized = " ".join(sql.split())
@@ -186,6 +189,42 @@ def test_mysql_asset_repository_rolls_back_failed_schema_initialization():
 
     with pytest.raises(KnowledgeAssetRepositoryError):
         _repository(connection).initialize_schema()
+
+    assert connection.rollbacks == 1
+
+
+def test_mysql_asset_repository_updates_status_and_snapshot_atomically():
+    connection = _FakeConnection()
+    asset = _asset()
+    connection.cursor_instance.fetchone_result = _row(asset)
+
+    updated = _repository(connection).update_status(
+        asset.asset_id,
+        KnowledgeAssetStatus.INDEXED,
+        expected_status=KnowledgeAssetStatus.PENDING_INDEX,
+    )
+
+    select_sql, _ = connection.cursor_instance.executed[0]
+    update_sql, params = connection.cursor_instance.executed[1]
+    snapshot = json.loads(params[1])
+    assert "FOR UPDATE" in select_sql
+    assert "UPDATE knowledge_assets" in update_sql
+    assert params[0] == "indexed"
+    assert snapshot["asset"]["status"] == "indexed"
+    assert updated.status is KnowledgeAssetStatus.INDEXED
+    assert connection.commits == 1
+
+
+def test_mysql_asset_repository_rejects_stale_status_update():
+    connection = _FakeConnection()
+    connection.cursor_instance.fetchone_result = _row(_asset())
+
+    with pytest.raises(KnowledgeAssetStatusConflictError):
+        _repository(connection).update_status(
+            "asset-mysql-1",
+            KnowledgeAssetStatus.RETIRED,
+            expected_status=KnowledgeAssetStatus.INDEXED,
+        )
 
     assert connection.rollbacks == 1
 

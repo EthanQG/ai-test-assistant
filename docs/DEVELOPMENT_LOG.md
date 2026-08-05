@@ -58,7 +58,8 @@
 | 阶段 2.13.6 | 已完成 | unit、architecture、app与integration测试目录分层 | `4d3cdb9` |
 | 阶段 2.13 | 已完成 | 持久化、恢复、重复执行保护和测试工程入口 | - |
 | 阶段 2.14.1 | 已完成 | KnowledgeAsset模型、准入策略、内容哈希和内存Repository | `549207a` |
-| 阶段 2.14.2 | 已完成 | 版本化资产快照、MySQL权威表、唯一索引和Repository实现 | 本次提交 |
+| 阶段 2.14.2 | 已完成 | 版本化资产快照、MySQL权威表、唯一索引和Repository实现 | `f88a426` |
+| 阶段 2.14.3 | 已完成 | 有界语义Chunk、批量Embedding和Milvus V2索引写入边界 | 本次提交 |
 | 阶段 2.14 | 进行中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 脱敏离线评测、RAG/Reviewer专项评测和三组消融实验 | - |
@@ -2599,3 +2600,75 @@ git diff --check
 
 页面尚未组装KnowledgeAssetApplicationService，因此用户现在还看不到“保存到知识库”按钮。真实MySQL资产集成测试已经写入仓库，
 但本轮遵守外部服务隔离约定，没有主动连接用户数据库执行。阶段2.14.3将建立MySQL资产状态与Milvus V2索引闭环；页面按钮在后端闭环稳定后再接入。
+
+## 阶段 2.14.3：Milvus V2知识资产索引
+
+### 本阶段目标
+
+MySQL已经保存完整KnowledgeAsset，但后续任务还无法通过语义检索找到它。本阶段只实现从`pending_index`资产到Milvus V2的索引写入，
+不同时实现查询、LLM精排、ContextBuilder、页面按钮和后台任务。
+
+### 实际实现
+
+- 新增KnowledgeAssetChunk、ChunkType和ChunkBuilder，确定性构建需求概览、事实、规则、风险和测试点Chunk
+- 每条Chunk都包含稳定`chunk_id`、`asset_id`、来源任务、资产版本、`content_hash`、类型、序号和检索文本
+- 默认最多32条Chunk、单条最多1600字符；超过上限记录省略数量，文本截断时设置`was_truncated`
+- 新增OllamaBatchEmbeddingService，使用`/api/embed`的数组输入在一次HTTP请求中生成整批向量
+- 新增独立`knowledge_assets_v2`集合适配器，不修改旧`ai_test_cases`兼容集合
+- V2集合只保存向量、短检索文本和关联元数据，不保存完整需求、评审结果或报告
+- 新增KnowledgeAssetIndexingService，编排MySQL读取、Chunk构建、Embedding、Milvus upsert和MySQL状态更新
+- 索引成功后状态由`pending_index`变为`indexed`；Embedding或Milvus失败时变为`index_failed`
+- 已经`indexed`的资产直接返回，不重复调用外部服务
+- Repository新增带`expected_status`的状态更新，MySQL使用`SELECT ... FOR UPDATE`和条件UPDATE保持快照状态与摘要状态一致
+
+### 为什么使用批量Embedding
+
+长PRD可能产生多个事实、规则、风险和测试点。如果逐条请求Embedding，外部网络往返次数会随Chunk数量线性增长。
+V2索引先在Python中生成有界Chunk，再将文本数组一次提交给Ollama`/api/embed`。这不会减少模型计算量，但减少了网络往返，
+并且最多32条的硬上限防止单份资产产生无界工作量。
+
+### 跨MySQL与Milvus的一致性
+
+MySQL与Milvus无法加入同一个ACID事务，因此采用以下可补偿设计：
+
+1. MySQL先存在`pending_index`完整资产；
+2. Milvus使用稳定`chunk_id`执行upsert；
+3. 全部向量写入完成后，MySQL才更新为`indexed`；
+4. 如果MySQL状态更新暂时失败，后续使用相同Chunk ID重放不会制造重复记录；
+5. 后续检索只接受MySQL状态仍为`indexed`且版本、哈希一致的资产。
+
+本阶段只建立安全重放基础，`index_failed`显式重试、request_id和孤立索引清理仍属于2.14.5。
+
+### 测试证据
+
+本阶段新增20项pytest测试，覆盖：
+
+- Chunk类型、关联元数据、稳定ID、数量上限、文本长度和截断标记
+- 一次批量Embedding请求及环境配置
+- Milvus V2 upsert中的asset_id、版本、哈希和检索文本
+- 成功索引、Embedding失败、Milvus失败、向量数量错误和重复索引保护
+- InMemory/MySQL状态更新、期望状态冲突、JSON快照与摘要状态原子更新
+- Application索引用例不直接依赖requests、Ollama或MilvusClient
+
+完整验证：
+
+```text
+python -m unittest discover -s tests
+260 tests，OK，6 skipped
+
+python -m pytest -q
+322 passed，8 skipped，共收集330项
+
+python -m compileall -q agent application knowledge_assets repositories services utils views tests main.py
+通过
+
+git diff --check
+通过
+```
+
+默认测试未访问真实DeepSeek、Ollama、Milvus或MySQL；Streamlit、AgentState、Orchestrator、Prompt和节点顺序均未修改。
+
+### 当前限制与下一步
+
+当前只实现索引写入，还没有实现V2查询和MySQL回查，因此不能宣称新资产已经被当前KnowledgeRetriever使用。
+阶段2.14.4将实现Top-K候选召回、阈值过滤、按资产聚合、MySQL回查和来源验证，不增加LLM精排。

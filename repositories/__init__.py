@@ -22,6 +22,7 @@ from .knowledge_asset_repository import (
     KnowledgeAssetNotFoundError,
     KnowledgeAssetRepository,
     KnowledgeAssetRepositoryError,
+    KnowledgeAssetStatusConflictError,
 )
 from .mysql_knowledge_asset_repository import (
     CREATE_KNOWLEDGE_ASSETS_TABLE_SQL,
@@ -35,6 +36,7 @@ __all__ = [
     "KnowledgeAssetNotFoundError",
     "KnowledgeAssetRepository",
     "KnowledgeAssetRepositoryError",
+    "KnowledgeAssetStatusConflictError",
     "CREATE_KNOWLEDGE_ASSETS_TABLE_SQL",
     "MySQLKnowledgeAssetRepository",
     "MySQLSettings",

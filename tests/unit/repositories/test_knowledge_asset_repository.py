@@ -3,11 +3,12 @@ from datetime import datetime, timezone
 
 import pytest
 
-from knowledge_assets import KnowledgeAssetAdmissionPolicy
+from knowledge_assets import KnowledgeAssetAdmissionPolicy, KnowledgeAssetStatus
 from repositories import (
     InMemoryKnowledgeAssetRepository,
     KnowledgeAssetAlreadyExistsError,
     KnowledgeAssetNotFoundError,
+    KnowledgeAssetStatusConflictError,
 )
 
 from tests.unit.knowledge_assets.support import make_eligible_state
@@ -101,3 +102,31 @@ def test_repository_missing_lookup_semantics_are_explicit():
     assert repository.find_latest_by_source_task_id("missing-task") is None
     with pytest.raises(KnowledgeAssetNotFoundError, match="missing-asset"):
         repository.get("missing-asset")
+
+
+def test_repository_updates_status_with_expected_state_guard():
+    repository = InMemoryKnowledgeAssetRepository()
+    asset = _make_asset()
+    repository.create(asset)
+
+    updated = repository.update_status(
+        asset.asset_id,
+        KnowledgeAssetStatus.INDEXED,
+        expected_status=KnowledgeAssetStatus.PENDING_INDEX,
+    )
+
+    assert updated.status is KnowledgeAssetStatus.INDEXED
+    assert repository.get(asset.asset_id).status is KnowledgeAssetStatus.INDEXED
+
+
+def test_repository_rejects_stale_status_update():
+    repository = InMemoryKnowledgeAssetRepository()
+    asset = _make_asset()
+    repository.create(asset)
+
+    with pytest.raises(KnowledgeAssetStatusConflictError):
+        repository.update_status(
+            asset.asset_id,
+            KnowledgeAssetStatus.RETIRED,
+            expected_status=KnowledgeAssetStatus.INDEXED,
+        )

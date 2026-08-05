@@ -16,7 +16,7 @@ def _imports(path: str) -> set[str]:
 def test_knowledge_asset_domain_does_not_import_infrastructure():
     imports = _imports("knowledge_assets/policy.py") | _imports(
         "knowledge_assets/models.py"
-    )
+    ) | _imports("knowledge_assets/indexing.py")
 
     assert not any(
         module.startswith(
@@ -37,3 +37,14 @@ def test_knowledge_asset_application_service_uses_abstract_boundaries():
     assert "Milvus" not in source
     assert "Embedding" not in source
     assert "LLM" not in source
+
+
+def test_indexing_application_service_uses_ports_not_concrete_adapters():
+    source = Path(
+        "application/knowledge_asset_indexing_service.py"
+    ).read_text(encoding="utf-8")
+
+    assert "Ollama" not in source
+    assert "MilvusClient" not in source
+    assert "requests" not in source
+    assert "pymilvus" not in source

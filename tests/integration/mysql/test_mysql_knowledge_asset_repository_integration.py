@@ -76,6 +76,14 @@ def test_real_mysql_knowledge_asset_crud(mysql_asset_repository):
     assert repository.find_by_content_hash(asset.content_hash) == asset
     assert repository.find_latest_by_source_task_id(state.task_id) == asset
 
+    updated = repository.update_status(
+        asset_id,
+        KnowledgeAssetStatus.INDEXED,
+        expected_status=KnowledgeAssetStatus.PENDING_INDEX,
+    )
+    assert updated.status is KnowledgeAssetStatus.INDEXED
+    assert repository.get(asset_id).status is KnowledgeAssetStatus.INDEXED
+
 
 def test_real_mysql_knowledge_asset_missing(mysql_asset_repository):
     repository, _, _ = mysql_asset_repository

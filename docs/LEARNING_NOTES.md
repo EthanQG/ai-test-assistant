@@ -4476,3 +4476,127 @@ Milvus适合“找到相似内容”，不适合保存完整报告和复杂审�
 - [ ] 能说明两个唯一索引防止的重复类型
 - [ ] 能解释为什么MySQL是权威数据而Milvus只是索引
 - [ ] 能准确说明2.14.2还没有页面按钮和Milvus检索
+
+## 四十、阶段2.14.3：一份完整资产如何变成可检索向量
+
+### 40.1 为什么不对完整报告只生成一个向量
+
+完整报告同时包含需求事实、业务规则、风险和多个测试场景。只生成一个向量会把多个主题混合，导致某个具体场景的语义被稀释。
+
+因此先拆成语义完整Chunk：
+
+```text
+需求概览Chunk
+需求事实Chunk
+业务规则Chunk
+风险Chunk
+测试点Chunk
+```
+
+每条Chunk都重复少量必要上下文，例如需求主题和所属模块，使它离开完整报告后仍然可以独立理解。
+
+### 40.2 为什么Chunk不能无限增加
+
+测试点越多，Embedding计算量越大。V2第一版定义：
+
+- 一份资产最多32个Chunk；
+- 单条检索文本最多1600字符；
+- 记录候选总数、实际数量、省略数量和截断标记。
+
+这不是认为32一定最优，而是先建立明确、可测量的成本上限。后续离线评测再根据Recall@K和耗时调整。
+
+### 40.3 批量Embedding如何减少等待
+
+错误方式：
+
+```text
+Chunk1 → HTTP请求
+Chunk2 → HTTP请求
+Chunk3 → HTTP请求
+...
+```
+
+当前方式：
+
+```text
+[Chunk1, Chunk2, Chunk3, ...]
+→ 一次POST /api/embed
+→ [Vector1, Vector2, Vector3, ...]
+```
+
+批量请求不会消除模型计算，但减少了多次网络连接和往返等待。索引阶段也没有调用LLM。
+
+### 40.4 Milvus每条记录保存什么
+
+```text
+chunk_id
+vector
+asset_id
+source_task_id
+asset_version
+content_hash
+chunk_type
+chunk_index
+search_text
+was_truncated
+```
+
+`asset_id`负责回查MySQL，`asset_version + content_hash`负责确认索引仍然对应当前资产，`chunk_type`说明命中的是事实、规则、风险还是测试点。
+
+### 40.5 为什么使用稳定chunk_id和upsert
+
+MySQL和Milvus不能共享一个事务。可能发生：
+
+```text
+Milvus已经写入成功
+→ MySQL更新indexed时网络中断
+```
+
+如果每次重试生成随机Chunk ID，会制造重复向量。稳定ID由资产ID、版本、类型和序号构成，同一资产重试会写入相同主键；使用upsert可以覆盖原记录。
+
+### 40.6 状态如何流转
+
+```text
+pending_index
+  ├─ 索引成功 → indexed
+  └─ Embedding/Milvus失败 → index_failed
+```
+
+已经`indexed`的资产再次调用索引服务时直接返回，不重复执行。`index_failed`的正式重试策略留在2.14.5，本阶段不会偷偷重试。
+
+### 40.7 代码阅读顺序
+
+1. `knowledge_assets/indexing.py`：看Chunk如何确定性构建和限制数量。
+2. `application/knowledge_asset_indexing_service.py`：看跨Repository、Embedding和VectorIndex的用例编排。
+3. `services/embedding_service.py`：看一次批量HTTP请求。
+4. `services/milvus_asset_index.py`：看V2集合字段和upsert数据。
+5. `repositories/knowledge_asset_repository.py`：看期望状态保护。
+
+### 40.8 面试问题与参考答案
+
+**问题1：为什么Milvus不保存完整报告？**
+
+参考答案：Milvus负责近似向量召回，MySQL负责完整、可审计、可恢复的数据。Milvus命中后通过asset_id回查MySQL，避免向量库承担版本、事务和复杂结构化数据管理。
+
+**问题2：多道索引工序是否会让用户等待更久？**
+
+参考答案：索引与测试分析主流程分离，Chunk构建不调用LLM，Embedding使用一次批量请求并限制最多32条。未来页面先确认MySQL保存成功，再由后台索引，不让用户等待完整索引；当前阶段只实现同步、可测试的后端用例，尚未宣称后台执行。
+
+**问题3：如何保证Milvus记录和MySQL内容没有错位？**
+
+参考答案：Milvus保存asset_id、asset_version和content_hash。检索阶段必须回查MySQL并同时校验状态、版本和哈希，不一致的记录作为过期或孤立索引丢弃。
+
+### 40.9 动手练习
+
+1. 使用测试资产打印所有Chunk，说明每条为什么可以独立理解。
+2. 将`max_chunks`设为2，观察`omitted_count`。
+3. 让Fake Embedding少返回一个向量，观察资产为什么进入`index_failed`。
+4. 画出Milvus成功但MySQL状态更新失败后的安全重放过程。
+
+### 40.10 掌握检查
+
+- [ ] 能解释完整报告单向量的语义稀释问题
+- [ ] 能解释批量Embedding减少的是网络往返而不是模型计算
+- [ ] 能说明稳定chunk_id和upsert如何支持补偿重试
+- [ ] 能说明pending_index、indexed和index_failed的含义
+- [ ] 能准确说明2.14.3尚未实现历史资产查询

@@ -11,95 +11,93 @@
 
 - 分支：`main`
 - 阶段2.14.1本地提交：`549207a 阶段2.14.1：建立知识资产准入边界`
-- 阶段2.14.2代码、测试和文档已完成，尚未提交
+- 阶段2.14.2本地提交：`f88a426 阶段2.14.2：实现知识资产MySQL权威存储`
+- 阶段2.14.3代码、测试和文档已完成，尚未提交
 
-## 当前阶段：2.14.2 MySQL KnowledgeAsset权威存储
+## 当前阶段：2.14.3 Milvus V2知识资产索引
 
-本阶段只将2.14.1的KnowledgeAsset Repository契约接入MySQL，不接入页面按钮、Embedding或Milvus。主要完成：
+本阶段只建立已确认KnowledgeAsset的向量索引写入边界，不修改Streamlit、Agent节点和现有RAG检索节点。主要完成：
 
-1. 新增schema v1知识资产JSON快照，可将完整KnowledgeAsset恢复为原领域类型。
-2. 新增`knowledge_assets`权威表，完整资产保存在`asset_json`，常用摘要字段独立成列。
-3. 使用`content_hash`唯一索引阻止相同内容重复沉淀。
-4. 使用`source_task_id + asset_version`唯一索引保护同一任务的资产版本。
-5. 新增`MySQLKnowledgeAssetRepository`，实现建表、创建、按ID读取、按哈希查询、按来源任务查询最新版和列表查询。
-6. 新增`KNOWLEDGE_ASSET_REPOSITORY_BACKEND`独立配置，默认仍为`memory`，显式设为`mysql`才连接数据库。
-7. 新增Fake MySQL单元测试和默认跳过的真实MySQL CRUD集成测试。
+1. 新增确定性的KnowledgeAssetChunkBuilder，不调用LLM拆分内容。
+2. 按需求概览、需求事实、业务规则、风险和测试点构建语义完整Chunk。
+3. 每个Chunk保留`asset_id`、来源任务、资产版本、`content_hash`、类型和序号。
+4. 默认最多32个Chunk、单条最多1600字符，并记录省略数量和文本截断标记。
+5. 使用Ollama`/api/embed`批量接口，一次请求生成本批次全部向量。
+6. 新建独立`knowledge_assets_v2`集合，旧`ai_test_cases`集合保持不动。
+7. Milvus只保存检索文本、向量和关联元数据，不保存完整报告。
+8. Milvus写入成功后将MySQL资产从`pending_index`更新为`indexed`；失败时更新为`index_failed`。
+9. 已经是`indexed`的资产不会重复生成Embedding和写入Milvus。
+10. MySQL状态更新使用期望状态保护，避免旧调用覆盖新状态。
 
-新建资产仍保持`pending_index`，只表示完整权威内容已经具备持久化条件，不代表Milvus索引已完成。
+## 索引数据流
 
-## 数据库职责
-
-`knowledge_assets`保存：
-
-- 完整版本化`asset_json`；
-- 来源任务、资产版本和内容哈希；
-- 当前索引状态；
-- 需求摘要、Reviewer评分和测试点数量；
-- 用户确认时间、创建时间和数据库更新时间。
-
-没有给`source_task_id`增加外键：历史知识资产一旦通过确认，应在原任务被清理后继续保留。MySQL是完整资产的权威数据源；Milvus后续只保存向量和`asset_id`等检索元数据。
-
-## 测试入口
-
-```powershell
-pip install -r requirements-dev.txt
-python -m pytest
-python -m pytest -m unit
-python -m pytest -m app
-python -m pytest -m integration
-python -m unittest discover -s tests -v
+```text
+MySQL读取pending_index KnowledgeAsset
+→ ChunkBuilder生成有界语义Chunk
+→ Ollama一次批量生成Embedding
+→ Milvus V2按稳定chunk_id执行upsert
+→ MySQL状态更新为indexed
 ```
 
-真实MySQL测试必须显式开启：
+如果Embedding或Milvus失败：
 
-```powershell
-$env:RUN_MYSQL_INTEGRATION_TESTS='1'
-python -m pytest -m integration
+```text
+完整KnowledgeAsset继续保留在MySQL
+→ 状态改为index_failed
+→ 不会把未完成索引的资产用于后续检索
 ```
+
+Milvus与MySQL通过`asset_id + asset_version + content_hash`关联。后续检索命中Milvus后必须按`asset_id`回查MySQL，并验证版本、哈希和状态。
+
+## 性能边界
+
+- Chunk拆分是确定性Python处理，不增加LLM调用
+- 一份资产默认最多32个Chunk，防止长PRD导致无界Embedding请求
+- 全部Chunk通过一次批量`/api/embed`请求提交，不逐条请求
+- 单条检索文本最多1600字符，完整原始内容仍只保存在MySQL
+- 当前只记录整个索引用例耗时；Embedding与Milvus分层耗时留到2.15
 
 ## 验证结果
 
 ```text
 unittest：260 tests，OK，6项真实MySQL任务测试默认跳过
-pytest完整：302 passed，8 skipped，共收集310项
-2.14.2新增：19 passed，2项真实MySQL知识资产测试默认跳过
+pytest完整：322 passed，8 skipped，共收集330项
+2.14.3新增：20 passed
 compileall：通过
 git diff --check：通过
 ```
 
-默认测试没有调用真实DeepSeek、Embedding、Milvus或MySQL。
+默认测试使用Fake Embedding和Fake Milvus，没有调用真实DeepSeek、Ollama、Milvus或MySQL。
 
 ## 当前架构能力
 
-- Streamlit只调用Application Service并读取TaskView
-- TaskRepository隔离InMemory和MySQL任务实现
-- schema v1任务快照、事件、version、execution_id和执行租约已经可用
-- KnowledgeAsset具备准入策略、稳定内容哈希、版本化JSON快照和Repository抽象
-- KnowledgeAsset Repository可以在内存和MySQL实现之间切换
-- MySQL通过唯一索引为内容去重和来源任务版本提供最终约束
-- Application Service不依赖具体MySQL实现
+- KnowledgeAsset准入、版本化JSON、MySQL权威存储和V2索引写入边界已经分层
+- Application层只依赖Embedding和VectorIndex Protocol，不直接调用requests或MilvusClient
+- Ollama和Milvus具体实现位于services适配层
+- MySQL Repository支持带期望状态的原子状态更新
+- Milvus Chunk使用稳定ID执行upsert，为跨存储失败后的安全重放保留基础
+- 旧Workflow Milvus集合继续只读兼容，新资产不会写入旧集合
 
 ## 当前限制
 
-- Streamlit还没有“保存到知识库”按钮，当前页面不会触发KnowledgeAsset发布
-- `.env`默认使用内存资产Repository；只有显式配置MySQL并组装资产服务时才会创建资产表
-- 真实MySQL KnowledgeAsset CRUD测试已经编写，但本轮未主动连接用户数据库执行
-- 同一来源任务的“查询最新版后加一”不是单条原子操作；并发冲突会由唯一索引拒绝，调用方重试策略尚未实现
-- 尚未实现索引状态更新、Embedding、Milvus V2写入、失败重试和后续RAG检索
-- 尚未实现ContextBuilder、离线评测、FastAPI、SSE和Vue
+- 本轮没有连接真实Ollama、Milvus或MySQL执行端到端索引测试
+- 还没有实现Milvus查询、相似度阈值、Top-K聚合和MySQL批量回查
+- `index_failed`资产的显式重试、request_id和索引清理留到2.14.5
+- MySQL与Milvus无法使用同一数据库事务；当前依赖稳定chunk_id的upsert为后续补偿重试提供基础
+- Streamlit仍没有“保存到知识库”按钮，也不会自动执行索引服务
+- 尚未实现ContextBuilder、Token统计、离线评测、FastAPI、SSE和Vue
 
-## 下一步：阶段2.14.3 Milvus V2索引边界
+## 下一步：阶段2.14.4 历史资产检索与上下文组装
 
-下一阶段建议只实现：
+下一阶段只实现：
 
-1. 从MySQL读取`pending_index`资产；
-2. 为结构化需求和测试点构建受控索引文本；
-3. 生成Embedding并将向量、`asset_id`、版本和来源写入Milvus V2集合；
-4. 成功后把MySQL状态更新为`indexed`，失败时记录`index_failed`和可重试错误；
-5. 按`asset_id`回查MySQL完整内容，Milvus不保存完整报告；
-6. 不修改Agent节点顺序，不接入FastAPI、SSE或Vue。
-
-页面“保存到知识库”按钮建议在MySQL与Milvus闭环稳定后再接入，避免用户看到虚假的保存成功。
+1. 将当前结构化需求转换为查询文本并生成一次查询向量；
+2. 从`knowledge_assets_v2`执行Top-K余弦相似度检索；
+3. 按阈值过滤，并按`asset_id`聚合多个Chunk命中；
+4. 批量回查MySQL完整KnowledgeAsset；
+5. 校验`indexed`状态、版本和`content_hash`，丢弃孤立或过期索引；
+6. 返回带来源的结构化候选，不增加LLM精排；
+7. ContextBuilder的完整Token预算与裁剪仍留在2.15。
 
 ## 新电脑恢复方式
 
