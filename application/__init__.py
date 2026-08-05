@@ -1,9 +1,14 @@
 from .commands import (
+    ConfirmKnowledgeAssetCommand,
     ConfirmBusinessRulesCommand,
     CreateTaskCommand,
     SubmitClarificationsCommand,
     SubmitFeedbackCommand,
     UploadedDocument,
+)
+from .knowledge_asset_service import (
+    KnowledgeAssetApplicationService,
+    KnowledgeAssetView,
 )
 from .bootstrap import (
     build_session_application_service,
@@ -30,9 +35,12 @@ from .snapshots import (
 
 __all__ = [
     "ConfirmBusinessRulesCommand",
+    "ConfirmKnowledgeAssetCommand",
     "CreateTaskCommand",
     "FeedbackView",
     "NodeExecutionMetric",
+    "KnowledgeAssetApplicationService",
+    "KnowledgeAssetView",
     "SubmitClarificationsCommand",
     "SubmitFeedbackCommand",
     "SNAPSHOT_SCHEMA_VERSION",

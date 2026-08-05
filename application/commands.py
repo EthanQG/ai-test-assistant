@@ -31,3 +31,9 @@ class SubmitFeedbackCommand:
     target: str
     content: str
     reason: str
+
+
+@dataclass(frozen=True)
+class ConfirmKnowledgeAssetCommand:
+    user_confirmed: bool
+    data_safety_confirmed: bool

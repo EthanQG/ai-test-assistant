@@ -4264,3 +4264,110 @@ pytest现在根据目录自动添加marker。新建测试时只要放入正确�
 - [ ] 能解释`__init__.py`对旧unittest入口的作用
 - [ ] 能说明什么时候应该新增子级`conftest.py`
 - [ ] 能用测试数量证明目录迁移没有造成漏收集
+
+## 三十八、阶段2.14.1：KnowledgeAsset如何防止知识污染
+
+### 38.1 KnowledgeAsset是什么
+
+AgentState记录“一次任务现在执行到哪里”，KnowledgeAsset记录“经过审核后可以被后续任务复用的稳定知识”。
+两者不能混为一体：任务可能失败、等待补充或继续被人工修改，而知识资产必须是已经完成、可审计的版本。
+
+一个KnowledgeAsset主要包含：
+
+- 来源`task_id`和资产版本
+- 原始需求及结构化摘要、事实、规则、状态和风险
+- 结构化测试点
+- Reviewer完整评审证据
+- 最终报告
+- 用户确认和数据安全确认时间
+- `content_hash`及后续索引状态
+
+### 38.2 为什么需要准入策略
+
+如果“任务完成”后直接写入知识库，以下内容可能污染后续RAG：
+
+- Reviewer没有通过的遗漏测试点
+- 模型生成的无依据业务规则
+- 用户刚提交但尚未处理的反馈
+- 测试点已经修改、最终报告却还是旧版本
+- 用户没有确认可以沉淀的敏感需求
+
+`KnowledgeAssetAdmissionPolicy`把这些检查集中在一个确定性Python边界中，不调用LLM判断是否允许发布。
+
+### 38.3 双重确认解决什么问题
+
+`user_confirmed`表示用户认可当前结果可以作为知识；`data_safety_confirmed`表示用户确认内容符合数据安全要求。
+两个值必须都为True。Reviewer只负责测试质量，不能替用户决定公司需求是否允许进入历史知识库。
+
+### 38.4 content_hash是什么
+
+content_hash由原始需求、结构化需求和测试点构成规范JSON，再使用SHA-256计算：
+
+```text
+业务内容
+→ JSON字段排序、固定分隔符
+→ UTF-8字节
+→ SHA-256
+→ 64位十六进制content_hash
+```
+
+asset_id、创建时间和索引状态不参与哈希，否则同一份业务内容每次确认都会得到不同哈希，无法查重。
+当前第一版包含原始需求，因此原文变化会产生新哈希；更复杂的语义去重留到有真实样本后评估。
+
+### 38.5 为什么新资产是pending_index
+
+2.14.1只证明资产有资格被保存，并没有调用Embedding和Milvus。因此新资产状态是`pending_index`：
+
+```text
+已通过准入并创建资产 ≠ 已建立向量索引 ≠ 已能被RAG检索
+```
+
+后续2.14.2先写入MySQL权威存储，2.14.3再索引到Milvus。即使Milvus失败，MySQL中的完整资产仍可重试。
+
+### 38.6 Repository和Application Service如何配合
+
+```text
+用户确认动作
+→ KnowledgeAssetApplicationService按task_id读取TaskRecord
+→ AdmissionPolicy校验并创建KnowledgeAsset
+→ KnowledgeAssetRepository保存隔离副本
+→ 返回KnowledgeAssetView摘要
+```
+
+页面未来只调用Application Service，不直接操作Repository；准入策略也不依赖MySQL、Milvus或页面。
+
+### 38.7 面试问题与参考答案
+
+#### 问：为什么Reviewer通过后还要用户确认？
+
+> Reviewer验证覆盖度、可执行性和无依据断言，但不能判断公司数据是否允许沉淀，也不能代替业务负责人承担确认责任。
+> 因此质量评审和用户授权是两个独立门槛。
+
+#### 问：MySQL和Milvus在知识资产中分别负责什么？
+
+> MySQL保存完整、可审计、可恢复的KnowledgeAsset，是权威数据源；Milvus只保存向量和asset_id等少量索引信息。
+> 检索时先由Milvus找到候选ID，再回MySQL读取完整资产。
+
+#### 问：content_hash为什么不包含创建时间？
+
+> content_hash表达业务内容身份。时间每次都不同，如果加入哈希，相同内容将无法被识别为重复。
+
+#### 问：当前阶段能否写“实现知识库闭环”？
+
+> 不能。当前只完成模型、准入和内存Repository边界，尚未写入MySQL、建立Milvus V2索引或让后续任务检索。
+
+### 38.8 动手练习
+
+- [ ] 阅读`knowledge_assets/policy.py`并列出所有拒绝沉淀的条件
+- [ ] 修改一个测试点但不更新final_result，观察准入策略为什么拒绝
+- [ ] 使用相同内容创建两个资产，观察Repository的content_hash冲突
+- [ ] 说明同一task_id为什么可能产生asset_version=2
+- [ ] 画出TaskRepository与KnowledgeAssetRepository的职责边界
+
+### 38.9 掌握检查
+
+- [ ] 能区分AgentState、TaskRecord和KnowledgeAsset
+- [ ] 能解释Reviewer通过与用户双重确认的不同职责
+- [ ] 能说明content_hash包含和不包含哪些字段
+- [ ] 能解释pending_index不代表已经可检索
+- [ ] 能准确描述2.14.1已经实现和尚未实现的范围

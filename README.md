@@ -43,8 +43,11 @@
 - 页面只持有当前task_id和纯UI状态，通过只读TaskView渲染Agent结果
 - Application Service记录每次节点执行的开始、结束、耗时、成功/失败和错误类型，并汇总单任务执行耗时
 - MySQL Repository已经通过真实CRUD和跨Application Service实例恢复验证，可按同一`task_id`恢复等待补充、完成和失败任务
+- 后端已建立KnowledgeAsset模型、双重用户确认准入、稳定内容哈希和内存Repository边界；尚未接入页面、MySQL资产表或Milvus V2索引
 
 当前 Agent 页面只接入了 Milvus 历史资产检索，尚未接入“用户确认后沉淀知识资产”的入口。
+阶段2.14.1已经完成后端KnowledgeAsset候选创建和准入校验，但当前只使用内存Repository进行测试，
+还不代表资产能够跨服务重启保存或被后续任务检索。
 旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
 知识闭环。后续将由 MySQL 保存完整、可审计的知识资产，Milvus 只承担向量候选检索。
 
@@ -56,7 +59,8 @@
 ├── main.py                 # Streamlit 应用入口
 ├── application/            # 应用用例、Command、只读TaskView与会话装配
 ├── agent/                  # Agent状态、事件及后续节点
-├── repositories/           # TaskRepository抽象与内存实现
+├── knowledge_assets/       # 知识资产模型、准入规则与内容哈希
+├── repositories/           # Task/KnowledgeAsset Repository抽象与实现
 ├── views/                  # 页面与交互状态
 ├── services/               # LLM、RAG、文档解析应用服务
 ├── utils/                  # 基础客户端、配置及兼容业务入口
@@ -178,10 +182,12 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 4. 阶段2.13.4：已实现version、execution_id与执行租约保护
 5. 阶段2.13.5：已使用pytest统一测试入口、marker与fixture，并保留现有unittest兼容
 6. 阶段2.13.6：已按unit、architecture、app和integration整理测试目录，测试内容保持不变
-7. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
-8. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
-9. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
-10. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+7. 阶段2.14.1：已完成KnowledgeAsset模型、准入策略、内容哈希和内存Repository边界
+8. 阶段2.14.2：将完整KnowledgeAsset接入MySQL权威存储
+9. 阶段2.14.3：建立Milvus V2向量索引
+10. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
+11. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
+12. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。

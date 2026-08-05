@@ -55,9 +55,10 @@
 | 阶段 2.13.3 | 已完成 | 真实MySQL CRUD、事件一致性和跨Application Service实例恢复 | `bb30a5b` |
 | 阶段 2.13.4 | 已完成 | 乐观锁、execution_id幂等与可过期执行租约 | `77d0ac4` |
 | 阶段 2.13.5 | 已完成 | pytest统一测试入口、marker与fixture | `70ea24e` |
-| 阶段 2.13.6 | 已完成 | unit、architecture、app与integration测试目录分层 | 本次提交 |
+| 阶段 2.13.6 | 已完成 | unit、architecture、app与integration测试目录分层 | `4d3cdb9` |
 | 阶段 2.13 | 已完成 | 持久化、恢复、重复执行保护和测试工程入口 | - |
-| 阶段 2.14 | 规划中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
+| 阶段 2.14.1 | 已完成 | KnowledgeAsset模型、准入策略、内容哈希和内存Repository | 本次提交 |
+| 阶段 2.14 | 进行中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 脱敏离线评测、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
@@ -2480,3 +2481,58 @@ Milvus均未被默认测试调用，生产代码未修改。
 
 阶段2.14.1开始KnowledgeAsset领域模型、准入规则和Repository边界。后续新增测试直接放入对应层，
 旧unittest只在局部维护收益明确时逐步改为pytest风格，不进行批量机械重写。
+
+## 阶段 2.14.1：KnowledgeAsset模型与准入规则
+
+### 本阶段目标
+
+旧Workflow可以把结果直接写入Milvus，但当前Agent缺少“什么结果有资格成为历史资产”的安全边界。
+本阶段先建立独立KnowledgeAsset模型、确定性准入策略和Repository抽象，只使用内存实现验证，
+不同时创建MySQL资产表或写入Milvus。
+
+### 实际实现
+
+- 新增`knowledge_assets/`领域包，定义KnowledgeAsset、StructuredRequirement和索引状态枚举
+- 资产保留source_task_id、asset_version、content_hash、原始需求、结构化需求、测试点、完整Reviewer结果、最终报告和确认时间
+- content_hash使用规范JSON和SHA-256计算，只由业务内容决定，不包含asset_id、时间和索引状态
+- 准入策略要求任务已经完成、Reviewer通过且分数达到阈值、需求事实全部覆盖、没有无依据断言
+- 有待确认问题、待处理人工反馈、非法结构化对象或相对当前测试点已经过期的最终报告都会被拒绝
+- 用户必须同时确认允许知识沉淀和数据安全，避免模型自动把未经审核或敏感结果写入知识库
+- 新增KnowledgeAssetRepository抽象和InMemory实现，按asset_id、content_hash和来源任务版本防重复
+- 新增KnowledgeAssetApplicationService，负责从TaskRepository读取任务、确定资产版本、调用准入策略并保存资产
+- Application Service只返回只读摘要View，创建知识资产不会修改原TaskRecord或AgentState
+
+### 状态边界
+
+通过准入的新资产状态固定为`pending_index`，表示“权威资产候选已创建，但还没有向量索引”。
+模型同时预留`indexed`、`index_failed`和`retired`稳定值，但本阶段没有实现这些状态转换，也没有声称
+资产已经写入MySQL或可以被RAG检索。
+
+### 测试证据
+
+新增26项pytest测试，覆盖：
+
+- JSON兼容结构、时区时间、稳定哈希及业务内容变化
+- 双重确认、完成状态、Reviewer分数、覆盖度、幻觉问题和最终结果一致性
+- 待确认问题与待处理人工反馈禁止沉淀
+- 内存Repository CRUD、隔离副本、内容哈希和来源版本唯一性
+- Application Service创建第一版、变更后创建下一版、重复内容拒绝和任务状态不被修改
+- 领域层不依赖Application、Repository、Service、View，应用服务不直接依赖MySQL、Milvus、Embedding或LLM
+
+完整验证：
+
+```text
+python -m unittest discover -s tests -v
+260 tests，OK（6 skipped）
+
+python -m pytest
+283 passed，6 skipped，共收集289项
+```
+
+本阶段未调用真实DeepSeek、Embedding、Milvus或MySQL，Streamlit页面、AgentState、Orchestrator和节点顺序均未修改。
+
+### 当前限制与下一步
+
+InMemoryKnowledgeAssetRepository只提供边界验证，进程退出后资产会丢失；同一来源任务的版本分配也还没有
+数据库事务保护。阶段2.14.2将实现MySQLKnowledgeAssetRepository、权威资产表、唯一索引和真实CRUD验证，
+但仍不接入Milvus；Milvus V2索引留到2.14.3。

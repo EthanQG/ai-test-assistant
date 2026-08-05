@@ -16,9 +16,21 @@ from .mysql_task_repository import (
     MySQLTaskRepository,
     build_mysql_connection_factory,
 )
+from .knowledge_asset_repository import (
+    InMemoryKnowledgeAssetRepository,
+    KnowledgeAssetAlreadyExistsError,
+    KnowledgeAssetNotFoundError,
+    KnowledgeAssetRepository,
+    KnowledgeAssetRepositoryError,
+)
 
 __all__ = [
     "InMemoryTaskRepository",
+    "InMemoryKnowledgeAssetRepository",
+    "KnowledgeAssetAlreadyExistsError",
+    "KnowledgeAssetNotFoundError",
+    "KnowledgeAssetRepository",
+    "KnowledgeAssetRepositoryError",
     "MySQLSettings",
     "MySQLTaskRepository",
     "TaskAlreadyExistsError",

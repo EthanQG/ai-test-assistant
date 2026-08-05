@@ -40,8 +40,11 @@ views/
 application/
   创建、推进、补充、确认、反馈等应用用例；向页面返回只读 TaskView
 
+knowledge_assets/
+  用户确认后的知识资产模型、准入规则和稳定内容哈希
+
 repositories/
-  TaskRepository 抽象与当前会话级内存实现
+  TaskRepository、KnowledgeAssetRepository 抽象及其存储实现
 
 utils/TestAssistantManager
   旧 Workflow 兼容入口；当前 Agent 页面不再调用
