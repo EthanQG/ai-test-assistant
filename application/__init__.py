@@ -11,6 +11,8 @@ from .knowledge_asset_service import (
     KnowledgeAssetView,
 )
 from .bootstrap import (
+    build_knowledge_asset_application_service,
+    build_knowledge_asset_repository,
     build_session_application_service,
     build_task_repository,
 )
@@ -54,6 +56,8 @@ __all__ = [
     "UnsupportedSnapshotVersionError",
     "UploadedDocument",
     "build_session_application_service",
+    "build_knowledge_asset_application_service",
+    "build_knowledge_asset_repository",
     "build_task_repository",
     "migrate_snapshot",
 ]

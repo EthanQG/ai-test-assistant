@@ -4371,3 +4371,108 @@ asset_id、创建时间和索引状态不参与哈希，否则同一份业务内
 - [ ] 能说明content_hash包含和不包含哪些字段
 - [ ] 能解释pending_index不代表已经可检索
 - [ ] 能准确描述2.14.1已经实现和尚未实现的范围
+
+## 三十九、阶段2.14.2：为什么MySQL保存完整资产，Milvus只保存索引
+
+### 39.1 用户点击一次保存，后端为什么需要多层代码
+
+对用户来说，未来只有一个“保存到知识库”按钮。后端仍要依次完成：
+
+```text
+用户确认
+→ KnowledgeAssetApplicationService
+→ AdmissionPolicy准入校验
+→ KnowledgeAssetSnapshotSerializer生成版本化JSON
+→ MySQLKnowledgeAssetRepository保存完整资产
+→ 后续Milvus索引
+```
+
+按钮是交互入口，不等于底层只有一条简单INSERT。分层的价值是让准入、序列化、数据库和向量索引分别可测试、可替换、可失败。
+
+### 39.2 asset_json和独立列分别解决什么问题
+
+`asset_json`保存完整KnowledgeAsset，包括需求、测试点、Reviewer证据和最终报告。读取时一次恢复完整领域对象，不需要从很多表重新拼装。
+
+以下字段同时独立成列：
+
+- `source_task_id`：按来源任务查询；
+- `asset_version`：区分同一任务的多次确认结果；
+- `content_hash`：识别完全相同的内容；
+- `status`：查询待索引或索引失败资产；
+- `requirement_summary`：历史列表展示；
+- `reviewer_score`、`test_point_count`：筛选和统计；
+- 时间字段：审计和排序。
+
+这种设计叫“完整快照 + 查询摘要列”。完整JSON负责恢复，独立列负责高效查询，两者职责不同。
+
+### 39.3 schema_version和asset_version不要混淆
+
+- `schema_version`表示JSON结构的版本。例如以后快照增加字段，需要schema v2读取器。
+- `asset_version`表示同一个任务发布了第几版知识资产。例如用户修改测试点后重新确认，可能形成资产第2版。
+
+前者解决代码兼容，后者解决业务历史。
+
+### 39.4 两个唯一索引的作用
+
+```text
+UNIQUE(content_hash)
+UNIQUE(source_task_id, asset_version)
+```
+
+第一个阻止相同内容重复保存；第二个阻止同一个任务并发创建两个相同版本。Python在写入前可以提前检查，但真正面对并发时，最终防线必须是数据库唯一约束。
+
+### 39.5 为什么没有给source_task_id增加外键
+
+任务记录和知识资产生命周期不同：
+
+- 任务记录可能按时间清理；
+- 已确认知识资产需要长期复用。
+
+如果外键级联删除，清理任务会误删知识；如果限制删除，又会让任务无法正常清理。因此资产只保留`source_task_id`作为审计来源，不使用数据库外键绑定生命周期。
+
+### 39.6 MySQL和Milvus如何配合
+
+```text
+Milvus返回asset_id和相似度
+→ Repository按asset_id查询MySQL
+→ 获得完整需求、测试点和来源证据
+```
+
+Milvus适合“找到相似内容”，不适合保存完整报告和复杂审计数据。MySQL负责权威内容，Milvus负责候选召回。即使Milvus损坏，也可以根据MySQL中的`pending_index`或`index_failed`资产重新构建索引。
+
+### 39.7 代码阅读顺序
+
+1. `knowledge_assets/snapshots.py`：观察领域对象如何变成JSON以及如何严格恢复。
+2. `repositories/mysql_knowledge_asset_repository.py`：观察Repository如何只依赖快照Codec。
+3. `application/bootstrap.py`：观察环境配置如何选择内存或MySQL实现。
+4. `tests/unit/repositories/test_mysql_knowledge_asset_repository.py`：观察Fake连接如何验证SQL和事务。
+5. `tests/integration/mysql/test_mysql_knowledge_asset_repository_integration.py`：观察真实数据库测试如何隔离和清理数据。
+
+### 39.8 面试问题与参考答案
+
+**问题1：为什么不把KnowledgeAsset拆成十几张关系表？**
+
+参考答案：第一版主要需求是可靠保存和完整恢复，资产内部结构仍可能演进。使用版本化JSON降低迁移和关联查询成本，同时把需要筛选、排序和唯一约束的字段独立成列。等出现稳定的跨资产统计需求后，再根据真实查询模式拆表。
+
+**问题2：为什么Python提前查重后还要数据库唯一索引？**
+
+参考答案：两个请求可能同时完成“未查到重复”的判断，然后同时写入。数据库唯一索引能在并发情况下提供最终一致的约束，Repository再把MySQL 1062转换为领域异常。
+
+**问题3：当前是否已经完成知识库闭环？**
+
+参考答案：没有。当前完成了准入和MySQL权威存储实现，资产状态仍为`pending_index`。还需要Embedding、Milvus V2索引、索引失败重试、检索回查和用户按钮，才能形成完整闭环。
+
+### 39.9 动手练习
+
+1. 画出用户点击保存后Application、Domain、Repository和MySQL的调用方向。
+2. 在不看代码的情况下解释`asset_json`和`requirement_summary`为什么同时存在。
+3. 修改一份测试快照的`schema_version`为2，观察为什么会被拒绝。
+4. 说明MySQL重复键1062为什么应该转换成KnowledgeAssetAlreadyExistsError。
+
+### 39.10 掌握检查
+
+- [ ] 能解释schema_version与asset_version的区别
+- [ ] 能解释完整JSON和摘要列的分工
+- [ ] 能说明两个唯一索引防止的重复类型
+- [ ] 能解释为什么MySQL是权威数据而Milvus只是索引
+- [ ] 能准确说明2.14.2还没有页面按钮和Milvus检索

@@ -57,7 +57,8 @@
 | 阶段 2.13.5 | 已完成 | pytest统一测试入口、marker与fixture | `70ea24e` |
 | 阶段 2.13.6 | 已完成 | unit、architecture、app与integration测试目录分层 | `4d3cdb9` |
 | 阶段 2.13 | 已完成 | 持久化、恢复、重复执行保护和测试工程入口 | - |
-| 阶段 2.14.1 | 已完成 | KnowledgeAsset模型、准入策略、内容哈希和内存Repository | 本次提交 |
+| 阶段 2.14.1 | 已完成 | KnowledgeAsset模型、准入策略、内容哈希和内存Repository | `549207a` |
+| 阶段 2.14.2 | 已完成 | 版本化资产快照、MySQL权威表、唯一索引和Repository实现 | 本次提交 |
 | 阶段 2.14 | 进行中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 脱敏离线评测、RAG/Reviewer专项评测和三组消融实验 | - |
@@ -2536,3 +2537,65 @@ python -m pytest
 InMemoryKnowledgeAssetRepository只提供边界验证，进程退出后资产会丢失；同一来源任务的版本分配也还没有
 数据库事务保护。阶段2.14.2将实现MySQLKnowledgeAssetRepository、权威资产表、唯一索引和真实CRUD验证，
 但仍不接入Milvus；Milvus V2索引留到2.14.3。
+
+## 阶段 2.14.2：MySQL KnowledgeAsset权威存储
+
+### 本阶段目标
+
+阶段2.14.1已经能够判断一份测试结果是否有资格成为知识资产，但内存Repository会在进程退出后丢失数据。
+本阶段只补齐完整资产的MySQL权威存储，不接入页面按钮、Embedding和Milvus，避免把持久化与向量索引混成一个故障边界。
+
+### 实际实现
+
+- 新增`KnowledgeAssetSnapshotSerializer`，使用独立schema v1把KnowledgeAsset转换为标准JSON并恢复为原领域类型
+- 快照严格恢复KnowledgeAssetStatus、StructuredRequirement、InferredRisk、TestPoint和TestPointReviewResult
+- 缺少字段、未知字段、非法枚举、无时区时间、错误列表类型、损坏JSON和未来版本都会明确失败
+- 新增`knowledge_assets`表，完整`asset_json`作为权威记录，摘要、评分、测试点数量和索引状态独立成列
+- `content_hash`建立唯一索引，阻止完全相同的业务内容重复沉淀
+- `source_task_id + asset_version`建立联合唯一索引，阻止同一任务出现重复版本
+- 新增`MySQLKnowledgeAssetRepository`，实现建表、创建、按ID读取、按哈希查询、查询来源任务最新版和列表查询
+- 新增`KNOWLEDGE_ASSET_REPOSITORY_BACKEND`配置，默认`memory`，显式选择`mysql`后才建立真实连接和初始化表
+- MySQL读取只使用完整快照恢复领域对象，不依赖摘要列拼装残缺资产
+
+### 为什么资产表不外键关联任务表
+
+`source_task_id`用于审计来源，但没有建立到`agent_tasks`的外键。任务执行记录可能按保留策略清理，而用户确认的历史知识资产需要继续被复用。
+如果建立级联删除外键，清理任务会误删知识库；如果建立限制删除外键，又会阻塞正常任务清理。因此保留来源ID和应用级审计关系更符合两类数据不同的生命周期。
+
+### MySQL与Milvus的职责
+
+MySQL保存完整需求、测试点、评审证据和报告，是可以恢复与审计的权威数据源。Milvus在后续2.14.3只保存向量和`asset_id`等少量元数据，
+搜索命中后必须再按`asset_id`回查MySQL。当前资产保持`pending_index`，不能描述为“已经可以被RAG检索”。
+
+### 测试证据
+
+本阶段新增19项默认执行的pytest测试和2项默认跳过的真实MySQL测试，覆盖：
+
+- 版本化JSON往返、领域类型恢复和可变对象隔离
+- 快照缺失字段、非法状态、无时区时间、错误列表、未来版本和损坏JSON
+- MySQL DDL、完整JSON写入、重复键错误映射、读取恢复、按哈希/来源查询和列表查询
+- MySQL装配选择、未知后端拒绝以及事务提交/回滚
+- 真实MySQL环境下的KnowledgeAsset CRUD和缺失资产行为（需显式开启）
+
+完整验证：
+
+```text
+python -m unittest discover -s tests
+260 tests，OK，6 skipped
+
+python -m pytest -q
+302 passed，8 skipped，共收集310项
+
+python -m compileall -q agent application knowledge_assets repositories services utils views tests main.py
+通过
+
+git diff --check
+通过
+```
+
+默认测试没有访问真实DeepSeek、Embedding、Milvus或MySQL。本阶段没有修改Streamlit、AgentState、Orchestrator、节点顺序和提示词。
+
+### 当前限制与下一步
+
+页面尚未组装KnowledgeAssetApplicationService，因此用户现在还看不到“保存到知识库”按钮。真实MySQL资产集成测试已经写入仓库，
+但本轮遵守外部服务隔离约定，没有主动连接用户数据库执行。阶段2.14.3将建立MySQL资产状态与Milvus V2索引闭环；页面按钮在后端闭环稳定后再接入。

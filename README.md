@@ -43,11 +43,11 @@
 - 页面只持有当前task_id和纯UI状态，通过只读TaskView渲染Agent结果
 - Application Service记录每次节点执行的开始、结束、耗时、成功/失败和错误类型，并汇总单任务执行耗时
 - MySQL Repository已经通过真实CRUD和跨Application Service实例恢复验证，可按同一`task_id`恢复等待补充、完成和失败任务
-- 后端已建立KnowledgeAsset模型、双重用户确认准入、稳定内容哈希和内存Repository边界；尚未接入页面、MySQL资产表或Milvus V2索引
+- 后端已建立KnowledgeAsset模型、双重用户确认准入、稳定内容哈希、版本化JSON快照和MySQL Repository；尚未接入页面按钮或Milvus V2索引
 
 当前 Agent 页面只接入了 Milvus 历史资产检索，尚未接入“用户确认后沉淀知识资产”的入口。
-阶段2.14.1已经完成后端KnowledgeAsset候选创建和准入校验，但当前只使用内存Repository进行测试，
-还不代表资产能够跨服务重启保存或被后续任务检索。
+阶段2.14.2已经完成KnowledgeAsset的MySQL权威存储实现，可保存并恢复完整资产；页面尚未触发该用例，
+Milvus V2索引也尚未实现，因此当前还不代表资产已经可以被后续任务检索。
 旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
 知识闭环。后续将由 MySQL 保存完整、可审计的知识资产，Milvus 只承担向量候选检索。
 
@@ -59,7 +59,7 @@
 ├── main.py                 # Streamlit 应用入口
 ├── application/            # 应用用例、Command、只读TaskView与会话装配
 ├── agent/                  # Agent状态、事件及后续节点
-├── knowledge_assets/       # 知识资产模型、准入规则与内容哈希
+├── knowledge_assets/       # 知识资产模型、准入规则、内容哈希与版本化快照
 ├── repositories/           # Task/KnowledgeAsset Repository抽象与实现
 ├── views/                  # 页面与交互状态
 ├── services/               # LLM、RAG、文档解析应用服务
@@ -140,6 +140,15 @@ MYSQL_DATABASE=ai_test_assistant
 应用启动时会创建`agent_tasks`、`agent_task_events`和`agent_task_executions`。建表SQL、TaskRecord真实CRUD、事件级联删除
 以及等待补充/完成/失败任务的跨Application Service实例恢复已在真实MySQL 8.0.32验证。
 
+KnowledgeAsset存储使用独立开关。需要让资产Repository使用同一MySQL时设置：
+
+```text
+KNOWLEDGE_ASSET_REPOSITORY_BACKEND=mysql
+```
+
+资产Repository初始化时会创建`knowledge_assets`表。当前Streamlit尚未接入“保存到知识库”按钮，因此启动页面不会自动发布资产；
+本阶段提供的是可由后续页面或FastAPI复用的MySQL存储边界。
+
 日常单元测试不会访问MySQL。如需在本机显式运行真实数据库集成测试：
 
 ```powershell
@@ -183,7 +192,7 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 5. 阶段2.13.5：已使用pytest统一测试入口、marker与fixture，并保留现有unittest兼容
 6. 阶段2.13.6：已按unit、architecture、app和integration整理测试目录，测试内容保持不变
 7. 阶段2.14.1：已完成KnowledgeAsset模型、准入策略、内容哈希和内存Repository边界
-8. 阶段2.14.2：将完整KnowledgeAsset接入MySQL权威存储
+8. 阶段2.14.2：已完成完整KnowledgeAsset的MySQL权威存储实现
 9. 阶段2.14.3：建立Milvus V2向量索引
 10. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
 11. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验

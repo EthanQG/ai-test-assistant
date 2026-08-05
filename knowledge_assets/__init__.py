@@ -10,6 +10,13 @@ from .policy import (
     KnowledgeAssetAdmissionError,
     KnowledgeAssetAdmissionPolicy,
 )
+from .snapshots import (
+    KNOWLEDGE_ASSET_SCHEMA_VERSION,
+    KnowledgeAssetSnapshotError,
+    KnowledgeAssetSnapshotSerializer,
+    KnowledgeAssetSnapshotValidationError,
+    UnsupportedKnowledgeAssetSnapshotVersionError,
+)
 
 __all__ = [
     "KnowledgeAsset",
@@ -18,4 +25,9 @@ __all__ = [
     "KnowledgeAssetStatus",
     "StructuredRequirement",
     "build_content_hash",
+    "KNOWLEDGE_ASSET_SCHEMA_VERSION",
+    "KnowledgeAssetSnapshotError",
+    "KnowledgeAssetSnapshotSerializer",
+    "KnowledgeAssetSnapshotValidationError",
+    "UnsupportedKnowledgeAssetSnapshotVersionError",
 ]

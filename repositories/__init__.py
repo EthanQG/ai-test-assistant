@@ -23,6 +23,10 @@ from .knowledge_asset_repository import (
     KnowledgeAssetRepository,
     KnowledgeAssetRepositoryError,
 )
+from .mysql_knowledge_asset_repository import (
+    CREATE_KNOWLEDGE_ASSETS_TABLE_SQL,
+    MySQLKnowledgeAssetRepository,
+)
 
 __all__ = [
     "InMemoryTaskRepository",
@@ -31,6 +35,8 @@ __all__ = [
     "KnowledgeAssetNotFoundError",
     "KnowledgeAssetRepository",
     "KnowledgeAssetRepositoryError",
+    "CREATE_KNOWLEDGE_ASSETS_TABLE_SQL",
+    "MySQLKnowledgeAssetRepository",
     "MySQLSettings",
     "MySQLTaskRepository",
     "TaskAlreadyExistsError",

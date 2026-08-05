@@ -229,13 +229,16 @@ Milvus 是语义检索索引，负责保存：
 - 用户必须同时确认知识沉淀和数据安全，模型不能自动发布
 - 保存来源任务、资产版本、SHA-256内容哈希、结构化需求、测试点、评审证据和最终报告
 - 已提供KnowledgeAssetRepository抽象、内存实现和独立Application Service
-- 当前只创建`pending_index`内存资产，不代表已写入MySQL或Milvus
+- 2.14.1只创建`pending_index`内存资产，不代表已写入MySQL或Milvus
 
 ### 2.14.2 MySQL 知识资产存储
 
-- 增加 `knowledge_assets`
-- MySQL 保存完整权威资产
-- 支持 `pending_index`、`indexed`、`index_failed`、`retired`
+- **已完成（2026-08-05）**
+- 增加`knowledge_assets`权威表和schema v1完整资产JSON
+- 独立保存来源任务、资产版本、内容哈希、状态、摘要、评分、测试点数量和时间
+- 使用内容哈希与来源任务版本唯一索引阻止重复写入
+- 提供MySQLKnowledgeAssetRepository、环境装配、Fake MySQL测试和显式真实CRUD测试
+- 当前只持久化`pending_index`，`indexed`、`index_failed`和`retired`状态转换留到后续索引阶段
 
 ### 2.14.3 Milvus V2 向量索引
 
