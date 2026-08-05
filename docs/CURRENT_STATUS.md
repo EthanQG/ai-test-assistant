@@ -1,6 +1,6 @@
 # Test Analysis Agent 当前开发状态
 
-更新时间：2026-08-04
+更新时间：2026-08-05
 
 本文档只保存最新接力信息。产品范围以
 [PRD_AGENT_V2.md](product/PRD_AGENT_V2.md) 为准，后续阶段以
@@ -10,19 +10,18 @@
 ## Git 基线
 
 - 分支：`main`
-- 当前远端基线：`77d0ac4 阶段2.13.4：实现任务重复执行保护`
-- 阶段2.13.5代码、双测试入口和文档已完成
+- 当前远端基线：`70ea24e 阶段2.13.5：升级pytest测试工程`
+- 阶段2.13.6测试目录分层、双入口验证和文档同步已完成，尚未提交
 
-## 当前阶段：2.13.5 pytest测试工程升级
+## 当前阶段：2.13.6 测试目录分层
 
-本阶段没有改写Agent业务代码，也没有一次性迁移原有unittest。主要完成：
+本阶段没有修改生产代码，也没有重写原有unittest断言。主要完成：
 
-1. 新增`requirements-dev.txt`，pytest只作为开发依赖，不进入生产运行依赖。
-2. 新增`pytest.ini`，统一测试目录、严格marker和测试类命名规则。
-3. 新增`tests/conftest.py`，提供隔离的内存Repository和TaskRecord工厂fixture。
-4. 自动将测试分为`unit`、`app`和`integration`，不需要给260项旧测试逐个添加装饰器。
-5. 新增3项pytest原生示例，展示fixture、普通`assert`和`pytest.raises`。
-6. 修正3个只在pytest收集时暴露的命名冲突，生产代码未修改。
+1. `tests/unit/`按`agent`、`application`、`repositories`、`services`、`views`和`legacy`继续分层。
+2. 架构边界、Streamlit AppTest和真实MySQL测试分别进入`architecture`、`app`和`integration`。
+3. 各级目录增加`__init__.py`，保证原`unittest discover`仍能递归发现全部测试。
+4. pytest marker由文件名判断改为目录判断，新测试放入对应目录即可自动分类。
+5. AppTest fixture与快照测试内部导入路径随目录更新，业务断言和生产代码保持不变。
 
 ## 测试入口
 
@@ -85,6 +84,7 @@ pytest integration：6 skipped，257 deselected
 - 当前只保证节点结果幂等提交，不保证外部LLM请求Exactly Once
 - 租约默认600秒且没有后台续租
 - pytest只是统一入口和渐进迁移起点，绝大多数测试仍使用unittest.TestCase
+- 公共fixture当前数量较少，继续保留在根`tests/conftest.py`；只有出现明确的层级专用fixture时再下沉
 - 尚未配置CI流水线；等仓库测试命令稳定后再单独评估
 - 尚未实现KnowledgeAsset沉淀、Milvus V2、ContextBuilder、离线评测、FastAPI、SSE和Vue
 

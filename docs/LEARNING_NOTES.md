@@ -83,7 +83,7 @@
 - `services/rag_service.py`
 - `services/document_service.py`
 - `utils/test_manager.py`
-- `tests/test_test_manager.py`
+- `tests/unit/legacy/test_test_manager.py`
 
 ### 3.2 Service 是什么
 
@@ -236,7 +236,7 @@ yield content
 - `services/prompt_service.py`
 - `utils/test_manager.py`
 - `utils/ai_client.py`
-- `tests/test_prompt_service.py`
+- `tests/unit/services/test_prompt_service.py`
 
 ### 4.2 两种 Prompt 的职责
 
@@ -481,7 +481,7 @@ RAG 的目标是只提供与当前任务相关的少量证据。
 - `agent/state.py`
 - `agent/events.py`
 - `agent/__init__.py`
-- `tests/test_agent_state.py`
+- `tests/unit/agent/test_agent_state.py`
 
 ### 6.2 为什么需要 AgentState
 
@@ -865,13 +865,13 @@ raise ValueError("requirement cannot be empty")
 
 1. 阅读 `agent/events.py`
 2. 阅读 `agent/state.py`
-3. 阅读 `tests/test_agent_state.py`
+3. 阅读 `tests/unit/agent/test_agent_state.py`
 
 目标：能说明状态、步骤、事件和合法转换。
 
 ### 第三轮：理解测试
 
-1. 阅读三个 `tests/test_*.py`
+1. 阅读`tests/unit/`中三个相关的`test_*.py`
 2. 暂时不看答案，预测每个测试为什么通过
 3. 主动修改一处代码，让测试失败
 4. 恢复代码并重新运行
@@ -918,7 +918,7 @@ raise ValueError("requirement cannot be empty")
 - `prompts/requirement_analysis.txt`
 - `services/prompt_service.py`
 - `agent/state.py`
-- `tests/test_requirement_analyzer.py`
+- `tests/unit/agent/test_requirement_analyzer.py`
 
 ### 13.2 本阶段实现了什么
 
@@ -4184,3 +4184,83 @@ unittest只寻找`TestCase`方法，所以以前没有问题；pytest把这些�
 - [ ] 能解释为什么采用渐进迁移而不是全部重写
 - [ ] 能说清unit、app和integration三类测试边界
 - [ ] 能解释pytest首次收集错误的根因和修复方式
+
+## 三十七、阶段2.13.6：测试目录为什么要分层
+
+### 37.1 为什么不能一直把测试放在`tests/`根目录
+
+测试较少时，平铺文件容易查找；当项目同时包含Agent节点、Application Service、Repository、
+Streamlit页面和真实MySQL测试后，单看文件名已经难以判断测试所属职责和运行成本。目录分层让
+开发者先按代码边界定位，再查看具体场景。
+
+### 37.2 当前目录分别放什么
+
+```text
+tests/
+├── unit/          # 不访问真实外部服务的快速测试
+│   ├── agent/     # 状态、节点、Orchestrator和人工反馈
+│   ├── application/ # Application Service与任务快照
+│   ├── repositories/ # 内存Repository与Fake MySQL测试
+│   ├── services/  # LLM、RAG、Prompt、文档与结构化输出边界
+│   ├── views/     # Presenter和展示数据转换
+│   └── legacy/    # 旧Workflow兼容入口
+├── architecture/  # 通过AST或源码检查依赖红线
+├── app/           # Streamlit AppTest
+└── integration/   # 需要显式授权的真实基础设施测试
+```
+
+这里的Fake MySQL测试仍属于unit，因为它不连接真实数据库；只有实际访问MySQL的测试才进入
+`integration/mysql`。
+
+### 37.3 目录分类和pytest marker有什么区别
+
+- 目录用于代码导航和职责归属，例如Repository测试放在哪里。
+- marker用于选择运行集合，例如只运行快速unit，或者单独运行app。
+
+pytest现在根据目录自动添加marker。新建测试时只要放入正确目录，就不需要每个函数重复写
+`@pytest.mark.unit`。`integration`目录中的测试仍需要环境变量开关，marker不会代替外部服务授权。
+
+### 37.4 为什么每层需要`__init__.py`
+
+项目仍保留`python -m unittest discover -s tests -v`作为兼容入口。`unittest`递归发现子目录时，
+需要这些目录可以作为Python包导入，因此各层保留轻量`__init__.py`。pytest本身对目录要求更宽松，
+但兼容旧入口时不能只考虑pytest。
+
+### 37.5 为什么没有立刻拆很多`conftest.py`
+
+当前公共fixture只有内存Repository和TaskRecord工厂，所有快速测试都可能复用，继续放在根
+`tests/conftest.py`最清晰。只有未来出现“仅Agent使用”或“仅MySQL集成测试使用”的公共准备逻辑时，
+才把fixture下沉到对应目录。提前建立空的多层conftest只会增加查找成本。
+
+### 37.6 面试问题与参考答案
+
+#### 问：为什么既按目录分层，又使用pytest marker？
+
+> 目录表达代码职责，marker表达运行成本和外部依赖。真实MySQL与Fake MySQL都属于Repository测试，
+> 但前者需要外部环境，后者是快速单元测试，所以它们应在不同运行层中。
+
+#### 问：移动测试文件后如何证明没有漏测？
+
+> 移动前后分别运行unittest和pytest，并比较收集数量与结果。此次移动前后unittest都是260项，
+> pytest都是263项，其中6项真实MySQL默认跳过；数量和分类结果一致。
+
+#### 问：为什么不把旧unittest一起改成pytest函数？
+
+> 目录整理解决导航问题，语法迁移解决维护方式问题，两者风险不同。把它们混在一次提交中会让
+> 测试丢失时难以定位原因，所以先只移动文件并保持断言不变。
+
+### 37.7 动手练习
+
+- [ ] 找出RequirementAnalyzer测试所在目录，并解释它为什么不放在Application目录
+- [ ] 分别运行`python -m pytest -m unit`和`python -m pytest -m app`
+- [ ] 说明Fake MySQL测试与真实MySQL测试为什么位于不同目录
+- [ ] 新增一个不访问外部服务的Service测试，并确认它自动获得unit marker
+- [ ] 删除一个子目录的`__init__.py`后观察unittest discover差异，再撤销实验修改
+
+### 37.8 掌握检查
+
+- [ ] 能画出当前测试目录树
+- [ ] 能区分代码职责分层与运行成本分层
+- [ ] 能解释`__init__.py`对旧unittest入口的作用
+- [ ] 能说明什么时候应该新增子级`conftest.py`
+- [ ] 能用测试数量证明目录迁移没有造成漏收集

@@ -27,13 +27,13 @@ def task_record_factory() -> Callable[[str], TaskRecord]:
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Classify existing unittest and pytest tests without editing every file."""
+    """Classify tests by their physical layer without editing every test."""
 
     for item in items:
-        path = item.path.name
-        if path == "test_mysql_task_repository_integration.py":
+        path_parts = set(item.path.parts)
+        if "integration" in path_parts:
             item.add_marker(pytest.mark.integration)
-        elif path == "test_streamlit_agent_page.py":
+        elif "app" in path_parts:
             item.add_marker(pytest.mark.app)
         else:
             item.add_marker(pytest.mark.unit)

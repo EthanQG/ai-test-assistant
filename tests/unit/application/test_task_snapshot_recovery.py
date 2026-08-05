@@ -21,7 +21,7 @@ from application import (
 )
 from repositories import InMemoryTaskRepository
 
-from tests.test_task_snapshots import (
+from .test_task_snapshots import (
     REVIEW_RESULT,
     TEST_POINT,
     build_full_record,

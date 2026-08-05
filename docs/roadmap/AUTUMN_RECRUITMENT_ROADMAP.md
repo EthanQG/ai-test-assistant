@@ -212,6 +212,14 @@ Milvus 是语义检索索引，负责保存：
 - 只示范迁移重复样板较多的测试，不进行一次性大改写
 - MySQL 集成测试继续显式开启，不把外部数据库变成日常测试前置条件
 
+### 2.13.6 测试目录分层
+
+- **已完成（2026-08-05）**
+- 按unit、architecture、app和integration拆分物理测试目录
+- unit内部继续按Agent、Application、Repository、Service、View和旧兼容层分组
+- pytest marker按目录自动分类，unittest discover继续兼容全部旧用例
+- 只整理测试工程，不修改生产代码或批量重写断言
+
 ## 2.14 知识资产沉淀与 Milvus 闭环
 
 ### 2.14.1 KnowledgeAsset 模型和准入规则

@@ -93,7 +93,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
 
     def test_text_input_creates_task_with_requirement(self):
         app = AppTest.from_file(
-            "tests/fixtures/task_creation_app.py"
+            "tests/app/fixtures/task_creation_app.py"
         ).run(timeout=10)
 
         self.assertFalse(app.exception, app.exception)
@@ -111,7 +111,7 @@ class StreamlitAgentPageTests(unittest.TestCase):
 
     def test_uploaded_file_creates_task_with_extracted_requirement(self):
         app = AppTest.from_file(
-            "tests/fixtures/task_creation_app.py"
+            "tests/app/fixtures/task_creation_app.py"
         ).run(timeout=10)
 
         self.assertFalse(app.exception, app.exception)

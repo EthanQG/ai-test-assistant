@@ -53,8 +53,9 @@
 | 阶段 2.13.1 | 已完成 | schema v1任务快照、严格JSON校验、完整领域恢复和恢复执行验证 | `5f50110` |
 | 阶段 2.13.2 | 已完成 | MySQL任务快照、独立事件表、事务保存和可切换Repository装配 | `885c5ca` |
 | 阶段 2.13.3 | 已完成 | 真实MySQL CRUD、事件一致性和跨Application Service实例恢复 | `bb30a5b` |
-| 阶段 2.13.4 | 已完成 | 乐观锁、execution_id幂等与可过期执行租约 | 本次提交 |
-| 阶段 2.13.5 | 已完成 | pytest统一测试入口、marker与fixture | 本次提交 |
+| 阶段 2.13.4 | 已完成 | 乐观锁、execution_id幂等与可过期执行租约 | `77d0ac4` |
+| 阶段 2.13.5 | 已完成 | pytest统一测试入口、marker与fixture | `70ea24e` |
+| 阶段 2.13.6 | 已完成 | unit、architecture、app与integration测试目录分层 | 本次提交 |
 | 阶段 2.13 | 已完成 | 持久化、恢复、重复执行保护和测试工程入口 | - |
 | 阶段 2.14 | 规划中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
@@ -1404,9 +1405,9 @@ Reviser再单独处理新的Reviewer问题。
 - `services/prompt_service.py`
 - `views/agent_presenter.py`
 - `views/tab_test_points.py`
-- `tests/test_orchestrator.py`
-- `tests/test_agent_presenter.py`
-- `tests/test_streamlit_agent_page.py`
+- `tests/unit/agent/test_orchestrator.py`
+- `tests/unit/views/test_agent_presenter.py`
+- `tests/app/test_streamlit_agent_page.py`
 
 ### 验证结果
 
@@ -2296,7 +2297,7 @@ python -m unittest discover -s tests -v
 
 ```text
 $env:RUN_MYSQL_INTEGRATION_TESTS='1'
-python -m unittest tests.test_mysql_task_repository_integration -v
+python -m unittest tests.integration.mysql.test_mysql_task_repository_integration -v
 3 integration tests passed
 ```
 
@@ -2365,7 +2366,7 @@ execution_id和执行租约留到2.13.4，也不宣称外部LLM请求Exactly Onc
 python -m unittest discover -s tests -v
 260 tests passed（6项真实MySQL测试默认跳过）
 $env:RUN_MYSQL_INTEGRATION_TESTS='1'
-python -m unittest tests.test_mysql_task_repository_integration -v
+python -m unittest tests.integration.mysql.test_mysql_task_repository_integration -v
 6 integration tests passed
 ```
 
@@ -2437,3 +2438,45 @@ pytest比unittest多3项，是新增的pytest原生基础设施测试；真实My
 
 阶段2.14.1只实现KnowledgeAsset领域模型、准入规则和Repository边界；2.14.2再接MySQL权威存储，
 2.14.3再建立Milvus V2索引，避免把模型、数据库和向量索引一次性混在同一提交中。
+
+## 阶段 2.13.6：测试目录分层
+
+### 本阶段目标
+
+阶段2.13.5已经让pytest统一收集原有unittest，并提供marker与fixture，但所有测试文件仍平铺在
+`tests/`根目录。随着Agent、Application、Repository和外部集成测试继续增加，文件职责不直观，
+新测试也容易继续堆积。本阶段只整理物理目录，不改生产代码和测试业务断言。
+
+### 实际实现
+
+- `tests/unit/`按`agent`、`application`、`repositories`、`services`、`views`和`legacy`分组
+- `tests/architecture/`保存静态依赖边界测试
+- `tests/app/`保存Streamlit AppTest及其小型fixture应用
+- `tests/integration/mysql/`保存必须显式开启的真实MySQL测试
+- 各层增加`__init__.py`，继续兼容`python -m unittest discover -s tests -v`
+- pytest收集钩子按目录自动添加`unit`、`app`和`integration` marker，不再依赖特定文件名
+- 只修正测试间相对导入和AppTest fixture路径，没有改变测试场景与断言
+
+### 为什么目录和marker同时保留
+
+目录回答“这份测试属于哪个代码职责”，marker回答“运行这份测试需要多少成本、是否依赖外部环境”。
+例如MySQL Fake测试位于`unit/repositories`，真实MySQL测试位于`integration/mysql`；二者都测试
+Repository，但运行边界不同。两种分类不是重复，而是分别服务代码导航和测试执行。
+
+### 验证结果
+
+```text
+python -m unittest discover -s tests -v
+260 tests，OK（6 skipped）
+
+python -m pytest
+257 passed，6 skipped，共收集263项
+```
+
+测试数量与阶段2.13.5完全一致，说明目录移动没有造成漏收集。真实MySQL、DeepSeek、Embedding和
+Milvus均未被默认测试调用，生产代码未修改。
+
+### 下一步
+
+阶段2.14.1开始KnowledgeAsset领域模型、准入规则和Repository边界。后续新增测试直接放入对应层，
+旧unittest只在局部维护收益明确时逐步改为pytest风格，不进行批量机械重写。

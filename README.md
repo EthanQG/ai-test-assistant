@@ -64,7 +64,11 @@
 ├── knowledge/              # 本地测试知识
 ├── docs/                   # 当前接力状态与开发复盘
 │   └── roadmap/           # 秋招目标、阶段范围和证据要求
-└── tests/                  # 自动化测试
+└── tests/                  # 分层自动化测试
+    ├── unit/               # Agent、Application、Repository、Service与Presenter单元测试
+    ├── architecture/       # 静态依赖边界测试
+    ├── app/                # Streamlit AppTest与页面fixture
+    └── integration/        # 需显式开启的真实基础设施集成测试
 ```
 
 当前页面已经不再调用 `TestAssistantManager`，也不直接创建AgentState、Orchestrator、节点
@@ -136,7 +140,7 @@ MYSQL_DATABASE=ai_test_assistant
 
 ```powershell
 $env:RUN_MYSQL_INTEGRATION_TESTS='1'
-python -m unittest tests.test_mysql_task_repository_integration -v
+python -m unittest tests.integration.mysql.test_mysql_task_repository_integration -v
 ```
 
 集成测试使用独立UUID并在结束后按`task_id`清理测试数据。2.13.4已实现并通过真实MySQL验证乐观锁、
@@ -173,10 +177,11 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 3. 阶段2.13.3：已完成真实MySQL CRUD和跨Application Service实例恢复验证
 4. 阶段2.13.4：已实现version、execution_id与执行租约保护
 5. 阶段2.13.5：已使用pytest统一测试入口、marker与fixture，并保留现有unittest兼容
-6. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
-7. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
-8. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
-9. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+6. 阶段2.13.6：已按unit、architecture、app和integration整理测试目录，测试内容保持不变
+7. 阶段2.14：完成用户确认后的KnowledgeAsset沉淀；MySQL保存完整资产，Milvus建立向量索引
+8. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
+9. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
+10. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。
