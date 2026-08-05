@@ -54,6 +54,27 @@ def test_repository_returns_isolated_copies():
     ]
 
 
+def test_repository_batch_reads_existing_assets_only():
+    first = _make_asset("asset-batch-1")
+    second = replace(
+        first,
+        asset_id="asset-batch-2",
+        asset_version=2,
+        content_hash="b" * 64,
+    )
+    repository = InMemoryKnowledgeAssetRepository()
+    repository.create(first)
+    repository.create(second)
+
+    result = repository.get_many(
+        [first.asset_id, "stale-vector-id", second.asset_id, first.asset_id]
+    )
+
+    assert set(result) == {first.asset_id, second.asset_id}
+    assert result[first.asset_id] == first
+    assert result[first.asset_id] is not first
+
+
 def test_repository_rejects_duplicate_identity_hash_and_source_version():
     repository = InMemoryKnowledgeAssetRepository()
     asset = _make_asset()

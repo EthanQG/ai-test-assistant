@@ -142,6 +142,44 @@ class MySQLKnowledgeAssetRepository(KnowledgeAssetRepository):
             raise KnowledgeAssetNotFoundError(asset_id)
         return asset
 
+    def get_many(
+        self,
+        asset_ids: list[str],
+    ) -> dict[str, KnowledgeAsset]:
+        unique_ids = list(dict.fromkeys(asset_ids))
+        if not unique_ids:
+            return {}
+        placeholders = ", ".join(["%s"] * len(unique_ids))
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                f"""
+                SELECT asset_id, asset_json
+                FROM knowledge_assets
+                WHERE asset_id IN ({placeholders})
+                """,
+                tuple(unique_ids),
+            )
+            assets: dict[str, KnowledgeAsset] = {}
+            for row in cursor.fetchall():
+                if not isinstance(row, dict) or "asset_id" not in row:
+                    raise KnowledgeAssetRepositoryError(
+                        "MySQL knowledge asset batch row is invalid"
+                    )
+                asset = self._asset_from_row(row)
+                assets[str(row["asset_id"])] = asset
+            return assets
+        except KnowledgeAssetRepositoryError:
+            raise
+        except Exception as exc:
+            raise KnowledgeAssetRepositoryError(
+                "failed to batch read MySQL knowledge assets"
+            ) from exc
+        finally:
+            cursor.close()
+            connection.close()
+
     def find_by_content_hash(
         self,
         content_hash: str,

@@ -4600,3 +4600,98 @@ pending_index
 - [ ] 能说明稳定chunk_id和upsert如何支持补偿重试
 - [ ] 能说明pending_index、indexed和index_failed的含义
 - [ ] 能准确说明2.14.3尚未实现历史资产查询
+
+## 四十一、阶段2.14.4：Milvus找到片段后，如何安全取回完整资产
+
+### 41.1 最简单的理解
+
+Milvus像“书的搜索目录”，MySQL像“存放整本书的书架”。
+
+```text
+用户新需求
+→ Milvus找到几个相似段落，并返回asset_id
+→ 用asset_id一次去MySQL取回完整资产
+→ 检查版本和哈希确实一致
+→ 才允许作为历史知识候选
+```
+
+Milvus中的短文本只负责帮助找到候选，最终可信内容始终来自MySQL。
+
+### 41.2 为什么不能只相信asset_id
+
+假设旧资产版本1已经写入Milvus，后来MySQL中保存了版本2。如果只比较`asset_id`，旧向量可能错误关联新内容。
+因此本项目同时比较：
+
+- `asset_id`：是哪一份资产
+- `source_task_id`：来自哪一次任务
+- `asset_version`：资产是第几版
+- `content_hash`：业务内容是否完全一致
+- `status`：当前是否仍允许检索
+
+这组校验让“找到谁”和“取回的完整内容是谁”保持一致。
+
+### 41.3 为什么增加get_many
+
+如果Milvus返回20条命中后逐条调用Repository：
+
+```text
+1次Milvus + 最多20次MySQL
+```
+
+这叫N+1查询，会增加网络往返。`get_many(asset_ids)`把它变成：
+
+```text
+1次Milvus + 1次MySQL IN批量查询
+```
+
+同一资产的多个命中Chunk还会先按`asset_id`合并，不重复取完整文档。
+
+### 41.4 阈值和Top-K分别做什么
+
+- `raw_limit=20`：Milvus最多先返回20个短片段
+- `min_score=0.65`：低于基线的片段先丢弃
+- `top_k=3`：最终最多返回3份完整资产
+
+阈值是安全基线，不代表已经证明最佳。后续必须使用脱敏评测集统计错误召回和漏召回，再调整参数。
+
+### 41.5 为什么本阶段不加LLM精排
+
+LLM精排会增加一次模型请求、时长、成本和输出不稳定性。当前先用确定性的相似度、状态、版本和哈希规则建立可测试基线。
+只有离线评测证明简单方案不足，并且LLM精排能稳定改善指标时，才值得加入。
+
+### 41.6 代码阅读顺序
+
+1. `knowledge_assets/retrieval.py`：看Milvus命中和最终候选的数据结构。
+2. `application/knowledge_asset_retrieval_service.py`：看过滤、聚合、回查和校验顺序。
+3. `repositories/knowledge_asset_repository.py`：看`get_many()`抽象和内存实现。
+4. `repositories/mysql_knowledge_asset_repository.py`：看一条`IN`查询如何恢复完整资产。
+5. `services/milvus_asset_index.py`：看COSINE搜索和元数据恢复。
+
+### 41.7 面试问题与参考答案
+
+**问题1：Milvus不保存完整文档，如何保证关联正确？**
+
+参考答案：Milvus保存稳定asset_id、来源任务、资产版本和内容哈希。命中后按asset_id批量回查MySQL，并校验indexed状态、来源、版本和哈希；最终上下文使用MySQL完整资产，校验失败的向量命中直接丢弃。
+
+**问题2：这条检索链路会不会很慢？**
+
+参考答案：第一版固定为一次查询Embedding、一次Milvus搜索和一次MySQL批量查询，不进行逐条回查，也不加入LLM精排。真实耗时尚未测量，后续会分层记录Embedding、Milvus和MySQL耗时。
+
+**问题3：为什么不能直接把Milvus命中的search_text给LLM？**
+
+参考答案：短文本可能是孤儿索引或旧版本，也缺少完整评审证据。先回查权威存储可以防止过期业务规则污染新任务，并保留可审计来源。
+
+### 41.8 动手练习
+
+1. 把同一资产构造两个高分Chunk，观察最终为什么只返回一份资产。
+2. 把Milvus命中的`content_hash`改成全0，观察候选被丢弃。
+3. 将资产状态改成`retired`，观察即使相似度很高也不会返回。
+4. 阅读MySQL `get_many()`，说明为什么它不是N+1查询。
+
+### 41.9 掌握检查
+
+- [ ] 能解释Milvus与MySQL各自保存什么
+- [ ] 能说明asset_id、version和content_hash为什么要一起校验
+- [ ] 能解释阈值过滤、Chunk聚合和Top-K的先后顺序
+- [ ] 能说明为什么第一版不使用LLM精排
+- [ ] 能准确说明2.14.4尚未接入当前Agent节点

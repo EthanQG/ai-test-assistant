@@ -16,6 +16,11 @@ from .policy import (
     KnowledgeAssetAdmissionError,
     KnowledgeAssetAdmissionPolicy,
 )
+from .retrieval import (
+    KnowledgeAssetRetrievalCandidate,
+    KnowledgeAssetRetrievalResult,
+    KnowledgeAssetVectorHit,
+)
 from .snapshots import (
     KNOWLEDGE_ASSET_SCHEMA_VERSION,
     KnowledgeAssetSnapshotError,
@@ -33,6 +38,9 @@ __all__ = [
     "KnowledgeAssetAdmissionError",
     "KnowledgeAssetAdmissionPolicy",
     "KnowledgeAssetStatus",
+    "KnowledgeAssetRetrievalCandidate",
+    "KnowledgeAssetRetrievalResult",
+    "KnowledgeAssetVectorHit",
     "StructuredRequirement",
     "build_content_hash",
     "KNOWLEDGE_ASSET_SCHEMA_VERSION",

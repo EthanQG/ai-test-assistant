@@ -15,9 +15,14 @@ from .knowledge_asset_indexing_service import (
     KnowledgeAssetIndexingResult,
     KnowledgeAssetIndexingService,
 )
+from .knowledge_asset_retrieval_service import (
+    KnowledgeAssetRetrievalError,
+    KnowledgeAssetRetrievalService,
+)
 from .bootstrap import (
     build_knowledge_asset_application_service,
     build_knowledge_asset_indexing_service,
+    build_knowledge_asset_retrieval_service,
     build_knowledge_asset_repository,
     build_session_application_service,
     build_task_repository,
@@ -51,6 +56,8 @@ __all__ = [
     "KnowledgeAssetIndexingError",
     "KnowledgeAssetIndexingResult",
     "KnowledgeAssetIndexingService",
+    "KnowledgeAssetRetrievalError",
+    "KnowledgeAssetRetrievalService",
     "KnowledgeAssetView",
     "SubmitClarificationsCommand",
     "SubmitFeedbackCommand",
@@ -67,6 +74,7 @@ __all__ = [
     "build_session_application_service",
     "build_knowledge_asset_application_service",
     "build_knowledge_asset_indexing_service",
+    "build_knowledge_asset_retrieval_service",
     "build_knowledge_asset_repository",
     "build_task_repository",
     "migrate_snapshot",

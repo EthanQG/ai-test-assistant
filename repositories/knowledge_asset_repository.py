@@ -49,6 +49,15 @@ class KnowledgeAssetRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_many(
+        self,
+        asset_ids: list[str],
+    ) -> dict[str, KnowledgeAsset]:
+        """Return existing assets keyed by id without failing on stale ids."""
+
+        raise NotImplementedError
+
+    @abstractmethod
     def find_by_content_hash(
         self,
         content_hash: str,
@@ -114,6 +123,17 @@ class InMemoryKnowledgeAssetRepository(KnowledgeAssetRepository):
             if asset_id not in self._assets:
                 raise KnowledgeAssetNotFoundError(asset_id)
             return deepcopy(self._assets[asset_id])
+
+    def get_many(
+        self,
+        asset_ids: list[str],
+    ) -> dict[str, KnowledgeAsset]:
+        with self._lock:
+            return {
+                asset_id: deepcopy(self._assets[asset_id])
+                for asset_id in dict.fromkeys(asset_ids)
+                if asset_id in self._assets
+            }
 
     def find_by_content_hash(
         self,

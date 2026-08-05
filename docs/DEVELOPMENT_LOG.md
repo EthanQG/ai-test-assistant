@@ -59,7 +59,8 @@
 | 阶段 2.13 | 已完成 | 持久化、恢复、重复执行保护和测试工程入口 | - |
 | 阶段 2.14.1 | 已完成 | KnowledgeAsset模型、准入策略、内容哈希和内存Repository | `549207a` |
 | 阶段 2.14.2 | 已完成 | 版本化资产快照、MySQL权威表、唯一索引和Repository实现 | `f88a426` |
-| 阶段 2.14.3 | 已完成 | 有界语义Chunk、批量Embedding和Milvus V2索引写入边界 | 本次提交 |
+| 阶段 2.14.3 | 已完成 | 有界语义Chunk、批量Embedding和Milvus V2索引写入边界 | `66f12fa` |
+| 阶段 2.14.4 | 已完成 | Milvus V2阈值召回、资产聚合、MySQL批量回查和来源验证 | 本次提交 |
 | 阶段 2.14 | 进行中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
 | 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 脱敏离线评测、RAG/Reviewer专项评测和三组消融实验 | - |
@@ -2672,3 +2673,80 @@ git diff --check
 
 当前只实现索引写入，还没有实现V2查询和MySQL回查，因此不能宣称新资产已经被当前KnowledgeRetriever使用。
 阶段2.14.4将实现Top-K候选召回、阈值过滤、按资产聚合、MySQL回查和来源验证，不增加LLM精排。
+
+## 阶段 2.14.4：Milvus V2候选召回与MySQL权威回查
+
+### 本阶段目标
+
+阶段2.14.3已经能把确认资产拆成有界Chunk并写入Milvus，但“向量能被找到”还不等于“完整资产可信”。
+本阶段补齐查询侧边界：Milvus只负责召回短片段，完整内容必须按稳定`asset_id`回查MySQL，并再次校验状态、来源、版本和内容哈希。
+
+### 实际实现
+
+- 新增`KnowledgeAssetVectorHit`，明确Milvus返回的短片段、相似度和关联元数据
+- 新增`KnowledgeAssetRetrievalCandidate/Result`，返回完整权威资产、最高分数和有界命中片段
+- 新增`KnowledgeAssetRetrievalService`，完成一次查询Embedding、一次Milvus搜索、阈值过滤、资产聚合和一次MySQL批量回查
+- `KnowledgeAssetRepository`增加`get_many()`，内存实现返回隔离副本，MySQL实现使用单条`IN`查询
+- `MilvusKnowledgeAssetIndex`增加COSINE搜索并恢复稳定关联字段
+- 默认`raw_limit=20`、`top_k=3`、`min_score=0.65`，同一资产最多保留3条匹配Chunk
+- 新增环境配置和Bootstrap装配入口，但未修改当前Agent节点或Streamlit
+
+### 为什么必须回查MySQL
+
+Milvus中的向量可能因为跨存储失败而成为孤儿，也可能对应已经停用或重新发布的旧版本。如果直接把命中的短文本交给LLM，旧业务规则可能污染新的测试分析。
+因此检索服务只接受满足以下全部条件的候选：
+
+```text
+MySQL中存在相同asset_id
+AND status == indexed
+AND source_task_id一致
+AND asset_version一致
+AND content_hash一致
+```
+
+任何一项不满足都按过期或孤立命中丢弃。最终返回的完整内容来自MySQL，而不是Milvus短文本。
+
+### 时长控制
+
+本阶段刻意不加入LLM精排。一次检索固定为：
+
+```text
+1次查询Embedding + 1次Milvus搜索 + 1次MySQL批量查询
+```
+
+同一资产的多个Chunk先在内存聚合，MySQL不按命中逐条查询。该设计减少网络往返，但尚未执行真实环境性能测试，不能声明具体毫秒数。
+
+### 测试证据
+
+新增或加强测试覆盖：
+
+- 查询只调用一次Embedding和一次向量搜索
+- 阈值过滤、同资产多Chunk聚合、Top-K排序和数量限制
+- 孤儿向量、未索引资产、版本不一致和哈希不一致全部丢弃
+- 非法查询向量和空查询明确失败
+- MySQL批量回查只执行一条SQL并去除重复ID
+- Milvus搜索结果恢复稳定关联元数据
+- Application检索用例不直接依赖Ollama、MilvusClient、requests、pymilvus或LLM
+
+完整验证：
+
+```text
+python -m unittest discover -s tests -v
+260 tests，OK，6 skipped
+
+python -m pytest -q
+337 passed，8 skipped，共收集345项
+
+python -m compileall -q agent application knowledge_assets repositories services utils views tests main.py
+通过
+
+git diff --check
+通过
+```
+
+默认测试只使用Fake服务，不访问真实DeepSeek、Ollama、Milvus或MySQL。
+
+### 当前限制与下一步
+
+本阶段提供的是可被Agent或未来FastAPI复用的后端检索用例，尚未替换当前KnowledgeRetriever，也没有实现ContextBuilder裁剪。
+`0.65`只是可配置基线，需要阶段2.16离线评测后才能判断效果。阶段2.14.5继续处理`index_failed`重试、重复请求保护和跨MySQL/Milvus补偿审计。

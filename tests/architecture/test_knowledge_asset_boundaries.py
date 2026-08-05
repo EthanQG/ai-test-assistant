@@ -17,6 +17,7 @@ def test_knowledge_asset_domain_does_not_import_infrastructure():
     imports = _imports("knowledge_assets/policy.py") | _imports(
         "knowledge_assets/models.py"
     ) | _imports("knowledge_assets/indexing.py")
+    imports |= _imports("knowledge_assets/retrieval.py")
 
     assert not any(
         module.startswith(
@@ -48,3 +49,15 @@ def test_indexing_application_service_uses_ports_not_concrete_adapters():
     assert "MilvusClient" not in source
     assert "requests" not in source
     assert "pymilvus" not in source
+
+
+def test_retrieval_application_service_uses_ports_without_llm_reranking():
+    source = Path(
+        "application/knowledge_asset_retrieval_service.py"
+    ).read_text(encoding="utf-8")
+
+    assert "Ollama" not in source
+    assert "MilvusClient" not in source
+    assert "requests" not in source
+    assert "pymilvus" not in source
+    assert "LLM" not in source

@@ -4,7 +4,11 @@ import os
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from knowledge_assets import KnowledgeAssetChunk
+from knowledge_assets import (
+    KnowledgeAssetChunk,
+    KnowledgeAssetChunkType,
+    KnowledgeAssetVectorHit,
+)
 
 
 @dataclass(frozen=True)
@@ -140,6 +144,68 @@ class MilvusKnowledgeAssetIndex:
             data=data,
         )
         client.flush(collection_name=self._settings.collection_name)
+
+    def search(
+        self,
+        query_vector: Sequence[float],
+        *,
+        limit: int,
+    ) -> list[KnowledgeAssetVectorHit]:
+        if not query_vector:
+            raise ValueError("query_vector cannot be empty")
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        client, _, _ = self._dependencies()
+        if not client.has_collection(
+            collection_name=self._settings.collection_name
+        ):
+            return []
+        if not self._loaded:
+            client.load_collection(self._settings.collection_name)
+            self._loaded = True
+        result = client.search(
+            collection_name=self._settings.collection_name,
+            data=[list(query_vector)],
+            limit=limit,
+            output_fields=[
+                "asset_id",
+                "source_task_id",
+                "asset_version",
+                "content_hash",
+                "chunk_type",
+                "chunk_index",
+                "search_text",
+            ],
+            search_params={
+                "metric_type": "COSINE",
+                "params": {"nprobe": 16},
+            },
+        )
+        if not isinstance(result, list) or not result:
+            return []
+        return [self._parse_hit(hit) for hit in result[0]]
+
+    @staticmethod
+    def _parse_hit(hit: Any) -> KnowledgeAssetVectorHit:
+        if not isinstance(hit, dict):
+            raise ValueError("Milvus search hit must be an object")
+        entity = hit.get("entity", {})
+        if not isinstance(entity, dict):
+            raise ValueError("Milvus search entity must be an object")
+        try:
+            return KnowledgeAssetVectorHit(
+                chunk_id=str(hit["id"]),
+                asset_id=str(entity["asset_id"]),
+                source_task_id=str(entity["source_task_id"]),
+                asset_version=int(entity["asset_version"]),
+                content_hash=str(entity["content_hash"]),
+                chunk_type=KnowledgeAssetChunkType(entity["chunk_type"]),
+                chunk_index=int(entity["chunk_index"]),
+                search_text=str(entity["search_text"]),
+                score=float(hit["distance"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Milvus search hit metadata is invalid") from exc
 
     def _dependencies(self):
         try:

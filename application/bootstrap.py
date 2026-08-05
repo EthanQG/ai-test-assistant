@@ -24,6 +24,7 @@ from services.milvus_asset_index import (
 )
 
 from .knowledge_asset_indexing_service import KnowledgeAssetIndexingService
+from .knowledge_asset_retrieval_service import KnowledgeAssetRetrievalService
 from .knowledge_asset_service import KnowledgeAssetApplicationService
 from .service import TestAnalysisApplicationService
 from .snapshots import TaskSnapshotSerializer
@@ -95,4 +96,20 @@ def build_knowledge_asset_indexing_service(
         asset_repository,
         OllamaBatchEmbeddingService(OllamaEmbeddingSettings.from_env()),
         MilvusKnowledgeAssetIndex(MilvusAssetIndexSettings.from_env()),
+    )
+
+
+def build_knowledge_asset_retrieval_service(
+    asset_repository: KnowledgeAssetRepository,
+) -> KnowledgeAssetRetrievalService:
+    """Compose bounded V2 recall and authoritative asset verification."""
+
+    load_dotenv()
+    return KnowledgeAssetRetrievalService(
+        asset_repository,
+        OllamaBatchEmbeddingService(OllamaEmbeddingSettings.from_env()),
+        MilvusKnowledgeAssetIndex(MilvusAssetIndexSettings.from_env()),
+        top_k=int(os.getenv("KNOWLEDGE_RETRIEVAL_TOP_K", "3")),
+        raw_limit=int(os.getenv("KNOWLEDGE_RETRIEVAL_RAW_LIMIT", "20")),
+        min_score=float(os.getenv("KNOWLEDGE_RETRIEVAL_MIN_SCORE", "0.65")),
     )

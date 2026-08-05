@@ -75,6 +75,7 @@ def test_real_mysql_knowledge_asset_crud(mysql_asset_repository):
     assert restored.status is KnowledgeAssetStatus.PENDING_INDEX
     assert repository.find_by_content_hash(asset.content_hash) == asset
     assert repository.find_latest_by_source_task_id(state.task_id) == asset
+    assert repository.get_many([asset_id, str(uuid4())]) == {asset_id: asset}
 
     updated = repository.update_status(
         asset_id,

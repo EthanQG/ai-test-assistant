@@ -16,6 +16,8 @@ class _FakeMilvusClient:
         self.loaded = []
         self.upserts = []
         self.flushes = []
+        self.search_result = []
+        self.search_calls = []
 
     def has_collection(self, collection_name):
         return True
@@ -28,6 +30,10 @@ class _FakeMilvusClient:
 
     def flush(self, collection_name):
         self.flushes.append(collection_name)
+
+    def search(self, **kwargs):
+        self.search_calls.append(kwargs)
+        return self.search_result
 
 
 def _chunk():
@@ -62,3 +68,34 @@ def test_milvus_v2_upsert_keeps_mysql_association_metadata():
     assert row["search_text"] == chunk.search_text
     assert client.loaded == ["knowledge_assets_v2"]
     assert client.flushes == ["knowledge_assets_v2"]
+
+
+def test_milvus_v2_search_restores_stable_asset_association():
+    client = _FakeMilvusClient()
+    chunk = _chunk()
+    client.search_result = [[{
+        "id": chunk.chunk_id,
+        "distance": 0.87,
+        "entity": {
+            "asset_id": chunk.asset_id,
+            "source_task_id": chunk.source_task_id,
+            "asset_version": chunk.asset_version,
+            "content_hash": chunk.content_hash,
+            "chunk_type": chunk.chunk_type.value,
+            "chunk_index": chunk.chunk_index,
+            "search_text": chunk.search_text,
+        },
+    }]]
+    index = MilvusKnowledgeAssetIndex(
+        MilvusAssetIndexSettings("http://milvus", "knowledge_assets_v2"),
+        client=client,
+    )
+
+    hits = index.search([0.1, 0.2], limit=10)
+
+    assert len(hits) == 1
+    assert hits[0].asset_id == chunk.asset_id
+    assert hits[0].content_hash == chunk.content_hash
+    assert hits[0].score == 0.87
+    assert client.search_calls[0]["limit"] == 10
+    assert client.search_calls[0]["search_params"]["metric_type"] == "COSINE"

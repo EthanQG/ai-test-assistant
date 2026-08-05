@@ -41,7 +41,7 @@ application/
   创建、推进、补充、确认、反馈等应用用例；向页面返回只读 TaskView
 
 knowledge_assets/
-  用户确认后的知识资产模型、准入规则、版本化快照和有界索引Chunk
+  用户确认后的知识资产模型、准入规则、版本化快照、有界索引Chunk和检索候选
 
 repositories/
   TaskRepository、KnowledgeAssetRepository 抽象及其 InMemory/MySQL 存储实现

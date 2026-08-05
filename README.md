@@ -43,11 +43,12 @@
 - 页面只持有当前task_id和纯UI状态，通过只读TaskView渲染Agent结果
 - Application Service记录每次节点执行的开始、结束、耗时、成功/失败和错误类型，并汇总单任务执行耗时
 - MySQL Repository已经通过真实CRUD和跨Application Service实例恢复验证，可按同一`task_id`恢复等待补充、完成和失败任务
-- 后端已建立KnowledgeAsset准入、版本化JSON、MySQL权威存储和Milvus V2索引写入边界；尚未接入页面按钮或V2历史资产查询
+- 后端已建立KnowledgeAsset准入、版本化JSON、MySQL权威存储、Milvus V2索引写入与可信候选回查边界；尚未接入页面按钮或当前Agent节点
 
 当前 Agent 页面只接入了 Milvus 历史资产检索，尚未接入“用户确认后沉淀知识资产”的入口。
-阶段2.14.3已经完成有界语义Chunk、一次批量Embedding和Milvus V2 upsert；页面尚未触发该用例，
-V2查询、阈值过滤和MySQL回查也尚未实现，因此当前还不代表新资产已经被KnowledgeRetriever使用。
+阶段2.14.3已经完成有界语义Chunk、一次批量Embedding和Milvus V2 upsert；阶段2.14.4已经完成
+一次查询Embedding、Milvus阈值召回、按资产聚合和MySQL批量回查。页面和当前KnowledgeRetriever尚未触发这些用例，
+因此现在仍不能描述为用户主流程已经使用V2历史资产。
 旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
 知识闭环。后续将由 MySQL 保存完整、可审计的知识资产，Milvus 只承担向量候选检索。
 
@@ -158,9 +159,13 @@ EMBEDDING_TIMEOUT=60
 MILVUS_URI=http://127.0.0.1:19530
 MILVUS_ASSET_COLLECTION=knowledge_assets_v2
 MILVUS_TOKEN=
+KNOWLEDGE_RETRIEVAL_TOP_K=3
+KNOWLEDGE_RETRIEVAL_RAW_LIMIT=20
+KNOWLEDGE_RETRIEVAL_MIN_SCORE=0.65
 ```
 
 索引用例使用一次批量`/api/embed`请求并限制最多32个Chunk；旧`ai_test_cases`集合保持不动。
+检索用例每次只执行一次查询Embedding、一次Milvus搜索和一次MySQL批量回查；`0.65`只是待离线评测的可配置基线。
 
 日常单元测试不会访问MySQL。如需在本机显式运行真实数据库集成测试：
 
@@ -207,7 +212,8 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 7. 阶段2.14.1：已完成KnowledgeAsset模型、准入策略、内容哈希和内存Repository边界
 8. 阶段2.14.2：已完成完整KnowledgeAsset的MySQL权威存储实现
 9. 阶段2.14.3：已完成有界Chunk、批量Embedding和Milvus V2索引写入边界
-10. 阶段2.14.4：实现V2候选召回、MySQL回查和来源验证
+10. 阶段2.14.4：已完成V2候选召回、阈值过滤、MySQL批量回查和来源验证
+11. 阶段2.14.5：实现索引失败的显式重试、重复请求保护和补偿审计
 11. 阶段2.15：增加ContextBuilder、节点Token预算和分层耗时记录
 12. 阶段2.16：建立10～20份脱敏需求评测集，完成RAG、Reviewer和三方案消融实验
 13. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue

@@ -152,6 +152,37 @@ def test_mysql_asset_repository_get_missing_raises_domain_error():
         _repository(connection).get("missing")
 
 
+def test_mysql_asset_repository_batch_reads_assets_with_one_query():
+    connection = _FakeConnection()
+    first = _asset("asset-batch-1")
+    second = _asset("asset-batch-2")
+    connection.cursor_instance.fetchall_result = [
+        {"asset_id": first.asset_id, **_row(first)},
+        {"asset_id": second.asset_id, **_row(second)},
+    ]
+
+    assets = _repository(connection).get_many(
+        [first.asset_id, second.asset_id, first.asset_id]
+    )
+
+    sql, params = connection.cursor_instance.executed[0]
+    assert "WHERE asset_id IN (%s, %s)" in sql
+    assert params == (first.asset_id, second.asset_id)
+    assert assets == {first.asset_id: first, second.asset_id: second}
+    assert len(connection.cursor_instance.executed) == 1
+
+
+def test_mysql_asset_repository_empty_batch_does_not_open_connection():
+    opened = []
+    repository = MySQLKnowledgeAssetRepository(
+        lambda: opened.append(True),
+        KnowledgeAssetSnapshotSerializer,
+    )
+
+    assert repository.get_many([]) == {}
+    assert opened == []
+
+
 def test_mysql_asset_repository_finds_hash_and_latest_source():
     hash_connection = _FakeConnection()
     latest_connection = _FakeConnection()
