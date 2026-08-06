@@ -11,6 +11,13 @@ from .ocr_service import (
 )
 from .prompt_service import PromptService
 from .rag_service import RAGSearchResult, RAGSearchStatus, RAGService
+from .visual_service import (
+    OpenAICompatibleVisualUnderstandingEngine,
+    VisualUnderstandingEngine,
+    VisualUnderstandingError,
+    VisualUnderstandingResult,
+    VisualUnderstandingUnavailableError,
+)
 __all__ = [
     "DocumentService",
     "LLMService",
@@ -23,4 +30,9 @@ __all__ = [
     "RAGSearchResult",
     "RAGSearchStatus",
     "RAGService",
+    "OpenAICompatibleVisualUnderstandingEngine",
+    "VisualUnderstandingEngine",
+    "VisualUnderstandingError",
+    "VisualUnderstandingResult",
+    "VisualUnderstandingUnavailableError",
 ]

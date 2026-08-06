@@ -24,12 +24,20 @@ from documents import (
     DocumentTextElement,
     DocumentTextKind,
     DocumentWarningCode,
+    DocumentVisualAnalysis,
+    DocumentVisualElement,
+    DocumentVisualKind,
 )
 from services.ocr_service import (
     OcrEngine,
     OcrError,
     OcrUnavailableError,
     TesseractOcrEngine,
+)
+from services.visual_service import (
+    OpenAICompatibleVisualUnderstandingEngine,
+    VisualUnderstandingEngine,
+    VisualUnderstandingUnavailableError,
 )
 
 
@@ -47,6 +55,49 @@ class DocumentService:
     _MAX_TOTAL_IMAGE_BYTES = 25 * 1024 * 1024
     _OCR_ACCEPT_CONFIDENCE = 0.80
     _PDF_OCR_RESOLUTION = 150
+    _VISUAL_ACCEPT_CONFIDENCE = 0.70
+    _MAX_VISUAL_CALLS = 5
+    _VISUAL_KEYWORDS = (
+        "流程图",
+        "业务流程",
+        "状态图",
+        "状态机",
+        "时序图",
+        "序列图",
+        "交互图",
+        "泳道图",
+        "页面截图",
+        "界面截图",
+        "页面原型",
+        "界面原型",
+        "UI原型",
+        "UI图",
+        "原型图",
+    )
+    _DECORATIVE_IMAGE_KEYWORDS = (
+        "logo",
+        "icon",
+        "avatar",
+        "banner",
+        "watermark",
+        "二维码",
+    )
+    _VISUAL_SIGNAL_KEYWORDS = (
+        "开始",
+        "结束",
+        "成功",
+        "失败",
+        "是",
+        "否",
+        "提交",
+        "确认",
+        "取消",
+        "返回",
+        "跳转",
+        "下一步",
+        "状态",
+        "页面",
+    )
 
     @classmethod
     def parse(
@@ -54,6 +105,7 @@ class DocumentService:
         uploaded_file,
         *,
         ocr_engine: OcrEngine | None = None,
+        visual_engine: VisualUnderstandingEngine | None = None,
     ) -> DocumentContent:
         if uploaded_file is None:
             raise ValueError("上传文件不能为空")
@@ -71,6 +123,10 @@ class DocumentService:
             identity = filename.encode("utf-8") + b"\0" + payload
             document_id = "doc-" + hashlib.sha256(identity).hexdigest()
             engine = ocr_engine or TesseractOcrEngine.from_environment()
+            configured_visual_engine = (
+                visual_engine
+                or OpenAICompatibleVisualUnderstandingEngine.from_environment()
+            )
             if document_format in {DocumentFormat.TEXT, DocumentFormat.MARKDOWN}:
                 return cls._parse_text_document(
                     filename,
@@ -80,10 +136,18 @@ class DocumentService:
                 )
             if document_format is DocumentFormat.PDF:
                 return cls._parse_pdf(
-                    filename, document_id, payload, ocr_engine=engine
+                    filename,
+                    document_id,
+                    payload,
+                    ocr_engine=engine,
+                    visual_engine=configured_visual_engine,
                 )
             return cls._parse_docx(
-                filename, document_id, payload, ocr_engine=engine
+                filename,
+                document_id,
+                payload,
+                ocr_engine=engine,
+                visual_engine=configured_visual_engine,
             )
         except Exception as exc:
             raise ValueError(f"文件解析失败: {type(exc).__name__}") from exc
@@ -136,6 +200,7 @@ class DocumentService:
         payload: bytes,
         *,
         ocr_engine: OcrEngine,
+        visual_engine: VisualUnderstandingEngine,
     ) -> DocumentContent:
         import pdfplumber
         from pypdf import PdfReader
@@ -148,6 +213,7 @@ class DocumentService:
         skipped_tables = 0
         skipped_images = 0
         total_image_bytes = 0
+        visual_stats = {"candidate": 0, "calls": 0, "failed": 0}
         with pdfplumber.open(BytesIO(payload)) as pdf:
             for page_number, page in enumerate(pdf.pages, start=1):
                 page_text = page.extract_text() or ""
@@ -223,6 +289,55 @@ class DocumentService:
                             warning_index=len(warnings),
                         )
                     )
+                    if cleaned and cls._has_visual_keyword(cleaned):
+                        try:
+                            rendered = BytesIO()
+                            page.to_image(
+                                resolution=cls._PDF_OCR_RESOLUTION
+                            ).original.save(rendered, format="PNG")
+                            rendered_bytes = rendered.getvalue()
+                            image_element, total_image_bytes = cls._append_image(
+                                filename=filename,
+                                document_id=document_id,
+                                page_number=page_number,
+                                name=f"page-{page_number}-visual.png",
+                                blob=rendered_bytes,
+                                mime_type="image/png",
+                                elements=elements,
+                                attachments=attachments,
+                                warnings=warnings,
+                                total_image_bytes=total_image_bytes,
+                            )
+                            if image_element is not None:
+                                page_texts.extend(
+                                    cls._append_visual_element(
+                                        filename=filename,
+                                        document_id=document_id,
+                                        page_number=page_number,
+                                        image_element=image_element,
+                                        image_bytes=rendered_bytes,
+                                        context=cleaned,
+                                        ocr_text="",
+                                        visual_engine=visual_engine,
+                                        elements=elements,
+                                        warnings=warnings,
+                                        visual_stats=visual_stats,
+                                    )
+                                )
+                        except Exception:
+                            visual_stats["candidate"] += 1
+                            visual_stats["failed"] += 1
+                            warnings.append(
+                                cls._warning(
+                                    filename,
+                                    document_id,
+                                    len(elements),
+                                    DocumentWarningCode.VISION_FAILED,
+                                    "矢量图页面渲染失败，已保留原始文本与来源",
+                                    page_number=page_number,
+                                    warning_index=len(warnings),
+                                )
+                            )
 
                 pdf_page = reader.pages[page_number - 1]
                 try:
@@ -260,8 +375,7 @@ class DocumentService:
                         skipped_images += 1
                         continue
                     if cleaned:
-                        page_texts.extend(
-                            cls._append_ocr_elements(
+                        ocr_texts = cls._append_ocr_elements(
                                 filename=filename,
                                 document_id=document_id,
                                 page_number=page_number,
@@ -270,6 +384,21 @@ class DocumentService:
                                 ocr_engine=ocr_engine,
                                 elements=elements,
                                 warnings=warnings,
+                            )
+                        page_texts.extend(ocr_texts)
+                        page_texts.extend(
+                            cls._append_visual_element(
+                                filename=filename,
+                                document_id=document_id,
+                                page_number=page_number,
+                                image_element=image_element,
+                                image_bytes=blob,
+                                context=cleaned,
+                                ocr_text="\n".join(ocr_texts),
+                                visual_engine=visual_engine,
+                                elements=elements,
+                                warnings=warnings,
+                                visual_stats=visual_stats,
                             )
                         )
 
@@ -293,8 +422,7 @@ class DocumentService:
                             total_image_bytes=total_image_bytes,
                         )
                         if image_element is not None:
-                            page_texts.extend(
-                                cls._append_ocr_elements(
+                            ocr_texts = cls._append_ocr_elements(
                                     filename=filename,
                                     document_id=document_id,
                                     page_number=page_number,
@@ -303,6 +431,21 @@ class DocumentService:
                                     ocr_engine=ocr_engine,
                                     elements=elements,
                                     warnings=warnings,
+                                )
+                            page_texts.extend(ocr_texts)
+                            page_texts.extend(
+                                cls._append_visual_element(
+                                    filename=filename,
+                                    document_id=document_id,
+                                    page_number=page_number,
+                                    image_element=image_element,
+                                    image_bytes=rendered_bytes,
+                                    context="",
+                                    ocr_text="\n".join(ocr_texts),
+                                    visual_engine=visual_engine,
+                                    elements=elements,
+                                    warnings=warnings,
+                                    visual_stats=visual_stats,
                                 )
                             )
                     except Exception as exc:
@@ -325,6 +468,8 @@ class DocumentService:
             page_count=len(reader.pages),
             skipped_table_count=skipped_tables,
             skipped_image_count=skipped_images,
+            visual_candidate_count=visual_stats["candidate"],
+            failed_visual_count=visual_stats["failed"],
         )
 
     @classmethod
@@ -335,6 +480,7 @@ class DocumentService:
         payload: bytes,
         *,
         ocr_engine: OcrEngine,
+        visual_engine: VisualUnderstandingEngine,
     ) -> DocumentContent:
         from docx import Document
 
@@ -347,6 +493,7 @@ class DocumentService:
         attachments: list[DocumentAttachment] = []
         total_image_bytes = 0
         skipped_images = 0
+        visual_stats = {"candidate": 0, "calls": 0, "failed": 0}
         blocks = (
             document.iter_inner_content()
             if hasattr(document, "iter_inner_content")
@@ -403,8 +550,7 @@ class DocumentService:
                 if image_element is None:
                     skipped_images += 1
                     continue
-                plain_text_parts.extend(
-                    cls._append_ocr_elements(
+                ocr_texts = cls._append_ocr_elements(
                         filename=filename,
                         document_id=document_id,
                         page_number=None,
@@ -413,6 +559,21 @@ class DocumentService:
                         ocr_engine=ocr_engine,
                         elements=elements,
                         warnings=warnings,
+                    )
+                plain_text_parts.extend(ocr_texts)
+                plain_text_parts.extend(
+                    cls._append_visual_element(
+                        filename=filename,
+                        document_id=document_id,
+                        page_number=None,
+                        image_element=image_element,
+                        image_bytes=blob,
+                        context=text,
+                        ocr_text="\n".join(ocr_texts),
+                        visual_engine=visual_engine,
+                        elements=elements,
+                        warnings=warnings,
+                        visual_stats=visual_stats,
                     )
                 )
         return cls._content(
@@ -425,6 +586,8 @@ class DocumentService:
             attachments=attachments,
             page_count=1,
             skipped_image_count=skipped_images,
+            visual_candidate_count=visual_stats["candidate"],
+            failed_visual_count=visual_stats["failed"],
         )
 
     @staticmethod
@@ -581,6 +744,7 @@ class DocumentService:
         image_index = sum(
             isinstance(element, DocumentImageElement) for element in elements
         )
+        width, height = cls._image_dimensions(blob)
         image_element = DocumentImageElement(
             source=cls._source(
                 filename,
@@ -593,6 +757,8 @@ class DocumentService:
                 mime_type=mime_type,
                 content_ref=f"attachment://{attachment_id}",
                 caption=name,
+                width=width,
+                height=height,
             ),
         )
         elements.append(image_element)
@@ -665,6 +831,189 @@ class DocumentService:
                 )
             )
         return accepted_texts
+
+    @classmethod
+    def _append_visual_element(
+        cls,
+        *,
+        filename: str,
+        document_id: str,
+        page_number: int | None,
+        image_element: DocumentImageElement,
+        image_bytes: bytes,
+        context: str,
+        ocr_text: str,
+        visual_engine: VisualUnderstandingEngine,
+        elements: list[DocumentElement],
+        warnings: list[DocumentParsingWarning],
+        visual_stats: dict[str, int],
+    ) -> list[str]:
+        if not cls._is_visual_candidate(
+            image_element=image_element,
+            context=context,
+            ocr_text=ocr_text,
+        ):
+            return []
+        visual_stats["candidate"] += 1
+        if visual_stats["calls"] >= cls._MAX_VISUAL_CALLS:
+            warnings.append(
+                cls._warning(
+                    filename,
+                    document_id,
+                    len(elements),
+                    DocumentWarningCode.VISION_LIMIT_EXCEEDED,
+                    "文档视觉分析候选超过5张，剩余图片未调用视觉模型",
+                    page_number=page_number,
+                    warning_index=len(warnings),
+                )
+            )
+            return []
+        visual_stats["calls"] += 1
+        try:
+            result = visual_engine.analyze(
+                image_bytes,
+                image_element.image.mime_type,
+                context=context,
+                ocr_text=ocr_text,
+            )
+        except Exception as exc:
+            visual_stats["failed"] += 1
+            warning_code = (
+                DocumentWarningCode.VISION_UNAVAILABLE
+                if isinstance(exc, VisualUnderstandingUnavailableError)
+                else DocumentWarningCode.VISION_FAILED
+            )
+            message = (
+                "视觉模型未配置，已保留图片与OCR结果"
+                if warning_code is DocumentWarningCode.VISION_UNAVAILABLE
+                else "图片视觉分析失败，已保留图片与OCR结果"
+            )
+            warnings.append(
+                cls._warning(
+                    filename,
+                    document_id,
+                    len(elements),
+                    warning_code,
+                    message,
+                    page_number=page_number,
+                    warning_index=len(warnings),
+                )
+            )
+            return []
+
+        analysis = DocumentVisualAnalysis(
+            image_id=image_element.image.image_id,
+            kind=result.kind,
+            summary=result.summary,
+            confidence=result.confidence,
+            nodes=result.nodes,
+            relations=result.relations,
+            ui_elements=result.ui_elements,
+            state_changes=result.state_changes,
+            uncertainties=result.uncertainties,
+        )
+        elements.append(
+            DocumentVisualElement(
+                source=cls._source(
+                    filename,
+                    document_id,
+                    len(elements),
+                    page_number=page_number,
+                ),
+                analysis=analysis,
+            )
+        )
+        if result.confidence < cls._VISUAL_ACCEPT_CONFIDENCE:
+            warnings.append(
+                cls._warning(
+                    filename,
+                    document_id,
+                    len(elements),
+                    DocumentWarningCode.VISION_LOW_CONFIDENCE,
+                    "视觉理解置信度不足，仅保留为待复核候选",
+                    page_number=page_number,
+                    warning_index=len(warnings),
+                )
+            )
+            return []
+        if result.kind is DocumentVisualKind.OTHER:
+            return []
+        return [cls._visual_plain_text(analysis)]
+
+    @classmethod
+    def _is_visual_candidate(
+        cls,
+        *,
+        image_element: DocumentImageElement,
+        context: str,
+        ocr_text: str,
+    ) -> bool:
+        image = image_element.image
+        caption = image.caption or ""
+        normalized_caption = caption.casefold()
+        if any(
+            keyword in normalized_caption
+            for keyword in cls._DECORATIVE_IMAGE_KEYWORDS
+        ):
+            return False
+        if (
+            image.width is not None
+            and image.height is not None
+            and (image.width < 128 or image.height < 128)
+        ):
+            return False
+        evidence = f"{context}\n{caption}\n{ocr_text}"
+        if cls._has_visual_keyword(evidence):
+            return True
+        normalized_ocr = ocr_text.casefold()
+        signal_count = sum(
+            keyword.casefold() in normalized_ocr
+            for keyword in cls._VISUAL_SIGNAL_KEYWORDS
+        )
+        return signal_count >= 3
+
+    @classmethod
+    def _has_visual_keyword(cls, text: str) -> bool:
+        normalized = text.casefold()
+        return any(
+            keyword.casefold() in normalized for keyword in cls._VISUAL_KEYWORDS
+        )
+
+    @staticmethod
+    def _visual_plain_text(analysis: DocumentVisualAnalysis) -> str:
+        parts = [
+            f"[视觉来源 {analysis.image_id}，类型 {analysis.kind.value}，"
+            f"置信度 {analysis.confidence:.2f}]",
+            analysis.summary,
+        ]
+        parts.extend(
+            f"节点：{node.label}（{node.node_type}）"
+            for node in analysis.nodes
+        )
+        parts.extend(
+            "关系："
+            f"{relation.source_node_id} -> {relation.target_node_id}"
+            + (f"，条件：{relation.condition}" if relation.condition else "")
+            for relation in analysis.relations
+        )
+        parts.extend(
+            f"界面元素：{item.name}（{item.element_type}）"
+            + (f"，操作：{item.action}" if item.action else "")
+            + (f"，状态变化：{item.state_change}" if item.state_change else "")
+            for item in analysis.ui_elements
+        )
+        parts.extend(f"状态变化：{item}" for item in analysis.state_changes)
+        return "\n".join(parts)
+
+    @staticmethod
+    def _image_dimensions(blob: bytes) -> tuple[int | None, int | None]:
+        from PIL import Image
+
+        try:
+            with Image.open(BytesIO(blob)) as image:
+                return int(image.width), int(image.height)
+        except Exception:
+            return None, None
 
     @classmethod
     def _append_ocr_warning(
@@ -788,6 +1137,8 @@ class DocumentService:
         page_count: int = 0,
         skipped_table_count: int = 0,
         skipped_image_count: int = 0,
+        visual_candidate_count: int = 0,
+        failed_visual_count: int = 0,
     ) -> DocumentContent:
         element_tuple = tuple(elements)
         warning_list = list(warnings)
@@ -846,5 +1197,11 @@ class DocumentService:
                     }
                     for warning in warning_list
                 ),
+                visual_candidate_count=visual_candidate_count,
+                visual_analyzed_count=sum(
+                    isinstance(element, DocumentVisualElement)
+                    for element in element_tuple
+                ),
+                failed_visual_count=failed_visual_count,
             ),
         )

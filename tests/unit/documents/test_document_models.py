@@ -17,6 +17,11 @@ from documents import (
     DocumentTextElement,
     DocumentTextKind,
     DocumentParseStats,
+    DocumentVisualAnalysis,
+    DocumentVisualElement,
+    DocumentVisualKind,
+    DocumentVisualNode,
+    DocumentVisualRelation,
 )
 
 
@@ -188,4 +193,36 @@ def test_ocr_element_requires_existing_image_and_valid_confidence():
             confidence=1.1,
             image_id="image-1",
             disposition=DocumentOcrDisposition.ACCEPTED,
+        )
+
+
+def test_visual_analysis_requires_existing_image_and_valid_relations():
+    analysis = DocumentVisualAnalysis(
+        image_id="missing-image",
+        kind=DocumentVisualKind.FLOWCHART,
+        summary="退款流程",
+        confidence=0.9,
+        nodes=(DocumentVisualNode("start", "开始", "start"),),
+    )
+    visual = DocumentVisualElement(source=_source(0), analysis=analysis)
+
+    with pytest.raises(ValueError, match="missing image"):
+        DocumentContent(
+            document_id="doc-1",
+            filename="需求.docx",
+            document_format=DocumentFormat.DOCX,
+            extracted_text="退款流程",
+            elements=(visual,),
+        )
+
+    with pytest.raises(ValueError, match="unknown node"):
+        DocumentVisualAnalysis(
+            image_id="image-1",
+            kind=DocumentVisualKind.FLOWCHART,
+            summary="退款流程",
+            confidence=0.9,
+            nodes=(DocumentVisualNode("start", "开始", "start"),),
+            relations=(
+                DocumentVisualRelation("start", "missing", condition="成功"),
+            ),
         )

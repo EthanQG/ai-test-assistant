@@ -9,6 +9,10 @@ from documents import (
     DocumentImageElement,
     DocumentOcrDisposition,
     DocumentOcrElement,
+    DocumentVisualElement,
+    DocumentVisualKind,
+    DocumentVisualNode,
+    DocumentVisualRelation,
     DocumentTableElement,
     DocumentTextElement,
     DocumentTextKind,
@@ -16,6 +20,7 @@ from documents import (
 )
 from services.document_service import DocumentService
 from services.ocr_service import OcrError, OcrTextLine
+from services.visual_service import VisualUnderstandingResult
 
 
 class UploadedRequirement(BytesIO):
@@ -435,6 +440,254 @@ class DocumentServiceTests(unittest.TestCase):
             DocumentWarningCode.OCR_FAILED,
             [warning.code for warning in content.warnings],
         )
+
+    def test_visual_candidate_is_analyzed_and_keeps_structured_source(self):
+        from docx import Document
+        from PIL import Image
+
+        class EmptyOcr:
+            def recognize(self, image_bytes, mime_type):
+                return ()
+
+        class FakeVisual:
+            calls = 0
+
+            def analyze(self, image_bytes, mime_type, *, context, ocr_text):
+                self.calls += 1
+                self.context = context
+                return VisualUnderstandingResult(
+                    kind=DocumentVisualKind.FLOWCHART,
+                    summary="用户提交后进入风控判断",
+                    confidence=0.94,
+                    nodes=(
+                        DocumentVisualNode("submit", "提交", "action"),
+                        DocumentVisualNode("risk", "风控判断", "decision"),
+                    ),
+                    relations=(
+                        DocumentVisualRelation(
+                            "submit", "risk", condition="请求有效"
+                        ),
+                    ),
+                    state_changes=("待处理变为审核中",),
+                )
+
+        image = BytesIO()
+        Image.new("RGB", (400, 260), "white").save(image, format="PNG")
+        image.seek(0)
+        document = Document()
+        paragraph = document.add_paragraph("提现业务流程图")
+        paragraph.add_run().add_picture(image)
+        payload = BytesIO()
+        document.save(payload)
+        visual = FakeVisual()
+
+        content = DocumentService.parse(
+            UploadedRequirement("流程需求.docx", payload.getvalue()),
+            ocr_engine=EmptyOcr(),
+            visual_engine=visual,
+        )
+
+        visual_elements = [
+            element
+            for element in content.elements
+            if isinstance(element, DocumentVisualElement)
+        ]
+        self.assertEqual(visual.calls, 1)
+        self.assertIn("提现业务流程图", visual.context)
+        self.assertEqual(len(visual_elements), 1)
+        self.assertEqual(
+            visual_elements[0].analysis.kind, DocumentVisualKind.FLOWCHART
+        )
+        self.assertEqual(
+            visual_elements[0].analysis.relations[0].condition, "请求有效"
+        )
+        self.assertEqual(
+            visual_elements[0].analysis.image_id,
+            next(
+                element.image.image_id
+                for element in content.elements
+                if isinstance(element, DocumentImageElement)
+            ),
+        )
+        self.assertIn("用户提交后进入风控判断", content.to_plain_text())
+        self.assertEqual(content.stats.visual_candidate_count, 1)
+        self.assertEqual(content.stats.visual_analyzed_count, 1)
+        self.assertEqual(content.stats.failed_visual_count, 0)
+
+    def test_decorative_or_text_only_image_does_not_call_visual_engine(self):
+        from docx import Document
+        from PIL import Image
+
+        class TextOcr:
+            def recognize(self, image_bytes, mime_type):
+                return (OcrTextLine("退款金额不得超过订单金额", 0.96),)
+
+        class UnexpectedVisual:
+            def analyze(self, *args, **kwargs):
+                raise AssertionError("decorative image must not use vision")
+
+        image = BytesIO()
+        Image.new("RGB", (400, 260), "white").save(image, format="PNG")
+        image.seek(0)
+        document = Document()
+        paragraph = document.add_paragraph("退款规则说明")
+        paragraph.add_run().add_picture(image)
+        payload = BytesIO()
+        document.save(payload)
+
+        content = DocumentService.parse(
+            UploadedRequirement("文字截图.docx", payload.getvalue()),
+            ocr_engine=TextOcr(),
+            visual_engine=UnexpectedVisual(),
+        )
+
+        self.assertEqual(content.stats.visual_candidate_count, 0)
+        self.assertEqual(content.stats.visual_analyzed_count, 0)
+        self.assertIn("退款金额不得超过订单金额", content.to_plain_text())
+
+    def test_visual_call_limit_and_single_image_failure_are_isolated(self):
+        from docx import Document
+        from PIL import Image
+
+        class EmptyOcr:
+            def recognize(self, image_bytes, mime_type):
+                return ()
+
+        class FlakyVisual:
+            calls = 0
+
+            def analyze(self, image_bytes, mime_type, *, context, ocr_text):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("first visual request failed")
+                return VisualUnderstandingResult(
+                    kind=DocumentVisualKind.UI_MOCKUP,
+                    summary=f"页面原型{self.calls}",
+                    confidence=0.9,
+                )
+
+        document = Document()
+        for index in range(6):
+            image = BytesIO()
+            Image.new("RGB", (400, 260), "white").save(
+                image, format="PNG"
+            )
+            image.seek(0)
+            paragraph = document.add_paragraph(f"第{index + 1}张UI原型")
+            paragraph.add_run().add_picture(image)
+        payload = BytesIO()
+        document.save(payload)
+        visual = FlakyVisual()
+
+        content = DocumentService.parse(
+            UploadedRequirement("多图需求.docx", payload.getvalue()),
+            ocr_engine=EmptyOcr(),
+            visual_engine=visual,
+        )
+
+        self.assertEqual(visual.calls, 5)
+        self.assertEqual(content.stats.visual_candidate_count, 6)
+        self.assertEqual(content.stats.visual_analyzed_count, 4)
+        self.assertEqual(content.stats.failed_visual_count, 1)
+        codes = [warning.code for warning in content.warnings]
+        self.assertIn(DocumentWarningCode.VISION_FAILED, codes)
+        self.assertIn(DocumentWarningCode.VISION_LIMIT_EXCEEDED, codes)
+
+    def test_low_confidence_visual_result_stays_out_of_requirement_text(self):
+        from docx import Document
+        from PIL import Image
+
+        class EmptyOcr:
+            def recognize(self, image_bytes, mime_type):
+                return ()
+
+        class LowConfidenceVisual:
+            def analyze(self, image_bytes, mime_type, *, context, ocr_text):
+                return VisualUnderstandingResult(
+                    kind=DocumentVisualKind.STATE_DIAGRAM,
+                    summary="疑似审核状态变化",
+                    confidence=0.69,
+                )
+
+        image = BytesIO()
+        Image.new("RGB", (400, 260), "white").save(image, format="PNG")
+        image.seek(0)
+        document = Document()
+        paragraph = document.add_paragraph("订单状态图")
+        paragraph.add_run().add_picture(image)
+        payload = BytesIO()
+        document.save(payload)
+
+        content = DocumentService.parse(
+            UploadedRequirement("状态需求.docx", payload.getvalue()),
+            ocr_engine=EmptyOcr(),
+            visual_engine=LowConfidenceVisual(),
+        )
+
+        self.assertEqual(content.stats.visual_analyzed_count, 1)
+        self.assertNotIn("疑似审核状态变化", content.to_plain_text())
+        self.assertIn(
+            DocumentWarningCode.VISION_LOW_CONFIDENCE,
+            [warning.code for warning in content.warnings],
+        )
+
+    def test_pdf_vector_flow_candidate_is_rendered_for_visual_analysis(self):
+        from PIL import Image
+
+        class EmptyOcr:
+            def recognize(self, image_bytes, mime_type):
+                return ()
+
+        class FakeVisual:
+            calls = 0
+
+            def analyze(self, image_bytes, mime_type, *, context, ocr_text):
+                self.calls += 1
+                return VisualUnderstandingResult(
+                    kind=DocumentVisualKind.FLOWCHART,
+                    summary="审批通过后完成",
+                    confidence=0.9,
+                )
+
+        class Pdf:
+            pages = [
+                SimpleNamespace(
+                    extract_text=lambda: "审批业务流程图",
+                    extract_tables=lambda: [],
+                    curves=[{"object_type": "curve"}],
+                    to_image=lambda resolution: SimpleNamespace(
+                        original=Image.new("RGB", (400, 260), "white")
+                    ),
+                )
+            ]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return None
+
+        pdfplumber = ModuleType("pdfplumber")
+        pdfplumber.open = lambda _: Pdf()
+        pypdf = ModuleType("pypdf")
+        pypdf.PdfReader = lambda _: SimpleNamespace(
+            pages=[SimpleNamespace(images=[])]
+        )
+        visual = FakeVisual()
+
+        with patch.dict(
+            sys.modules, {"pdfplumber": pdfplumber, "pypdf": pypdf}
+        ):
+            content = DocumentService.parse(
+                UploadedRequirement("流程需求.pdf", b"fake-pdf"),
+                ocr_engine=EmptyOcr(),
+                visual_engine=visual,
+            )
+
+        self.assertEqual(visual.calls, 1)
+        self.assertEqual(content.stats.visual_candidate_count, 1)
+        self.assertEqual(content.stats.visual_analyzed_count, 1)
+        self.assertIn("审批通过后完成", content.to_plain_text())
 
     def test_unsupported_format_and_parser_errors_are_explicit(self):
         with self.assertRaisesRegex(ValueError, "不支持的文件格式"):

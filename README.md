@@ -55,8 +55,10 @@
 
 阶段2.15.3已经在统一`DocumentContent`上增加扫描页与内嵌图片OCR：保留文字、置信度、图片ID、页码
 和处置状态，单张图片失败不会中断整份文档。高置信度文字进入兼容文本，低置信度只作为待复核候选。
-默认适配本地Tesseract；未安装运行时会明确降级。流程图节点、箭头和UI交互语义尚未理解，因此仍不能
-将当前版本描述为支持完整图文PRD理解。
+默认适配本地Tesseract；未安装运行时会明确降级。阶段2.15.4新增了有界视觉理解边界：只对文档上下文
+明确标记的流程图、状态图、时序图和UI原型候选调用显式配置的多模态端点，每份文档最多5张，并以
+结构化节点、关系、UI元素、状态变化和不确定性保存结果。当前只有Fake测试证据，尚未验证真实视觉模型
+效果，因此仍不能描述为已经完成完整图文PRD理解。
 
 ## 项目结构
 
@@ -145,6 +147,19 @@ OCR_TIMEOUT_SECONDS=30
 如果没有安装Tesseract，正文和表格解析仍会继续，系统会记录`OCR_UNAVAILABLE`，不会伪造OCR结果。
 Windows自定义路径建议使用正斜杠，例如`TESSERACT_CMD=D:/Tesseract-OCR-5/tesseract.exe`，避免`.env`
 双引号中的`\t`被解析为制表符。
+
+如需显式启用流程图和UI图理解，需要配置一个支持图片输入与JSON Output的OpenAI兼容端点：
+
+```text
+VISION_API_KEY=your_vision_api_key
+VISION_BASE_URL=https://your-vision-endpoint.example/v1
+VISION_MODEL=your-vision-model
+VISION_TIMEOUT_SECONDS=60
+VISION_MAX_TOKENS=1500
+```
+
+未配置视觉端点时，普通文字、表格和OCR解析不受影响；视觉候选只记录`VISION_UNAVAILABLE`。图片不会全部
+发送给模型：装饰图和小图会跳过，OCR已足够表达且没有流程/UI信号的图片不会重复调用视觉模型。
 
 任务存储默认使用会话级内存。如需启用阶段2.13.2新增的MySQL Repository，在本机`.env`中设置：
 
@@ -236,10 +251,11 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 12. 阶段2.15.1：已完成统一DocumentContent、稳定来源和现有文本解析兼容
 13. 阶段2.15.2：已完成PDF/DOCX原生结构、图片附件和解析覆盖统计
 14. 阶段2.15.3：已完成OCR协议、Tesseract适配、扫描页渲染、置信度分流和失败隔离
-15. 阶段2.15.4～2.15.5：增加多模态理解和关键问题限流
-14. 阶段2.15.6～2.15.7：增加ContextBuilder、节点Token预算和分层耗时记录
-15. 阶段2.16：建立10～20份脱敏图文需求评测集，完成解析、RAG、Reviewer和三方案实验
-16. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+15. 阶段2.15.4：已完成有界视觉候选筛选、结构化多模态协议、调用限额和失败降级
+16. 阶段2.15.5：增加关键问题筛选与Human-in-the-loop限流
+17. 阶段2.15.6～2.15.7：增加ContextBuilder、节点Token预算和分层耗时记录
+18. 阶段2.16：建立10～20份脱敏图文需求评测集，完成解析、RAG、Reviewer和三方案实验
+19. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。

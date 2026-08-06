@@ -32,11 +32,23 @@ class DocumentWarningCode(str, Enum):
     OCR_UNAVAILABLE = "ocr_unavailable"
     OCR_FAILED = "ocr_failed"
     OCR_LOW_CONFIDENCE = "ocr_low_confidence"
+    VISION_UNAVAILABLE = "vision_unavailable"
+    VISION_FAILED = "vision_failed"
+    VISION_LIMIT_EXCEEDED = "vision_limit_exceeded"
+    VISION_LOW_CONFIDENCE = "vision_low_confidence"
 
 
 class DocumentOcrDisposition(str, Enum):
     ACCEPTED = "accepted"
     REVIEW_REQUIRED = "review_required"
+
+
+class DocumentVisualKind(str, Enum):
+    FLOWCHART = "flowchart"
+    STATE_DIAGRAM = "state_diagram"
+    SEQUENCE_DIAGRAM = "sequence_diagram"
+    UI_MOCKUP = "ui_mockup"
+    OTHER = "other"
 
 
 @dataclass(frozen=True)
@@ -70,6 +82,9 @@ class DocumentParseStats:
     ocr_element_count: int = 0
     low_confidence_ocr_count: int = 0
     failed_ocr_count: int = 0
+    visual_candidate_count: int = 0
+    visual_analyzed_count: int = 0
+    failed_visual_count: int = 0
 
     def __post_init__(self) -> None:
         values = (
@@ -83,9 +98,21 @@ class DocumentParseStats:
             self.ocr_element_count,
             self.low_confidence_ocr_count,
             self.failed_ocr_count,
+            self.visual_candidate_count,
+            self.visual_analyzed_count,
+            self.failed_visual_count,
         )
         if any(isinstance(value, bool) or value < 0 for value in values):
             raise ValueError("document parse statistics cannot be negative")
+        if self.visual_analyzed_count > self.visual_candidate_count:
+            raise ValueError("visual analyzed count cannot exceed candidates")
+        if self.failed_visual_count > self.visual_candidate_count:
+            raise ValueError("failed visual count cannot exceed candidates")
+        if (
+            self.visual_analyzed_count + self.failed_visual_count
+            > self.visual_candidate_count
+        ):
+            raise ValueError("visual outcomes cannot exceed candidate count")
 
 
 @dataclass(frozen=True)
@@ -201,11 +228,138 @@ class DocumentOcrElement:
             raise ValueError("OCR disposition must be DocumentOcrDisposition")
 
 
+@dataclass(frozen=True)
+class DocumentVisualNode:
+    node_id: str
+    label: str
+    node_type: str
+
+    def __post_init__(self) -> None:
+        if not self.node_id.strip():
+            raise ValueError("visual node_id cannot be empty")
+        if not self.label.strip():
+            raise ValueError("visual node label cannot be empty")
+        if not self.node_type.strip():
+            raise ValueError("visual node type cannot be empty")
+
+
+@dataclass(frozen=True)
+class DocumentVisualRelation:
+    source_node_id: str
+    target_node_id: str
+    label: str | None = None
+    condition: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.source_node_id.strip():
+            raise ValueError("visual relation source_node_id cannot be empty")
+        if not self.target_node_id.strip():
+            raise ValueError("visual relation target_node_id cannot be empty")
+        if self.label is not None and not isinstance(self.label, str):
+            raise ValueError("visual relation label must be a string or None")
+        if self.condition is not None and not isinstance(self.condition, str):
+            raise ValueError(
+                "visual relation condition must be a string or None"
+            )
+
+
+@dataclass(frozen=True)
+class DocumentUiElement:
+    name: str
+    element_type: str
+    action: str | None = None
+    state_change: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("UI element name cannot be empty")
+        if not self.element_type.strip():
+            raise ValueError("UI element type cannot be empty")
+        if self.action is not None and not isinstance(self.action, str):
+            raise ValueError("UI element action must be a string or None")
+        if self.state_change is not None and not isinstance(
+            self.state_change, str
+        ):
+            raise ValueError("UI state_change must be a string or None")
+
+
+@dataclass(frozen=True)
+class DocumentVisualAnalysis:
+    image_id: str
+    kind: DocumentVisualKind
+    summary: str
+    confidence: float
+    nodes: tuple[DocumentVisualNode, ...] = ()
+    relations: tuple[DocumentVisualRelation, ...] = ()
+    ui_elements: tuple[DocumentUiElement, ...] = ()
+    state_changes: tuple[str, ...] = ()
+    uncertainties: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.image_id.strip():
+            raise ValueError("visual analysis image_id cannot be empty")
+        if not isinstance(self.kind, DocumentVisualKind):
+            raise ValueError("visual analysis kind must be DocumentVisualKind")
+        if not self.summary.strip():
+            raise ValueError("visual analysis summary cannot be empty")
+        if isinstance(self.confidence, bool) or not 0 <= self.confidence <= 1:
+            raise ValueError("visual confidence must be between 0 and 1")
+        collections = (
+            self.nodes,
+            self.relations,
+            self.ui_elements,
+            self.state_changes,
+            self.uncertainties,
+        )
+        if any(not isinstance(items, tuple) for items in collections):
+            raise ValueError("visual analysis collections must be tuples")
+        if any(not isinstance(item, DocumentVisualNode) for item in self.nodes):
+            raise ValueError("visual nodes must contain DocumentVisualNode")
+        if any(
+            not isinstance(item, DocumentVisualRelation)
+            for item in self.relations
+        ):
+            raise ValueError(
+                "visual relations must contain DocumentVisualRelation"
+            )
+        if any(
+            not isinstance(item, DocumentUiElement)
+            for item in self.ui_elements
+        ):
+            raise ValueError("ui_elements must contain DocumentUiElement")
+        if any(
+            not isinstance(item, str) or not item.strip()
+            for item in self.state_changes
+        ):
+            raise ValueError("state_changes must contain non-empty strings")
+        if any(
+            not isinstance(item, str) or not item.strip()
+            for item in self.uncertainties
+        ):
+            raise ValueError("uncertainties must contain non-empty strings")
+        node_ids = {item.node_id for item in self.nodes}
+        if len(node_ids) != len(self.nodes):
+            raise ValueError("visual node IDs must be unique")
+        if any(
+            relation.source_node_id not in node_ids
+            or relation.target_node_id not in node_ids
+            for relation in self.relations
+        ):
+            raise ValueError("visual relation points to an unknown node")
+
+
+@dataclass(frozen=True)
+class DocumentVisualElement:
+    source: DocumentSourceRef
+    analysis: DocumentVisualAnalysis
+
+
 DocumentElement: TypeAlias = (
     DocumentTextElement
     | DocumentTableElement
     | DocumentImageElement
     | DocumentOcrElement
+    | DocumentVisualElement
 )
 
 
@@ -259,6 +413,7 @@ class DocumentContent:
                     DocumentTableElement,
                     DocumentImageElement,
                     DocumentOcrElement,
+                    DocumentVisualElement,
                 ),
             ):
                 raise ValueError("elements must contain document element types")
@@ -309,6 +464,11 @@ class DocumentContent:
                 and element.image_id not in image_ids
             ):
                 raise ValueError("OCR element points to missing image")
+            if (
+                isinstance(element, DocumentVisualElement)
+                and element.analysis.image_id not in image_ids
+            ):
+                raise ValueError("visual element points to missing image")
 
     def to_plain_text(self) -> str:
         """Returns the legacy text view without discarding structured data."""
