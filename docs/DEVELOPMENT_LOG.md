@@ -60,10 +60,11 @@
 | 阶段 2.14.1 | 已完成 | KnowledgeAsset模型、准入策略、内容哈希和内存Repository | `549207a` |
 | 阶段 2.14.2 | 已完成 | 版本化资产快照、MySQL权威表、唯一索引和Repository实现 | `f88a426` |
 | 阶段 2.14.3 | 已完成 | 有界语义Chunk、批量Embedding和Milvus V2索引写入边界 | `66f12fa` |
-| 阶段 2.14.4 | 已完成 | Milvus V2阈值召回、资产聚合、MySQL批量回查和来源验证 | 本次提交 |
+| 阶段 2.14.4 | 已完成 | Milvus V2阈值召回、资产聚合、MySQL批量回查和来源验证 | `aa2abd9` |
+| 图文PRD路线图校正 | 已完成（仅文档） | 将结构化文档、OCR、多模态理解和关键问题限流提升为P0 | 本次提交 |
 | 阶段 2.14 | 进行中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
-| 阶段 2.15 | 规划中 | ContextBuilder、Token预算和分层可观测性 | - |
-| 阶段 2.16 | 规划中 | 脱敏离线评测、RAG/Reviewer专项评测和三组消融实验 | - |
+| 阶段 2.15 | 规划中 | 图文PRD理解、关键问题限流、ContextBuilder、Token预算和分层可观测性 | - |
+| 阶段 2.16 | 规划中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
 ---
@@ -2750,3 +2751,63 @@ git diff --check
 
 本阶段提供的是可被Agent或未来FastAPI复用的后端检索用例，尚未替换当前KnowledgeRetriever，也没有实现ContextBuilder裁剪。
 `0.65`只是可配置基线，需要阶段2.16离线评测后才能判断效果。阶段2.14.5继续处理`index_failed`重试、重复请求保护和跨MySQL/Milvus补偿审计。
+
+## 路线图校正：图文PRD理解前置于ContextBuilder
+
+### 校正原因
+
+当前`utils/file_parser.py`只读取TXT/Markdown、PDF文本层和DOCX普通段落。真实PRD中的业务表格、
+扫描内容、流程分支、状态图和UI交互经常位于图片中。如果上游输入已经残缺，ContextBuilder只能更高效地传递残缺信息，
+RAG、Generator和Reviewer也无法发现自己从未接收到的业务事实。
+
+因此图文混合PRD理解被提升为秋招版本P0，并安排在ContextBuilder之前。
+
+### 调整后的2.15
+
+```text
+2.15.1 统一DocumentContent
+→ 2.15.2 PDF/DOCX结构化解析
+→ 2.15.3 OCR与扫描文档
+→ 2.15.4 流程图和UI图理解
+→ 2.15.5 关键问题筛选与限流
+→ 2.15.6 ContextBuilder与节点预算
+→ 2.15.7 分层耗时、Token、错误和降级
+```
+
+2.16继续负责离线评测，但增加正文、表格、OCR、流程关系、UI操作、关键问题数量和视觉调用成本等指标。
+2.17 FastAPI、后台任务、SSE和Vue顺序不变。
+
+### Human-in-the-loop边界
+
+人工确认不等于逐图审核：
+
+- 高置信度且有正文印证的内容自动使用；
+- 中置信度内容作为风险继续，不阻塞任务；
+- 低置信度的非核心图片只记录解析警告；
+- 只有核心规则、关键数字、流程分支或图文冲突才允许暂停；
+- 重复问题合并，一轮默认最多3个，并支持“暂不确定并继续”。
+
+该策略既保留安全边界，也避免用户替AI完成需求分析。
+
+### 当前与规划边界
+
+本次只修改文档，没有增加OCR、视觉模型、表格解析或页面交互。README和PRD继续明确当前版本只能处理可提取文字，
+不得把规划中的图文理解写成已实现能力。直接下一步仍为2.14.5知识资产可靠性收尾。
+
+### 验证结果
+
+```text
+python -m unittest discover -s tests -v
+260 tests，OK，6 skipped
+
+python -m pytest -q
+337 passed，8 skipped
+
+python -m compileall -q agent application knowledge_assets repositories services utils views tests main.py
+通过
+
+git diff --check
+通过
+```
+
+本次没有修改生产代码、测试代码、页面或依赖配置，也没有调用真实外部服务。
