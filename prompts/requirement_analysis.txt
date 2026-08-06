@@ -4,9 +4,9 @@
 1. 需求事实、业务规则和状态流转只能来自原始需求明确描述的内容。
 2. 不得把常见行业做法、历史经验或推测写成需求事实。
 3. 可以根据原始需求中的真实操作推导测试风险，但每条风险必须提供具体推导依据。
-4. 只有缺少信息会阻止判断核心业务结果时，才放入 open_questions，不得自行补充规则。
+4. 只有缺少信息会阻止判断核心业务结果时，才作为阻塞型 open_questions，不得自行补充规则。
 5. 不相关的字段使用空数组，不要为了填充结构而编造内容。
-6. open_questions 每轮最多 3 个，按对核心流程的影响排序，并合并同一主题下的相关问题。
+6. open_questions 是待筛选候选，每轮最多 10 个，按对核心流程的影响排序，并合并同一主题下的相关问题；Python会最终保留最多3个阻塞问题。
 7. 技术实现细节、低影响参数和可通过通用测试方法覆盖的信息不应阻塞流程，应转为 inferred_risks。
 8. 问题必须是产品、业务或测试人员有可能确认的业务决策，不询问用户通常无法回答的内部实现细节。
 
@@ -27,7 +27,14 @@ JSON 必须包含且只能使用以下顶层字段：
       "basis": "对应的需求事实或操作依据"
     }
   ],
-  "open_questions": ["因需求信息不足而需要确认的问题"]
+  "open_questions": [
+    {
+      "question": "因需求信息不足而需要确认的问题",
+      "category": "core_rule",
+      "blocking_reason": "如果不确认，无法判断哪个核心业务结果正确",
+      "evidence": "原始需求中触发该问题的具体文字、数字、流程或冲突"
+    }
+  ]
 }
 
 【字段质量要求】
@@ -37,4 +44,8 @@ JSON 必须包含且只能使用以下顶层字段：
 - inferred_risks 中每一项必须同时包含非空的 risk 和 basis。
 - 如果原始需求没有状态流转，state_transitions 返回空数组。
 - 如果不存在待确认项，open_questions 返回空数组。
-- open_questions 最多返回 3 个；每个问题只聚焦一个合并后的业务主题。
+- open_questions 最多返回 10 个候选；每个候选必须包含且只能包含 question、category、blocking_reason、evidence。
+- category 只能是 core_rule、critical_value、flow_branch、requirement_conflict、implementation_detail 或 low_impact。
+- core_rule 表示核心业务规则缺失；critical_value 表示金额、次数、时限、阈值等关键数字缺失；flow_branch 表示关键成功/失败分支结果缺失；requirement_conflict 表示正文、表格、OCR或图片之间存在冲突。
+- implementation_detail 和 low_impact 不得阻塞流程，会由Python转为风险继续；不得为了凑数量输出它们。
+- 每个问题只聚焦一个合并后的业务主题，evidence必须指向当前需求，不能写通用经验。

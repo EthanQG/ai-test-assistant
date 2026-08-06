@@ -33,6 +33,18 @@ def valid_analysis_payload() -> dict:
     }
 
 
+def clarification_candidate(
+    question: str,
+    category: str = "core_rule",
+) -> dict:
+    return {
+        "question": question,
+        "category": category,
+        "blocking_reason": "不确认将无法判断核心业务结果",
+        "evidence": "当前需求缺少对应规则",
+    }
+
+
 class FakeLLMService:
     def __init__(self, response: str = "", error: Exception | None = None):
         self.response = response
@@ -108,13 +120,16 @@ class RequirementAnalysisResultTests(unittest.TestCase):
                 json.dumps(payload, ensure_ascii=False)
             )
 
-    def test_more_than_three_open_questions_are_rejected(self):
+    def test_more_than_ten_open_question_candidates_are_rejected(self):
         payload = valid_analysis_payload()
-        payload["open_questions"] = ["问题一", "问题二", "问题三", "问题四"]
+        payload["open_questions"] = [
+            clarification_candidate(f"问题{index}")
+            for index in range(11)
+        ]
 
         with self.assertRaisesRegex(
             RequirementAnalysisValidationError,
-            "at most 3",
+            "at most 10",
         ):
             RequirementAnalysisResult.from_json(
                 json.dumps(payload, ensure_ascii=False)
@@ -163,7 +178,9 @@ class RequirementAnalyzerTests(unittest.TestCase):
 
     def test_open_questions_put_task_in_waiting_state(self):
         payload = valid_analysis_payload()
-        payload["open_questions"] = ["库存扣减失败后是否回滚订单？"]
+        payload["open_questions"] = [
+            clarification_candidate("库存扣减失败后是否回滚订单？")
+        ]
         analyzer = RequirementAnalyzer(
             llm_service=FakeLLMService(
                 json.dumps(payload, ensure_ascii=False)
@@ -267,7 +284,11 @@ class RequirementAnalyzerTests(unittest.TestCase):
 
     def test_deferred_question_is_not_asked_again(self):
         payload = valid_analysis_payload()
-        payload["open_questions"] = ["优惠券失效时间如何计算？"]
+        payload["open_questions"] = [
+            clarification_candidate(
+                "优惠券失效时间如何计算？", "critical_value"
+            )
+        ]
         analyzer = RequirementAnalyzer(
             llm_service=FakeLLMService(
                 json.dumps(payload, ensure_ascii=False)

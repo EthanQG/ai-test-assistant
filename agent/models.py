@@ -12,6 +12,15 @@ class TestPointValidationError(ValueError):
     """Raised when the LLM response cannot be used as structured test points."""
 
 
+class ClarificationCategory(str, Enum):
+    CORE_RULE = "core_rule"
+    CRITICAL_VALUE = "critical_value"
+    FLOW_BRANCH = "flow_branch"
+    REQUIREMENT_CONFLICT = "requirement_conflict"
+    IMPLEMENTATION_DETAIL = "implementation_detail"
+    LOW_IMPACT = "low_impact"
+
+
 def _required_text(payload: dict[str, Any], field_name: str) -> str:
     value = payload.get(field_name)
     if not isinstance(value, str) or not value.strip():
@@ -88,6 +97,55 @@ class InferredRisk:
 
 
 @dataclass(frozen=True)
+class ClarificationCandidate:
+    question: str
+    category: ClarificationCategory
+    blocking_reason: str
+    evidence: str
+
+    @classmethod
+    def from_dict(
+        cls, payload: dict[str, Any]
+    ) -> "ClarificationCandidate":
+        if not isinstance(payload, dict):
+            raise RequirementAnalysisValidationError(
+                "each open question must be an object"
+            )
+        expected_fields = {
+            "question",
+            "category",
+            "blocking_reason",
+            "evidence",
+        }
+        if set(payload) != expected_fields:
+            raise RequirementAnalysisValidationError(
+                "open question fields are invalid"
+            )
+        try:
+            category = ClarificationCategory(
+                _required_text(payload, "category")
+            )
+        except ValueError as exc:
+            raise RequirementAnalysisValidationError(
+                "open question category is unsupported"
+            ) from exc
+        return cls(
+            question=_required_text(payload, "question"),
+            category=category,
+            blocking_reason=_required_text(payload, "blocking_reason"),
+            evidence=_required_text(payload, "evidence"),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "question": self.question,
+            "category": self.category.value,
+            "blocking_reason": self.blocking_reason,
+            "evidence": self.evidence,
+        }
+
+
+@dataclass(frozen=True)
 class RequirementAnalysisResult:
     summary: str
     modules: list[str] = field(default_factory=list)
@@ -95,7 +153,13 @@ class RequirementAnalysisResult:
     business_rules: list[str] = field(default_factory=list)
     state_transitions: list[str] = field(default_factory=list)
     inferred_risks: list[InferredRisk] = field(default_factory=list)
-    open_questions: list[str] = field(default_factory=list)
+    clarification_candidates: list[ClarificationCandidate] = field(
+        default_factory=list
+    )
+
+    @property
+    def open_questions(self) -> list[str]:
+        return [item.question for item in self.clarification_candidates]
 
     @classmethod
     def from_json(cls, raw_response: str) -> "RequirementAnalysisResult":
@@ -140,10 +204,14 @@ class RequirementAnalysisResult:
             raise RequirementAnalysisValidationError(
                 "inferred_risks must be a list"
             )
-        open_questions = _string_list(payload, "open_questions")
-        if len(open_questions) > 3:
+        raw_questions = payload.get("open_questions")
+        if not isinstance(raw_questions, list):
             raise RequirementAnalysisValidationError(
-                "open_questions must contain at most 3 items"
+                "open_questions must be a list"
+            )
+        if len(raw_questions) > 10:
+            raise RequirementAnalysisValidationError(
+                "open_questions must contain at most 10 candidates"
             )
 
         return cls(
@@ -161,7 +229,10 @@ class RequirementAnalysisResult:
             inferred_risks=[
                 InferredRisk.from_dict(item) for item in risk_payload
             ],
-            open_questions=open_questions,
+            clarification_candidates=[
+                ClarificationCandidate.from_dict(item)
+                for item in raw_questions
+            ],
         )
 
     @staticmethod
@@ -183,7 +254,9 @@ class RequirementAnalysisResult:
             "inferred_risks": [
                 risk.to_dict() for risk in self.inferred_risks
             ],
-            "open_questions": self.open_questions,
+            "open_questions": [
+                item.to_dict() for item in self.clarification_candidates
+            ],
         }
 
 

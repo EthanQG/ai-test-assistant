@@ -67,7 +67,8 @@
 | 阶段 2.15.1 | 已完成 | DocumentContent、文本/表格/图片元素、来源ID和解析警告 | `785f42e` |
 | 阶段 2.15.2 | 已完成 | PDF/DOCX原生结构、真实图片附件、边界警告和覆盖统计 | `7826099` |
 | 阶段 2.15.3 | 已完成 | OCR协议、扫描页渲染、置信度分流、失败隔离和真实中文冒烟 | `b823c2d`, `98684e2` |
-| 阶段 2.15.4 | 代码完成、待提交 | 有界视觉候选筛选、结构化多模态协议、调用限额和失败降级 | 待提交 |
+| 阶段 2.15.4 | 已完成 | 有界视觉候选筛选、结构化多模态协议、调用限额和失败降级 | `ca58c5f` |
+| 阶段 2.15.5 | 代码完成、待提交 | 关键问题结构化分类、Python阻塞策略、去重和非阻塞转风险 | 待提交 |
 | 阶段 2.15 | 规划中 | 图文PRD理解、关键问题限流、ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
@@ -3115,3 +3116,57 @@ python -m unittest discover -s tests -v
 ### 下一步
 
 阶段2.15.5实现关键问题筛选和Human-in-the-loop限流，减少用户被低价值问题频繁打断。
+
+## 阶段 2.15.5：关键问题筛选与Human-in-the-loop限流
+
+### 本阶段目标
+
+解决“LLM只要返回问题就暂停任务”的过度询问问题，让代码而不是模型最终决定哪些问题有权打断用户。
+
+### 修改内容
+
+1. 将待确认候选升级为包含`question`、`category`、`blocking_reason`和`evidence`的结构化对象；
+2. 类别限定为核心规则、关键数字、关键分支、需求冲突、实现细节和低影响；
+3. 新增`ClarificationQuestionPolicy`，最多选择前三个阻塞候选；
+4. 实现细节、低影响和超额候选转为`InferredRisk`，不暂停任务；
+5. 使用本地关键词覆盖明显误分类的数据库、缓存、技术栈和纯视觉样式问题；
+6. 对问题做空白、标点和大小写归一化去重；
+7. `deferred_questions`使用相同归一化规则，防止暂不确定的问题变换标点后重新出现；
+8. 完成事件记录原候选数、阻塞数和非阻塞转风险数；
+9. State、页面、快照和Orchestrator仍使用原来的问题字符串；
+10. 更新仓库测试约定：新增测试使用pytest，开发中运行目标模块，阶段结束运行一次全量pytest。
+
+### 核心设计
+
+```text
+LLM提出候选并给出依据
+→ Python校验候选结构
+→ Python按类别、关键词、去重、deferred和数量上限筛选
+→ 最多3个问题暂停 / 其余作为风险继续
+```
+
+这不是让Python理解全部业务语义，而是建立最低安全边界。LLM仍负责语义分析，代码负责类别白名单、数量、
+明显技术问题、重复消费和状态暂停权限。
+
+### 验证结果
+
+```text
+python -m pytest tests/unit/agent/test_requirement_analyzer.py \
+  tests/unit/agent/test_clarification_policy.py \
+  tests/unit/agent/test_orchestrator.py \
+  tests/unit/application/test_application_service.py -q
+55 passed
+
+python -m pytest -q
+390 passed，10 skipped
+```
+
+所有测试使用Fake LLM，没有真实网络请求。
+
+### Git提交
+
+待创建本地提交。
+
+### 下一步
+
+阶段2.15.6实现ContextBuilder和节点输入预算，开始减少长PRD、完整State和RAG上下文造成的Token与时延。

@@ -27,7 +27,7 @@
 5. 阅读 `docs/LEARNING_NOTES.md` 的对应阶段
 6. 执行 `git status -sb`
 7. 执行 `git log -5 --oneline --decorate`
-8. 执行 `python -m unittest discover -s tests -v`
+8. 执行 `python -m pytest -q`
 9. 先向用户说明当前状态、测试结果和准备修改的范围，再开始编辑
 
 如果文档、Git 状态和代码不一致，以代码与测试结果为完成度依据，以当前 V2 PRD 为产品范围依据，并在本次修改中修正文档。
@@ -81,6 +81,8 @@ tests/
 - OCR或视觉模型的低置信度结果不能直接写入需求事实；必须保留页码、图片来源、置信度或降级说明
 - 不编造功能、测试数据、性能数据或评测结论
 - 测试使用 Fake Service，不因单元测试调用真实 DeepSeek、Milvus 或 Embedding 服务
+- 新增测试优先使用pytest风格；开发中只运行当前模块，阶段完成后运行一次全量pytest
+- `unittest discover`只在兼容性验收或专项检查时运行，不与全量pytest机械重复执行
 - 不擅自进行前后端分离；Agent 核心稳定后再评估
 
 ## 修改与验证要求
@@ -90,7 +92,7 @@ tests/
 - 完成前至少执行：
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m pytest -q
 python -m compileall -q agent services utils views tests main.py
 git diff --check
 git status --short

@@ -4,6 +4,7 @@ from services.llm_service import LLMService
 from services.prompt_service import PromptService
 
 from .events import AgentStep
+from .clarification_policy import ClarificationQuestionPolicy
 from .models import RequirementAnalysisResult
 from .state import AgentStatus, TestAnalysisState
 from .structured_output import generate_and_parse_json
@@ -20,9 +21,13 @@ class RequirementAnalyzer:
         self,
         llm_service: LLMService | None = None,
         prompt_service: PromptService | None = None,
+        clarification_policy: ClarificationQuestionPolicy | None = None,
     ):
         self.llm_service = llm_service or LLMService()
         self.prompt_service = prompt_service or PromptService()
+        self.clarification_policy = (
+            clarification_policy or ClarificationQuestionPolicy()
+        )
 
     def analyze(
         self,
@@ -50,15 +55,19 @@ class RequirementAnalyzer:
                 system_prompt,
                 RequirementAnalysisResult.from_json,
             )
-            if state.deferred_questions:
-                result = replace(
-                    result,
-                    open_questions=[
-                        question
-                        for question in result.open_questions
-                        if question not in state.deferred_questions
-                    ],
-                )
+            raw_candidate_count = len(result.clarification_candidates)
+            selection = self.clarification_policy.select(
+                result.clarification_candidates,
+                deferred_questions=state.deferred_questions,
+            )
+            result = replace(
+                result,
+                clarification_candidates=list(selection.blocking),
+                inferred_risks=[
+                    *result.inferred_risks,
+                    *selection.non_blocking_risks,
+                ],
+            )
             self._apply_result(state, result)
 
             state.complete_step(
@@ -69,6 +78,10 @@ class RequirementAnalyzer:
                     "fact_count": len(result.requirement_facts),
                     "risk_count": len(result.inferred_risks),
                     "open_question_count": len(result.open_questions),
+                    "clarification_candidate_count": raw_candidate_count,
+                    "non_blocking_question_count": len(
+                        selection.non_blocking_risks
+                    ),
                 },
             )
 

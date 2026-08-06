@@ -15,6 +15,8 @@ from .knowledge_retriever import (
     KnowledgeRetriever,
 )
 from .models import (
+    ClarificationCandidate,
+    ClarificationCategory,
     InferredRisk,
     RequirementAnalysisResult,
     RequirementAnalysisValidationError,
@@ -24,6 +26,10 @@ from .models import (
     TestPointPriority,
     TestPointSource,
     TestPointValidationError,
+)
+from .clarification_policy import (
+    ClarificationQuestionPolicy,
+    ClarificationSelection,
 )
 from .orchestrator import (
     AgentOrchestrator,
@@ -64,6 +70,10 @@ __all__ = [
     "AgentEvent",
     "AgentEventType",
     "AgentStatus",
+    "ClarificationCandidate",
+    "ClarificationCategory",
+    "ClarificationQuestionPolicy",
+    "ClarificationSelection",
     "AgentStep",
     "AgentOrchestrator",
     "InferredRisk",
