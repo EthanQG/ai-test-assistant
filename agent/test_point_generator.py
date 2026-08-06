@@ -2,6 +2,7 @@ from services.llm_service import LLMService
 from services.prompt_service import PromptService
 
 from .events import AgentStep
+from .context_builder import ContextBuilder
 from .models import TestPointGenerationResult
 from .state import KnowledgeRetrievalStatus, TestAnalysisState
 from .structured_output import (
@@ -21,9 +22,11 @@ class TestPointGenerator:
         self,
         llm_service: LLMService | None = None,
         prompt_service: PromptService | None = None,
+        context_builder: ContextBuilder | None = None,
     ):
         self.llm_service = llm_service or LLMService()
         self.prompt_service = prompt_service or PromptService()
+        self.context_builder = context_builder or ContextBuilder()
 
     def generate(
         self,
@@ -39,11 +42,14 @@ class TestPointGenerator:
             system_prompt = self.prompt_service.load_system_prompt(
                 "structured_test_points"
             )
+            context = self.context_builder.build_test_point_generation(state)
             user_prompt = (
                 self.prompt_service.build_structured_test_points_prompt(
-                    self._requirement_analysis_payload(state),
-                    local_bug_knowledge=state.local_bug_knowledge,
-                    rag_context=state.rag_context,
+                    context.values["requirement_analysis"],
+                    local_bug_knowledge=context.values[
+                        "local_bug_knowledge"
+                    ],
+                    rag_context=context.values["rag_context"],
                 )
             )
             result = generate_and_parse_json(
@@ -64,6 +70,7 @@ class TestPointGenerator:
                     "test_point_count": len(result.test_points),
                     "category_counts": self._category_counts(result),
                     "priority_counts": self._priority_counts(result),
+                    "context_metrics": context.metrics.to_dict(),
                 },
             )
             return result
@@ -90,19 +97,6 @@ class TestPointGenerator:
             raise TestPointGenerationError(
                 "knowledge retrieval must be attempted first"
             )
-
-    @staticmethod
-    def _requirement_analysis_payload(
-        state: TestAnalysisState,
-    ) -> dict:
-        return {
-            "summary": state.requirement_summary,
-            "modules": list(state.modules),
-            "requirement_facts": list(state.requirement_facts),
-            "business_rules": list(state.business_rules),
-            "state_transitions": list(state.state_transitions),
-            "inferred_risks": list(state.inferred_risks),
-        }
 
     @staticmethod
     def _category_counts(

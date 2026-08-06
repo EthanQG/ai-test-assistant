@@ -2,6 +2,7 @@ from services.llm_service import LLMService
 from services.prompt_service import PromptService
 
 from .events import AgentStep
+from .context_builder import ContextBuilder
 from .review_models import TestPointReviewResult
 from .state import TestAnalysisState
 from .structured_output import (
@@ -22,12 +23,14 @@ class TestPointReviewer:
         llm_service: LLMService | None = None,
         prompt_service: PromptService | None = None,
         passing_score: int = 80,
+        context_builder: ContextBuilder | None = None,
     ):
         if not 0 <= passing_score <= 100:
             raise ValueError("passing_score must be between 0 and 100")
         self.llm_service = llm_service or LLMService()
         self.prompt_service = prompt_service or PromptService()
         self.passing_score = passing_score
+        self.context_builder = context_builder or ContextBuilder()
 
     def review(self, state: TestAnalysisState) -> TestPointReviewResult:
         self._validate_prerequisites(state)
@@ -40,9 +43,10 @@ class TestPointReviewer:
             system_prompt = self.prompt_service.load_system_prompt(
                 "test_point_review"
             )
+            context = self.context_builder.build_test_point_review(state)
             user_prompt = self.prompt_service.build_test_point_review_prompt(
-                self._requirement_analysis_payload(state),
-                state.test_points,
+                context.values["requirement_analysis"],
+                context.values["test_points"],
             )
             result = generate_and_parse_json(
                 self.llm_service,
@@ -91,6 +95,7 @@ class TestPointReviewer:
                     "hallucination_issue_count": len(
                         result.hallucination_issues
                     ),
+                    "context_metrics": context.metrics.to_dict(),
                 },
             )
             return result
@@ -136,16 +141,3 @@ class TestPointReviewer:
             raise TestPointReviewError(
                 "structured test points must be generated first"
             )
-
-    @staticmethod
-    def _requirement_analysis_payload(
-        state: TestAnalysisState,
-    ) -> dict:
-        return {
-            "summary": state.requirement_summary,
-            "modules": list(state.modules),
-            "requirement_facts": list(state.requirement_facts),
-            "business_rules": list(state.business_rules),
-            "state_transitions": list(state.state_transitions),
-            "inferred_risks": list(state.inferred_risks),
-        }

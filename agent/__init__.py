@@ -1,6 +1,13 @@
 """Core state models for the Test Analysis Agent."""
 
 from .events import AgentEvent, AgentEventType, AgentStep
+from .context_builder import (
+    BuiltContext,
+    ContextBuildError,
+    ContextBuilder,
+    ContextMetrics,
+    ContextNode,
+)
 from .finalizer import FinalizationError, FinalizationResult, Finalizer
 from .human_feedback import (
     FeedbackAction,
@@ -70,10 +77,15 @@ __all__ = [
     "AgentEvent",
     "AgentEventType",
     "AgentStatus",
+    "BuiltContext",
     "ClarificationCandidate",
     "ClarificationCategory",
     "ClarificationQuestionPolicy",
     "ClarificationSelection",
+    "ContextBuildError",
+    "ContextBuilder",
+    "ContextMetrics",
+    "ContextNode",
     "AgentStep",
     "AgentOrchestrator",
     "InferredRisk",

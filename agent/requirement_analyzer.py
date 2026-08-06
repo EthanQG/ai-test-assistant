@@ -5,6 +5,7 @@ from services.prompt_service import PromptService
 
 from .events import AgentStep
 from .clarification_policy import ClarificationQuestionPolicy
+from .context_builder import ContextBuilder
 from .models import RequirementAnalysisResult
 from .state import AgentStatus, TestAnalysisState
 from .structured_output import generate_and_parse_json
@@ -22,12 +23,14 @@ class RequirementAnalyzer:
         llm_service: LLMService | None = None,
         prompt_service: PromptService | None = None,
         clarification_policy: ClarificationQuestionPolicy | None = None,
+        context_builder: ContextBuilder | None = None,
     ):
         self.llm_service = llm_service or LLMService()
         self.prompt_service = prompt_service or PromptService()
         self.clarification_policy = (
             clarification_policy or ClarificationQuestionPolicy()
         )
+        self.context_builder = context_builder or ContextBuilder()
 
     def analyze(
         self,
@@ -42,11 +45,16 @@ class RequirementAnalyzer:
             system_prompt = self.prompt_service.load_system_prompt(
                 "requirement_analysis"
             )
+            context = self.context_builder.build_requirement_analysis(state)
             user_prompt = (
                 self.prompt_service.build_requirement_analysis_prompt(
-                    state.requirement,
-                    user_clarifications=state.user_clarifications,
-                    deferred_questions=state.deferred_questions,
+                    context.values["requirement"],
+                    user_clarifications=context.values[
+                        "user_clarifications"
+                    ],
+                    deferred_questions=context.values[
+                        "deferred_questions"
+                    ],
                 )
             )
             result = generate_and_parse_json(
@@ -82,6 +90,7 @@ class RequirementAnalyzer:
                     "non_blocking_question_count": len(
                         selection.non_blocking_risks
                     ),
+                    "context_metrics": context.metrics.to_dict(),
                 },
             )
 

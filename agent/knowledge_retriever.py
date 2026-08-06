@@ -1,9 +1,12 @@
+from types import SimpleNamespace
+
 from services.rag_service import (
     RAGSearchResult,
     RAGSearchStatus,
     RAGService,
 )
 
+from .context_builder import ContextBuilder
 from .events import AgentStep
 from .state import (
     KnowledgeRetrievalStatus,
@@ -18,8 +21,13 @@ class KnowledgeRetrievalError(RuntimeError):
 class KnowledgeRetriever:
     """Retrieves historical test assets and records a controlled result."""
 
-    def __init__(self, rag_service: RAGService | None = None):
+    def __init__(
+        self,
+        rag_service: RAGService | None = None,
+        context_builder: ContextBuilder | None = None,
+    ):
         self.rag_service = rag_service or RAGService()
+        self.context_builder = context_builder or ContextBuilder()
 
     def retrieve(
         self,
@@ -36,7 +44,8 @@ class KnowledgeRetriever:
             AgentStep.RETRIEVE_KNOWLEDGE,
             "正在检索相似历史测试资产",
         )
-        query = self._build_query(state)
+        context = self.context_builder.build_knowledge_retrieval(state)
+        query = self._build_query(SimpleNamespace(**context.values))
         result = self.rag_service.search(
             query,
             top_k=top_k,
@@ -59,12 +68,13 @@ class KnowledgeRetriever:
                 "matched_count": state.rag_matched_count,
                 "max_score": state.rag_max_score,
                 "error": state.rag_error_message,
+                "context_metrics": context.metrics.to_dict(),
             },
         )
         return result
 
     @staticmethod
-    def _build_query(state: TestAnalysisState) -> str:
+    def _build_query(state: SimpleNamespace) -> str:
         sections = [f"原始需求：{state.requirement}"]
 
         if state.requirement_summary:

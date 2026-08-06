@@ -4,6 +4,7 @@ from services.llm_service import LLMService
 from services.prompt_service import PromptService
 
 from .events import AgentStep
+from .context_builder import ContextBuilder
 from .human_feedback import (
     FeedbackAction,
     HumanFeedback,
@@ -31,9 +32,11 @@ class TestPointReviser:
         self,
         llm_service: LLMService | None = None,
         prompt_service: PromptService | None = None,
+        context_builder: ContextBuilder | None = None,
     ):
         self.llm_service = llm_service or LLMService()
         self.prompt_service = prompt_service or PromptService()
+        self.context_builder = context_builder or ContextBuilder()
 
     def revise(
         self,
@@ -51,22 +54,22 @@ class TestPointReviser:
             allowed_actions, max_operations = self._revision_scope(
                 ready_feedback
             )
+            context = self.context_builder.build_test_point_revision(
+                state,
+                review_result=(None if ready_feedback else state.review_result),
+                human_feedback=[
+                    feedback.to_dict() for feedback in ready_feedback
+                ],
+            )
             system_prompt = self.prompt_service.load_system_prompt(
                 "test_point_revision"
             )
             user_prompt = (
                 self.prompt_service.build_test_point_revision_prompt(
-                    self._requirement_analysis_payload(state),
-                    original_test_points,
-                    review_result=(
-                        None
-                        if ready_feedback
-                        else state.review_result
-                    ),
-                    human_feedback=[
-                        feedback.to_dict()
-                        for feedback in ready_feedback
-                    ],
+                    context.values["requirement_analysis"],
+                    context.values["test_points"],
+                    review_result=context.values["review_result"],
+                    human_feedback=context.values["human_feedback"],
                     allowed_actions=allowed_actions,
                     max_operations=max_operations,
                 )
@@ -146,6 +149,7 @@ class TestPointReviser:
                     "operation_count": len(
                         revision_plan.operations
                     ),
+                    "context_metrics": context.metrics.to_dict(),
                 },
             )
             return result
@@ -177,19 +181,6 @@ class TestPointReviser:
             raise TestPointRevisionError(
                 "a failed review or ready human feedback is required"
             )
-
-    @staticmethod
-    def _requirement_analysis_payload(
-        state: TestAnalysisState,
-    ) -> dict:
-        return {
-            "summary": state.requirement_summary,
-            "modules": list(state.modules),
-            "requirement_facts": list(state.requirement_facts),
-            "business_rules": list(state.business_rules),
-            "state_transitions": list(state.state_transitions),
-            "inferred_risks": list(state.inferred_risks),
-        }
 
     @staticmethod
     def _revision_scope(
