@@ -53,9 +53,10 @@
 旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
 知识闭环。后续将由 MySQL 保存完整、可审计的知识资产，Milvus 只承担向量候选检索。
 
-当前文档上传能力只提取TXT/Markdown文字、PDF文本层和DOCX普通段落。Word表格、扫描PDF、图片文字、
-流程图和UI原型尚未解析，不能将当前版本描述为支持完整图文PRD。阶段2.15将先建立结构化文档模型，
-再分步增加表格/图片提取、OCR、受控多模态理解、关键问题限流和ContextBuilder。
+阶段2.15.1已经建立统一`DocumentContent`：保留文档格式、稳定文档ID、有序元素、来源ID、页码和解析警告，
+并继续向当前页面提供兼容纯文本。当前仍只实际提取TXT/Markdown文字、PDF文本层和DOCX普通段落；
+Word表格和内嵌图片只会产生“尚未提取”警告，扫描PDF、图片文字、流程图和UI原型尚未解析，
+不能将当前版本描述为支持完整图文PRD。
 
 ## 项目结构
 
@@ -66,6 +67,7 @@
 ├── application/            # 应用用例、Command、只读TaskView与会话装配
 ├── agent/                  # Agent状态、事件及后续节点
 ├── knowledge_assets/       # 知识资产模型、准入、快照与有界语义Chunk
+├── documents/              # 图文文档模型、元素来源与解析警告
 ├── repositories/           # Task/KnowledgeAsset Repository抽象与实现
 ├── views/                  # 页面与交互状态
 ├── services/               # LLM、RAG、文档解析应用服务
@@ -219,10 +221,11 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 9. 阶段2.14.3：已完成有界Chunk、批量Embedding和Milvus V2索引写入边界
 10. 阶段2.14.4：已完成V2候选召回、阈值过滤、MySQL批量回查和来源验证
 11. 阶段2.14.5：已实现索引失败的显式重试、重复请求保护、补偿审计和停用清理
-12. 阶段2.15.1～2.15.5：统一图文文档模型，增加结构化解析、OCR、多模态理解和关键问题限流
-13. 阶段2.15.6～2.15.7：增加ContextBuilder、节点Token预算和分层耗时记录
-14. 阶段2.16：建立10～20份脱敏图文需求评测集，完成解析、RAG、Reviewer和三方案实验
-15. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+12. 阶段2.15.1：已完成统一DocumentContent、稳定来源和现有文本解析兼容
+13. 阶段2.15.2～2.15.5：增加PDF/DOCX结构化解析、OCR、多模态理解和关键问题限流
+14. 阶段2.15.6～2.15.7：增加ContextBuilder、节点Token预算和分层耗时记录
+15. 阶段2.16：建立10～20份脱敏图文需求评测集，完成解析、RAG、Reviewer和三方案实验
+16. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。

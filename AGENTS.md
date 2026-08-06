@@ -44,6 +44,9 @@ application/
 knowledge_assets/
   用户确认后的知识资产模型、准入规则、版本化快照、有界索引Chunk和检索候选
 
+documents/
+  DocumentContent、文本/表格/图片元素、稳定来源与解析警告；不依赖页面和外部模型
+
 repositories/
   TaskRepository、KnowledgeAssetRepository 抽象及其 InMemory/MySQL 存储实现
 

@@ -10,83 +10,73 @@
 ## Git基线
 
 - 分支：`main`
-- 阶段2.14.4提交：`aa2abd9 阶段2.14.4：实现知识资产可信检索`
-- 图文PRD路线图校正提交：`ec633e7 文档：调整图文PRD理解开发路线`
-- 阶段2.14.5代码、测试与文档已完成，提交见最新Git记录
+- 图文PRD路线图校正：`ec633e7 文档：调整图文PRD理解开发路线`
+- 阶段2.14.5：`5ecd956 阶段2.14.5：完善知识资产索引重试与补偿`
+- 阶段2.15.1代码、测试与文档已完成，提交见最新Git记录
 
-## 当前阶段：2.14.5 索引失败重试与补偿审计
+## 当前阶段：2.15.1 统一DocumentContent
 
-本阶段只收尾知识资产索引可靠性，不修改Streamlit、Agent节点、Orchestrator和当前
-KnowledgeRetriever。主要完成：
+本阶段建立文档解析的结构化输入契约，不修改Streamlit布局、AgentState、Orchestrator、Prompt和
+节点顺序。主要完成：
 
-1. 只有`index_failed`资产可以通过显式入口重新索引；
-2. 每次重试使用独立`request_id`，MySQL保存`running/succeeded/failed`审计记录；
-3. 同一`request_id`重复提交不会再次调用Embedding或Milvus；
-4. 失败请求必须更换新`request_id`，防止同一请求重复消费；
-5. 重试开始时，资产从`index_failed`切回`pending_index`，该状态变化与请求创建在同一MySQL事务中；
-6. 继续使用稳定Chunk ID和Milvus upsert，重放不会生成另一组重复主键；
-7. 资产停用时先把MySQL状态改为`retired`，再按`asset_id + asset_version`删除Milvus向量；
-8. 即使向量清理失败，权威状态已经阻止该资产继续被可信检索，之后可再次执行清理。
+1. 新增独立`documents/`模型包，不依赖页面、LLM、OCR或数据库；
+2. `DocumentContent`保存稳定文档ID、文件名、格式、兼容纯文本、有序元素和解析警告；
+3. 文本元素区分标题、普通段落和列表项；
+4. 表格模型使用不可变二维行列，图片模型保存图片ID、MIME类型、内容引用、尺寸和说明；
+5. 每个元素保存稳定`source_id`、文档ID、文件名、元素顺序和可选页码；
+6. TXT按段落建模，Markdown识别标题、列表和段落；
+7. PDF文本层按页提取并保留页码，空白页产生显式警告；
+8. DOCX保留段落顺序和标题/列表类型，检测到表格或内嵌图片时明确记录尚未提取警告；
+9. `DocumentService.parse()`返回结构化模型，原`extract_text()`继续返回原来的字符串视图；
+10. 当前Application Service和Streamlit无需修改，上传创建任务的行为保持不变。
 
-## 重试与停用数据流
+## 当前数据流
 
 ```text
-显式重试(index_failed, request_id)
-→ MySQL事务：资产改为pending_index + 创建running审计
-→ 构建稳定Chunk ID
-→ 一次批量Embedding + Milvus upsert
-→ 成功：资产indexed + 请求succeeded
-→ 失败：资产index_failed + 请求failed
-
-停用(indexed)
-→ MySQL先改为retired
-→ Milvus按asset_id和asset_version删除向量
-→ 清理失败可重试，但retired资产不会进入可信召回
+上传TXT/MD/PDF/DOCX
+→ DocumentService一次读取文件
+→ 生成稳定document_id
+→ 解析为有序DocumentElement和DocumentSourceRef
+→ 保存页码与DocumentParsingWarning
+→ DocumentContent
+   ├─ to_plain_text()供当前Agent兼容使用
+   └─ elements/warnings供2.15.2以后结构化解析使用
 ```
 
-MySQL仍是资产是否有效的权威来源。Milvus清理属于可补偿操作，不与MySQL伪装成跨库ACID事务。
-
-## 新增数据边界
-
-- 新表`knowledge_asset_index_requests`保存请求ID、资产ID、状态、Chunk数量、错误类型/摘要和起止时间
-- `KnowledgeAssetRepository`增加开始重试、结束请求和查询审计的方法
-- 内存实现用于稳定单元测试，MySQL实现使用事务与行锁保护重试创建
-- Milvus V2适配器增加按资产版本删除接口
-- 没有新增页面按钮、后台任务、FastAPI或自动重试
+`extracted_text`暂时与结构化元素并存，是为了冻结当前页面和Agent行为；后续节点不能把它误认为已经
+包含表格、扫描页和图片中的全部信息。
 
 ## 验证结果
 
 ```text
 python -m pytest -q
-353 passed，9 skipped，共收集362项
+363 passed，9 skipped，共收集372项
 
 python -m unittest discover -s tests -v
-260 tests，OK，6 skipped
+266 tests，OK，6 skipped
 ```
 
-默认测试只使用Fake Embedding、Fake Milvus和Fake MySQL，没有访问真实DeepSeek、Ollama、
-Milvus或MySQL。真实MySQL重试审计测试已加入`integration`目录，默认跳过。
+针对性测试还验证了现有Streamlit上传流程。默认测试没有访问真实DeepSeek、Ollama、Milvus、MySQL、
+OCR或视觉模型。
 
 ## 当前限制
 
-- 页面尚无“保存到知识库”“重试索引”或“停用资产”入口
-- V2检索服务尚未接入当前Agent的KnowledgeRetriever
-- 没有后台补偿Worker；失败重试和清理必须由未来调用方显式触发
-- 进程若在创建`running`请求后、真正索引前崩溃，仍需要后续租约或运维恢复策略；本阶段只自动修复资产已明确为`indexed/index_failed`的中断审计
-- 当前只实现已知资产版本的停用清理，没有实现扫描Milvus全部孤儿向量的后台清扫器
-- 尚未执行真实MySQL与Milvus联合故障演练
-- `0.65`检索阈值尚无离线评测证据
-- 当前文档解析仍不支持Word表格、扫描PDF、OCR、流程图或UI图理解
+- 当前AgentState仍保存纯文本需求，尚未直接保存`DocumentContent`
+- DOCX表格和图片只检测并告警，尚未提取为真实元素
+- PDF目前只读取文本层；扫描页、PDF图片和复杂版面尚未处理
+- 没有OCR、图片分类、流程图/UI图理解和置信度
+- 解析警告尚未进入页面和Agent事件
+- `DocumentContent`本阶段没有单独持久化到MySQL快照
 
-## 下一步：阶段2.15.1 统一DocumentContent
+## 下一步：阶段2.15.2 PDF/DOCX结构化解析
 
-下一阶段先建立统一图文文档输入模型：
+下一阶段只补充原生结构提取：
 
-1. 表达标题、段落、列表、表格、图片、页码、来源和解析警告；
-2. 保留元素原始顺序和稳定来源ID；
-3. 将现有TXT/Markdown/PDF/DOCX文字能力适配到新边界；
-4. 本小阶段不接OCR和视觉模型，不修改Agent业务规则；
-5. 后续再依次实现结构化解析、OCR、受控多模态理解、问题限流、ContextBuilder和可观测性。
+1. DOCX标题、段落、列表、表格和内嵌图片按原始顺序输出；
+2. PDF保留页码、文本块和可识别表格，并为图片或整页渲染保留引用；
+3. 记录元素数量、未提取数量和失败警告，不静默丢失；
+4. 不在2.15.2接入OCR或多模态模型；
+5. 保持当前页面和Agent纯文本兼容路径可运行。
 
 ## 新电脑恢复方式
 

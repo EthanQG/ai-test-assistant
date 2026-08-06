@@ -5,10 +5,10 @@
 | 项目 | 内容 |
 |---|---|
 | 产品名称 | Test Analysis Agent |
-| 文档版本 | V2.16 |
+| 文档版本 | V2.17 |
 | 更新时间 | 2026-08-06 |
 | 文档状态 | 当前有效 |
-| 产品阶段 | Streamlit V1演示、MySQL任务恢复、KnowledgeAsset权威存储、Milvus V2索引写入与可信候选回查完成 |
+| 产品阶段 | Streamlit V1演示、可靠知识资产闭环与DocumentContent输入模型完成 |
 | 当前界面 | Streamlit |
 | 当前模型 | DeepSeek 兼容 Chat Completions API |
 | 历史版本 | [Workflow PRD V1](../archive/PRD_WORKFLOW_V1.md) |
@@ -635,7 +635,8 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 
 ### M6：上下文、可观测性与评测
 
-- [ ] 统一图文文档模型、PDF/DOCX结构化解析、OCR和多模态理解（阶段2.15.1～2.15.4）
+- [x] 统一DocumentContent、元素顺序、来源ID、页码和解析警告（阶段2.15.1）
+- [ ] PDF/DOCX结构化解析、OCR和多模态理解（阶段2.15.2～2.15.4）
 - [ ] 关键问题筛选、ContextBuilder和节点级Token预算（阶段2.15.5～2.15.6）
 - [ ] 文档解析、OCR、视觉模型、LLM、Embedding和Milvus分层耗时与错误分类（阶段2.15.7）
 - [ ] 10～20份脱敏需求评测集（阶段2.16）

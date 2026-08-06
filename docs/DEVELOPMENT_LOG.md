@@ -62,8 +62,9 @@
 | 阶段 2.14.3 | 已完成 | 有界语义Chunk、批量Embedding和Milvus V2索引写入边界 | `66f12fa` |
 | 阶段 2.14.4 | 已完成 | Milvus V2阈值召回、资产聚合、MySQL批量回查和来源验证 | `aa2abd9` |
 | 图文PRD路线图校正 | 已完成（仅文档） | 将结构化文档、OCR、多模态理解和关键问题限流提升为P0 | `ec633e7` |
-| 阶段 2.14.5 | 已完成 | 索引失败显式重试、request_id幂等审计和停用向量清理 | 本次提交 |
+| 阶段 2.14.5 | 已完成 | 索引失败显式重试、request_id幂等审计和停用向量清理 | `5ecd956` |
 | 阶段 2.14 | 已完成 | KnowledgeAsset准入、MySQL权威存储、Milvus V2索引与补偿闭环 | - |
+| 阶段 2.15.1 | 已完成 | DocumentContent、文本/表格/图片元素、来源ID和解析警告 | 本次提交 |
 | 阶段 2.15 | 规划中 | 图文PRD理解、关键问题限流、ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
@@ -2885,3 +2886,80 @@ git diff --check
 
 阶段2.15.1建立统一`DocumentContent`，先完整表达段落、表格、图片、页码、来源和解析警告，
 再逐步实现PDF/DOCX结构化解析、OCR和受控多模态理解。
+
+## 阶段 2.15.1：统一DocumentContent文档输入契约
+
+### 本阶段目标
+
+原有`utils/file_parser.py`把所有文档直接压平成字符串。进入Agent前，段落顺序、页码、表格、图片和
+解析失败信息已经丢失。阶段2.15.1先建立统一、不可变、可追踪来源的文档模型，同时保留现有纯文本
+入口，避免在一个阶段同时改动页面、AgentState和节点Prompt。
+
+### 实际实现
+
+- 新增独立`documents/`包和`DocumentContent`
+- 新增`DocumentTextElement`，区分标题、段落和列表项
+- 新增`DocumentTableElement/DocumentTable`，用不可变等宽二维元组表达表格
+- 新增`DocumentImageElement/DocumentImage`，表达图片ID、MIME、内容引用、尺寸和说明
+- 新增`DocumentSourceRef`，保存稳定来源ID、文档ID、文件名、元素顺序和页码
+- 新增`DocumentParsingWarning`及空文档、空白页、表格未提取、图片未提取四类警告
+- `DocumentService.parse()`统一解析TXT、Markdown、PDF文本层和DOCX普通段落
+- `DocumentService.extract_text()`保留当前Application Service使用的字符串兼容视图
+- 旧`utils.extract_text_from_file()`降为兼容包装，不再维护另一套解析实现
+
+### 为什么同时保留extracted_text和elements
+
+当前AgentState、任务快照和Prompt都依赖字符串。如果本阶段直接把它们全部换成`DocumentContent`，
+会把输入模型、状态持久化和节点上下文三个问题混在一个提交中。因此先采用双视图：
+
+```text
+DocumentContent.elements/warnings
+→ 新结构化能力
+
+DocumentContent.to_plain_text()
+→ 当前页面和Agent兼容能力
+```
+
+后续迁移必须显式选择结构化字段，不能因为保留纯文本就声称已经理解图片或表格。
+
+### 当前解析语义
+
+- TXT：按空行拆分普通段落，兼容文本保持原内容
+- Markdown：识别标题、列表项和普通段落，保留原始顺序
+- PDF：按页读取已有文本层，元素保留页码；空页生成警告
+- DOCX：读取普通段落并根据样式识别标题/列表；表格和内嵌图片只检测并告警
+
+表格、图片模型本阶段已经可表达真实结果，但解析器尚未填充这些元素；这部分属于2.15.2。
+
+### 测试证据
+
+- 文本、表格和图片元素能在同一DocumentContent中保持顺序和来源
+- 模型及嵌套表格使用不可变结构，拒绝跨文档、乱序和非法页码
+- Markdown标题/列表识别和稳定文档/来源ID
+- PDF页码保留和空白页警告
+- DOCX标题/段落类型以及表格/图片未提取警告
+- 不支持格式、非法UTF-8和空文档错误边界
+- 当前Streamlit文件上传创建任务回归不变
+
+完整验证：
+
+```text
+python -m pytest -q
+363 passed，9 skipped，共收集372项
+
+python -m unittest discover -s tests -v
+266 tests，OK，6 skipped
+
+python -m compileall -q agent application documents knowledge_assets repositories services utils views tests main.py
+通过
+
+git diff --check
+通过
+```
+
+默认测试使用内存文件和Fake PDF/DOCX模块，没有调用真实外部服务。
+
+### 范围边界与下一步
+
+本阶段没有修改Streamlit、AgentState、Orchestrator、Prompt和任务快照，也没有接入OCR、视觉模型或
+MySQL文档存储。阶段2.15.2将在该模型上实现PDF/DOCX原生结构提取，仍不接OCR和多模态理解。
