@@ -7,12 +7,15 @@ from unittest.mock import patch
 from documents import (
     DocumentFormat,
     DocumentImageElement,
+    DocumentOcrDisposition,
+    DocumentOcrElement,
     DocumentTableElement,
     DocumentTextElement,
     DocumentTextKind,
     DocumentWarningCode,
 )
 from services.document_service import DocumentService
+from services.ocr_service import OcrError, OcrTextLine
 
 
 class UploadedRequirement(BytesIO):
@@ -323,6 +326,113 @@ class DocumentServiceTests(unittest.TestCase):
         self.assertEqual(content.stats.skipped_table_count, 1)
         self.assertIn(
             DocumentWarningCode.TABLE_EXTRACTION_FAILED,
+            [warning.code for warning in content.warnings],
+        )
+
+    def test_scanned_pdf_ocr_keeps_confidence_source_and_low_confidence_candidate(self):
+        from PIL import Image
+
+        class FakeOcr:
+            def recognize(self, image_bytes, mime_type):
+                return (
+                    OcrTextLine("退款金额不得超过订单金额", 0.96),
+                    OcrTextLine("疑似模糊审批规则", 0.55),
+                )
+
+        class Pdf:
+            pages = [
+                SimpleNamespace(
+                    extract_text=lambda: "",
+                    extract_tables=lambda: [],
+                    curves=[],
+                    to_image=lambda resolution: SimpleNamespace(
+                        original=Image.new("RGB", (20, 20), "white")
+                    ),
+                )
+            ]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return None
+
+        pdfplumber = ModuleType("pdfplumber")
+        pdfplumber.open = lambda _: Pdf()
+        pypdf = ModuleType("pypdf")
+        pypdf.PdfReader = lambda _: SimpleNamespace(
+            pages=[SimpleNamespace(images=[])]
+        )
+
+        with patch.dict(
+            sys.modules, {"pdfplumber": pdfplumber, "pypdf": pypdf}
+        ):
+            content = DocumentService.parse(
+                UploadedRequirement("扫描需求.pdf", b"fake-pdf"),
+                ocr_engine=FakeOcr(),
+            )
+
+        ocr_elements = [
+            element
+            for element in content.elements
+            if isinstance(element, DocumentOcrElement)
+        ]
+        self.assertEqual(len(ocr_elements), 2)
+        self.assertEqual(ocr_elements[0].source.page_number, 1)
+        self.assertEqual(ocr_elements[0].confidence, 0.96)
+        self.assertEqual(
+            ocr_elements[0].disposition, DocumentOcrDisposition.ACCEPTED
+        )
+        self.assertEqual(
+            ocr_elements[1].disposition,
+            DocumentOcrDisposition.REVIEW_REQUIRED,
+        )
+        self.assertEqual(ocr_elements[0].image_id, content.elements[0].image.image_id)
+        self.assertIn("退款金额不得超过订单金额", content.to_plain_text())
+        self.assertNotIn("疑似模糊审批规则", content.to_plain_text())
+        self.assertEqual(content.stats.ocr_element_count, 2)
+        self.assertEqual(content.stats.low_confidence_ocr_count, 1)
+        self.assertIn(
+            DocumentWarningCode.OCR_LOW_CONFIDENCE,
+            [warning.code for warning in content.warnings],
+        )
+
+    def test_single_image_ocr_failure_does_not_abort_remaining_docx_images(self):
+        from docx import Document
+        from PIL import Image
+
+        class FlakyOcr:
+            calls = 0
+
+            def recognize(self, image_bytes, mime_type):
+                self.calls += 1
+                if self.calls == 1:
+                    raise OcrError("first image failed")
+                return (OcrTextLine("第二张图中的有效规则", 0.93),)
+
+        def image_bytes(color):
+            buffer = BytesIO()
+            Image.new("RGB", (8, 8), color).save(buffer, format="PNG")
+            buffer.seek(0)
+            return buffer
+
+        document = Document()
+        document.add_paragraph().add_run().add_picture(image_bytes("red"))
+        document.add_paragraph().add_run().add_picture(image_bytes("blue"))
+        payload = BytesIO()
+        document.save(payload)
+
+        content = DocumentService.parse(
+            UploadedRequirement("图文需求.docx", payload.getvalue()),
+            ocr_engine=FlakyOcr(),
+        )
+
+        self.assertEqual(content.stats.image_count, 2)
+        self.assertEqual(content.stats.ocr_element_count, 1)
+        self.assertEqual(content.stats.failed_ocr_count, 1)
+        self.assertIn("第二张图中的有效规则", content.to_plain_text())
+        self.assertIn(
+            DocumentWarningCode.OCR_FAILED,
             [warning.code for warning in content.warnings],
         )
 

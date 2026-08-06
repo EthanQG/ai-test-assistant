@@ -29,6 +29,14 @@ class DocumentWarningCode(str, Enum):
     IMAGE_TOO_LARGE = "image_too_large"
     IMAGE_LIMIT_EXCEEDED = "image_limit_exceeded"
     PAGE_RENDER_REQUIRED = "page_render_required"
+    OCR_UNAVAILABLE = "ocr_unavailable"
+    OCR_FAILED = "ocr_failed"
+    OCR_LOW_CONFIDENCE = "ocr_low_confidence"
+
+
+class DocumentOcrDisposition(str, Enum):
+    ACCEPTED = "accepted"
+    REVIEW_REQUIRED = "review_required"
 
 
 @dataclass(frozen=True)
@@ -59,6 +67,9 @@ class DocumentParseStats:
     warning_count: int = 0
     skipped_table_count: int = 0
     skipped_image_count: int = 0
+    ocr_element_count: int = 0
+    low_confidence_ocr_count: int = 0
+    failed_ocr_count: int = 0
 
     def __post_init__(self) -> None:
         values = (
@@ -69,6 +80,9 @@ class DocumentParseStats:
             self.warning_count,
             self.skipped_table_count,
             self.skipped_image_count,
+            self.ocr_element_count,
+            self.low_confidence_ocr_count,
+            self.failed_ocr_count,
         )
         if any(isinstance(value, bool) or value < 0 for value in values):
             raise ValueError("document parse statistics cannot be negative")
@@ -168,8 +182,30 @@ class DocumentImageElement:
     image: DocumentImage
 
 
+@dataclass(frozen=True)
+class DocumentOcrElement:
+    source: DocumentSourceRef
+    text: str
+    confidence: float
+    image_id: str
+    disposition: DocumentOcrDisposition
+
+    def __post_init__(self) -> None:
+        if not self.text.strip():
+            raise ValueError("OCR text cannot be empty")
+        if isinstance(self.confidence, bool) or not 0 <= self.confidence <= 1:
+            raise ValueError("OCR confidence must be between 0 and 1")
+        if not self.image_id.strip():
+            raise ValueError("OCR image_id cannot be empty")
+        if not isinstance(self.disposition, DocumentOcrDisposition):
+            raise ValueError("OCR disposition must be DocumentOcrDisposition")
+
+
 DocumentElement: TypeAlias = (
-    DocumentTextElement | DocumentTableElement | DocumentImageElement
+    DocumentTextElement
+    | DocumentTableElement
+    | DocumentImageElement
+    | DocumentOcrElement
 )
 
 
@@ -218,7 +254,12 @@ class DocumentContent:
         for index, element in enumerate(self.elements):
             if not isinstance(
                 element,
-                (DocumentTextElement, DocumentTableElement, DocumentImageElement),
+                (
+                    DocumentTextElement,
+                    DocumentTableElement,
+                    DocumentImageElement,
+                    DocumentOcrElement,
+                ),
             ):
                 raise ValueError("elements must contain document element types")
             if element.source.document_id != self.document_id:
@@ -257,6 +298,17 @@ class DocumentContent:
                 attachment_id = element.image.content_ref[len(prefix) :]
                 if attachment_id not in attachment_ids:
                     raise ValueError("image content_ref points to missing attachment")
+        image_ids = {
+            element.image.image_id
+            for element in self.elements
+            if isinstance(element, DocumentImageElement)
+        }
+        for element in self.elements:
+            if (
+                isinstance(element, DocumentOcrElement)
+                and element.image_id not in image_ids
+            ):
+                raise ValueError("OCR element points to missing image")
 
     def to_plain_text(self) -> str:
         """Returns the legacy text view without discarding structured data."""

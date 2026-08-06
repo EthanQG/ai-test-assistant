@@ -65,7 +65,8 @@
 | 阶段 2.14.5 | 已完成 | 索引失败显式重试、request_id幂等审计和停用向量清理 | `5ecd956` |
 | 阶段 2.14 | 已完成 | KnowledgeAsset准入、MySQL权威存储、Milvus V2索引与补偿闭环 | - |
 | 阶段 2.15.1 | 已完成 | DocumentContent、文本/表格/图片元素、来源ID和解析警告 | `785f42e` |
-| 阶段 2.15.2 | 已完成 | PDF/DOCX原生结构、真实图片附件、边界警告和覆盖统计 | 待提交 |
+| 阶段 2.15.2 | 已完成 | PDF/DOCX原生结构、真实图片附件、边界警告和覆盖统计 | `7826099` |
+| 阶段 2.15.3 | 代码完成、待真实验收 | OCR协议、扫描页渲染、Tesseract适配、置信度分流与失败隔离 | 待提交 |
 | 阶段 2.15 | 规划中 | 图文PRD理解、关键问题限流、ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
@@ -3007,3 +3008,54 @@ PDF矢量图不能可靠拆成有业务意义的单张图片，因此只记录�
 ### 下一步
 
 阶段2.15.3只增加OCR与扫描文档处理，不在同一阶段实现流程图和UI图语义理解。
+
+## 阶段 2.15.3：OCR与扫描文档
+
+### 阶段目标
+
+让扫描PDF和文档图片能够产生带置信度、页码和图片来源的文字结果，并保证低置信度结果不会直接成为
+需求事实，单张图片失败也不会拖垮整份PRD解析。
+
+### 修改内容
+
+- 新增`OcrEngine`协议、`OcrTextLine`结果和OCR异常边界
+- 新增`TesseractOcrEngine`，通过标准TSV读取文字行与置信度
+- PDF无文本层页面以150 DPI渲染后执行OCR
+- PDF/DOCX内嵌图片逐张执行OCR
+- 新增`DocumentOcrElement`和`DocumentOcrDisposition`
+- 置信度阈值暂定0.80，高置信度进入兼容文本，低置信度只保留为待复核候选
+- Tesseract不可用、单图失败和低置信度结果均记录结构化警告
+- 统计OCR元素、低置信度候选和失败数量
+- `.env.example`补充本地OCR命令、语言和超时配置
+
+### 核心设计
+
+```text
+DocumentService
+→ OcrEngine（协议）
+   └─ TesseractOcrEngine（当前适配器）
+→ DocumentOcrElement
+   ├─ ACCEPTED
+   └─ REVIEW_REQUIRED
+```
+
+DocumentService只依赖协议，因此以后替换云OCR或其他本地引擎时，不需要修改文档解析规则。低置信度结果
+仍保留原文和来源，但不进入当前Agent使用的`extracted_text`，从输入边界防止模糊文字被当成确定事实。
+
+### 测试证据
+
+- 扫描PDF渲染后产生OCR元素、页码、图片ID和置信度
+- 高低置信度确定性分流
+- 第一张图片OCR失败后第二张仍正常识别
+- Tesseract TSV分行、置信度归一化、运行时缺失和失败返回
+- `python -m pytest -q`：373 passed，9 skipped
+- `python -m unittest discover -s tests -v`：271 tests，OK，6 skipped
+
+### 未完成证据
+
+当前开发机没有安装Tesseract和中文语言数据，因此尚无真实扫描PRD识别精度、耗时和中文效果数据。
+该限制必须保留在README和简历表述中，不能用Fake测试替代真实效果结论。
+
+### 下一步
+
+先完成真实Tesseract脱敏样本冒烟验收，再进入2.15.4图片分类与有界多模态理解。

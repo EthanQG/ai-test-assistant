@@ -14,6 +14,8 @@ from documents import (
     DocumentFormat,
     DocumentImage,
     DocumentImageElement,
+    DocumentOcrDisposition,
+    DocumentOcrElement,
     DocumentParseStats,
     DocumentParsingWarning,
     DocumentSourceRef,
@@ -22,6 +24,12 @@ from documents import (
     DocumentTextElement,
     DocumentTextKind,
     DocumentWarningCode,
+)
+from services.ocr_service import (
+    OcrEngine,
+    OcrError,
+    OcrUnavailableError,
+    TesseractOcrEngine,
 )
 
 
@@ -37,9 +45,16 @@ class DocumentService:
     _MAX_IMAGE_COUNT = 20
     _MAX_IMAGE_BYTES = 5 * 1024 * 1024
     _MAX_TOTAL_IMAGE_BYTES = 25 * 1024 * 1024
+    _OCR_ACCEPT_CONFIDENCE = 0.80
+    _PDF_OCR_RESOLUTION = 150
 
     @classmethod
-    def parse(cls, uploaded_file) -> DocumentContent:
+    def parse(
+        cls,
+        uploaded_file,
+        *,
+        ocr_engine: OcrEngine | None = None,
+    ) -> DocumentContent:
         if uploaded_file is None:
             raise ValueError("上传文件不能为空")
         filename = str(getattr(uploaded_file, "name", "")).strip()
@@ -55,6 +70,7 @@ class DocumentService:
                 raise TypeError("上传文件必须提供二进制内容")
             identity = filename.encode("utf-8") + b"\0" + payload
             document_id = "doc-" + hashlib.sha256(identity).hexdigest()
+            engine = ocr_engine or TesseractOcrEngine.from_environment()
             if document_format in {DocumentFormat.TEXT, DocumentFormat.MARKDOWN}:
                 return cls._parse_text_document(
                     filename,
@@ -63,8 +79,12 @@ class DocumentService:
                     payload,
                 )
             if document_format is DocumentFormat.PDF:
-                return cls._parse_pdf(filename, document_id, payload)
-            return cls._parse_docx(filename, document_id, payload)
+                return cls._parse_pdf(
+                    filename, document_id, payload, ocr_engine=engine
+                )
+            return cls._parse_docx(
+                filename, document_id, payload, ocr_engine=engine
+            )
         except Exception as exc:
             raise ValueError(f"文件解析失败: {type(exc).__name__}") from exc
 
@@ -114,6 +134,8 @@ class DocumentService:
         filename: str,
         document_id: str,
         payload: bytes,
+        *,
+        ocr_engine: OcrEngine,
     ) -> DocumentContent:
         import pdfplumber
         from pypdf import PdfReader
@@ -222,7 +244,7 @@ class DocumentService:
                 for image in page_images:
                     blob = getattr(image, "data", b"")
                     name = str(getattr(image, "name", "image.bin"))
-                    accepted, total_image_bytes = cls._append_image(
+                    image_element, total_image_bytes = cls._append_image(
                         filename=filename,
                         document_id=document_id,
                         page_number=page_number,
@@ -234,8 +256,64 @@ class DocumentService:
                         warnings=warnings,
                         total_image_bytes=total_image_bytes,
                     )
-                    if not accepted:
+                    if image_element is None:
                         skipped_images += 1
+                        continue
+                    if cleaned:
+                        page_texts.extend(
+                            cls._append_ocr_elements(
+                                filename=filename,
+                                document_id=document_id,
+                                page_number=page_number,
+                                image_element=image_element,
+                                image_bytes=blob,
+                                ocr_engine=ocr_engine,
+                                elements=elements,
+                                warnings=warnings,
+                            )
+                        )
+
+                if not cleaned:
+                    try:
+                        rendered = BytesIO()
+                        page.to_image(
+                            resolution=cls._PDF_OCR_RESOLUTION
+                        ).original.save(rendered, format="PNG")
+                        rendered_bytes = rendered.getvalue()
+                        image_element, total_image_bytes = cls._append_image(
+                            filename=filename,
+                            document_id=document_id,
+                            page_number=page_number,
+                            name=f"page-{page_number}.png",
+                            blob=rendered_bytes,
+                            mime_type="image/png",
+                            elements=elements,
+                            attachments=attachments,
+                            warnings=warnings,
+                            total_image_bytes=total_image_bytes,
+                        )
+                        if image_element is not None:
+                            page_texts.extend(
+                                cls._append_ocr_elements(
+                                    filename=filename,
+                                    document_id=document_id,
+                                    page_number=page_number,
+                                    image_element=image_element,
+                                    image_bytes=rendered_bytes,
+                                    ocr_engine=ocr_engine,
+                                    elements=elements,
+                                    warnings=warnings,
+                                )
+                            )
+                    except Exception as exc:
+                        cls._append_ocr_warning(
+                            filename=filename,
+                            document_id=document_id,
+                            page_number=page_number,
+                            element_index=len(elements),
+                            warnings=warnings,
+                            exc=exc,
+                        )
         return cls._content(
             filename,
             document_id,
@@ -255,6 +333,8 @@ class DocumentService:
         filename: str,
         document_id: str,
         payload: bytes,
+        *,
+        ocr_engine: OcrEngine,
     ) -> DocumentContent:
         from docx import Document
 
@@ -308,7 +388,7 @@ class DocumentService:
             for name, mime_type, blob in cls._docx_paragraph_images(
                 document, block
             ):
-                accepted, total_image_bytes = cls._append_image(
+                image_element, total_image_bytes = cls._append_image(
                     filename=filename,
                     document_id=document_id,
                     page_number=None,
@@ -320,8 +400,21 @@ class DocumentService:
                     warnings=warnings,
                     total_image_bytes=total_image_bytes,
                 )
-                if not accepted:
+                if image_element is None:
                     skipped_images += 1
+                    continue
+                plain_text_parts.extend(
+                    cls._append_ocr_elements(
+                        filename=filename,
+                        document_id=document_id,
+                        page_number=None,
+                        image_element=image_element,
+                        image_bytes=blob,
+                        ocr_engine=ocr_engine,
+                        elements=elements,
+                        warnings=warnings,
+                    )
+                )
         return cls._content(
             filename,
             document_id,
@@ -425,7 +518,7 @@ class DocumentService:
         attachments: list[DocumentAttachment],
         warnings: list[DocumentParsingWarning],
         total_image_bytes: int,
-    ) -> tuple[bool, int]:
+    ) -> tuple[DocumentImageElement | None, int]:
         if not isinstance(blob, bytes) or not blob:
             warnings.append(
                 cls._warning(
@@ -438,7 +531,7 @@ class DocumentService:
                     warning_index=len(warnings),
                 )
             )
-            return False, total_image_bytes
+            return None, total_image_bytes
         if len(blob) > cls._MAX_IMAGE_BYTES:
             warnings.append(
                 cls._warning(
@@ -451,7 +544,7 @@ class DocumentService:
                     warning_index=len(warnings),
                 )
             )
-            return False, total_image_bytes
+            return None, total_image_bytes
         if (
             sum(
                 isinstance(element, DocumentImageElement)
@@ -471,7 +564,7 @@ class DocumentService:
                     warning_index=len(warnings),
                 )
             )
-            return False, total_image_bytes
+            return None, total_image_bytes
 
         digest = hashlib.sha256(blob).hexdigest()
         attachment_id = f"{document_id}:attachment:{digest[:16]}"
@@ -488,23 +581,121 @@ class DocumentService:
         image_index = sum(
             isinstance(element, DocumentImageElement) for element in elements
         )
-        elements.append(
-            DocumentImageElement(
-                source=cls._source(
+        image_element = DocumentImageElement(
+            source=cls._source(
+                filename,
+                document_id,
+                len(elements),
+                page_number=page_number,
+            ),
+            image=DocumentImage(
+                image_id=f"{document_id}:image:{image_index}",
+                mime_type=mime_type,
+                content_ref=f"attachment://{attachment_id}",
+                caption=name,
+            ),
+        )
+        elements.append(image_element)
+        return image_element, total_image_bytes
+
+    @classmethod
+    def _append_ocr_elements(
+        cls,
+        *,
+        filename: str,
+        document_id: str,
+        page_number: int | None,
+        image_element: DocumentImageElement,
+        image_bytes: bytes,
+        ocr_engine: OcrEngine,
+        elements: list[DocumentElement],
+        warnings: list[DocumentParsingWarning],
+    ) -> list[str]:
+        try:
+            lines = ocr_engine.recognize(
+                image_bytes, image_element.image.mime_type
+            )
+        except Exception as exc:
+            cls._append_ocr_warning(
+                filename=filename,
+                document_id=document_id,
+                page_number=page_number,
+                element_index=len(elements),
+                warnings=warnings,
+                exc=exc,
+            )
+            return []
+
+        accepted_texts: list[str] = []
+        for line in lines:
+            disposition = (
+                DocumentOcrDisposition.ACCEPTED
+                if line.confidence >= cls._OCR_ACCEPT_CONFIDENCE
+                else DocumentOcrDisposition.REVIEW_REQUIRED
+            )
+            elements.append(
+                DocumentOcrElement(
+                    source=cls._source(
+                        filename,
+                        document_id,
+                        len(elements),
+                        page_number=page_number,
+                    ),
+                    text=line.text,
+                    confidence=line.confidence,
+                    image_id=image_element.image.image_id,
+                    disposition=disposition,
+                )
+            )
+            if disposition is DocumentOcrDisposition.ACCEPTED:
+                accepted_texts.append(
+                    f"[OCR来源 {image_element.image.image_id}，"
+                    f"置信度 {line.confidence:.2f}]\n{line.text}"
+                )
+                continue
+            warnings.append(
+                cls._warning(
                     filename,
                     document_id,
                     len(elements),
+                    DocumentWarningCode.OCR_LOW_CONFIDENCE,
+                    "OCR文字置信度不足，仅保留为待复核候选",
                     page_number=page_number,
-                ),
-                image=DocumentImage(
-                    image_id=f"{document_id}:image:{image_index}",
-                    mime_type=mime_type,
-                    content_ref=f"attachment://{attachment_id}",
-                    caption=name,
-                ),
+                    warning_index=len(warnings),
+                )
+            )
+        return accepted_texts
+
+    @classmethod
+    def _append_ocr_warning(
+        cls,
+        *,
+        filename: str,
+        document_id: str,
+        page_number: int | None,
+        element_index: int,
+        warnings: list[DocumentParsingWarning],
+        exc: Exception,
+    ) -> None:
+        if isinstance(exc, OcrUnavailableError):
+            code = DocumentWarningCode.OCR_UNAVAILABLE
+            message = "本机OCR运行时不可用，图片文字尚未识别"
+            if any(warning.code is code for warning in warnings):
+                return
+        else:
+            code = DocumentWarningCode.OCR_FAILED
+            message = f"单张图片OCR失败，已继续解析其他内容：{type(exc).__name__}"
+        warnings.append(
+            cls._warning(
+                filename,
+                document_id,
+                element_index,
+                code,
+                message,
+                page_number=page_number,
+                warning_index=len(warnings),
             )
         )
-        return True, total_image_bytes
 
     @staticmethod
     def _image_mime_type(name: str, image) -> str:
@@ -637,5 +828,23 @@ class DocumentService:
                 warning_count=len(warning_list),
                 skipped_table_count=skipped_table_count,
                 skipped_image_count=skipped_image_count,
+                ocr_element_count=sum(
+                    isinstance(element, DocumentOcrElement)
+                    for element in element_tuple
+                ),
+                low_confidence_ocr_count=sum(
+                    isinstance(element, DocumentOcrElement)
+                    and element.disposition
+                    is DocumentOcrDisposition.REVIEW_REQUIRED
+                    for element in element_tuple
+                ),
+                failed_ocr_count=sum(
+                    warning.code
+                    in {
+                        DocumentWarningCode.OCR_FAILED,
+                        DocumentWarningCode.OCR_UNAVAILABLE,
+                    }
+                    for warning in warning_list
+                ),
             ),
         )

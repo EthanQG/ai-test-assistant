@@ -53,10 +53,10 @@
 旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
 知识闭环。后续将由 MySQL 保存完整、可审计的知识资产，Milvus 只承担向量候选检索。
 
-阶段2.15.2已经让统一`DocumentContent`实际承载PDF/DOCX原生结构：DOCX可按正文块顺序提取标题、
-段落、列表、表格和内嵌图片，PDF可按页提取文本、可识别表格和内嵌位图，并输出覆盖统计与失败警告。
-图片以带哈希的附件保存，避免使用无效文件路径。扫描PDF、图片文字、流程图和UI原型语义尚未解析，
-因此仍不能将当前版本描述为支持完整图文PRD理解。
+阶段2.15.3已经在统一`DocumentContent`上增加扫描页与内嵌图片OCR：保留文字、置信度、图片ID、页码
+和处置状态，单张图片失败不会中断整份文档。高置信度文字进入兼容文本，低置信度只作为待复核候选。
+默认适配本地Tesseract；未安装运行时会明确降级。流程图节点、箭头和UI交互语义尚未理解，因此仍不能
+将当前版本描述为支持完整图文PRD理解。
 
 ## 项目结构
 
@@ -133,6 +133,16 @@ python -m streamlit run main.py --server.headless=true
 运行错误会显示在页面任务状态中；结构化JSON校验失败和受控重试信息同时输出到启动命令所在的PowerShell窗口。
 
 运行前请在 `.env` 中填写真实的 `DEEPSEEK_API_KEY`。`.env` 已加入 Git 忽略规则，请勿提交真实密钥。
+
+扫描PDF和图片文字OCR需要另外安装本地Tesseract及中文`chi_sim`、英文`eng`语言数据，然后在`.env`配置：
+
+```text
+TESSERACT_CMD=tesseract
+OCR_LANGUAGES=chi_sim+eng
+OCR_TIMEOUT_SECONDS=30
+```
+
+如果没有安装Tesseract，正文和表格解析仍会继续，系统会记录`OCR_UNAVAILABLE`，不会伪造OCR结果。
 
 任务存储默认使用会话级内存。如需启用阶段2.13.2新增的MySQL Repository，在本机`.env`中设置：
 
@@ -223,7 +233,8 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 11. 阶段2.14.5：已实现索引失败的显式重试、重复请求保护、补偿审计和停用清理
 12. 阶段2.15.1：已完成统一DocumentContent、稳定来源和现有文本解析兼容
 13. 阶段2.15.2：已完成PDF/DOCX原生结构、图片附件和解析覆盖统计
-14. 阶段2.15.3～2.15.5：增加OCR、多模态理解和关键问题限流
+14. 阶段2.15.3：已完成OCR协议、Tesseract适配、扫描页渲染、置信度分流和失败隔离
+15. 阶段2.15.4～2.15.5：增加多模态理解和关键问题限流
 14. 阶段2.15.6～2.15.7：增加ContextBuilder、节点Token预算和分层耗时记录
 15. 阶段2.16：建立10～20份脱敏图文需求评测集，完成解析、RAG、Reviewer和三方案实验
 16. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue

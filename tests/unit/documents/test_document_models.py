@@ -9,6 +9,8 @@ from documents import (
     DocumentFormat,
     DocumentImage,
     DocumentImageElement,
+    DocumentOcrDisposition,
+    DocumentOcrElement,
     DocumentSourceRef,
     DocumentTable,
     DocumentTableElement,
@@ -158,4 +160,32 @@ def test_image_attachment_reference_must_resolve():
             document_format=DocumentFormat.DOCX,
             extracted_text="需求",
             elements=(image,),
+        )
+
+
+def test_ocr_element_requires_existing_image_and_valid_confidence():
+    ocr = DocumentOcrElement(
+        source=_source(0),
+        text="图片文字",
+        confidence=0.91,
+        image_id="missing-image",
+        disposition=DocumentOcrDisposition.ACCEPTED,
+    )
+
+    with pytest.raises(ValueError, match="missing image"):
+        DocumentContent(
+            document_id="doc-1",
+            filename="需求.docx",
+            document_format=DocumentFormat.DOCX,
+            extracted_text="图片文字",
+            elements=(ocr,),
+        )
+
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        DocumentOcrElement(
+            source=_source(0),
+            text="图片文字",
+            confidence=1.1,
+            image_id="image-1",
+            disposition=DocumentOcrDisposition.ACCEPTED,
         )
