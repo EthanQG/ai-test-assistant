@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 
 from agent.models import ClarificationCategory
-from evaluation import EvaluationDataset, EvaluationDatasetError, load_evaluation_dataset
+from evaluation import (
+    EvaluationDataset,
+    EvaluationDatasetError,
+    ReviewStatus,
+    load_evaluation_dataset,
+)
 
 
 DATASET_PATH = (
@@ -29,17 +34,39 @@ def test_seed_dataset_loads_as_typed_human_annotations() -> None:
 
     assert dataset.schema_version == 1
     assert dataset.dataset_id == "seed-v1"
-    assert len(dataset.cases) == 3
+    assert dataset.review_status is ReviewStatus.REVIEWED
+    assert len(dataset.cases) == 10
     assert {case.domain for case in dataset.cases} == {
         "登录与权限",
         "订单与库存",
         "文件上传",
+        "支付",
+        "优惠券",
+        "退款",
+        "搜索",
+        "消息通知",
+        "高并发与重复提交",
+        "角色权限",
     }
     assert dataset.cases[0].gold.facts[0].evidence
     assert (
         dataset.cases[0].gold.clarification_questions[0].category
         is ClarificationCategory.CORE_RULE
     )
+
+
+def test_draft_dataset_covers_text_table_ui_and_state_diagram_inputs() -> None:
+    dataset = load_evaluation_dataset(DATASET_PATH)
+    features = {
+        feature for case in dataset.cases for feature in case.document_features
+    }
+
+    assert {case.source_format for case in dataset.cases} >= {
+        "text",
+        "markdown",
+        "docx",
+    }
+    assert features >= {"table", "ui_screenshot", "state_diagram"}
 
 
 def test_contract_uses_immutable_collections() -> None:
@@ -68,6 +95,14 @@ def test_unknown_schema_version_is_rejected(
     payload["schema_version"] = invalid_version
 
     with pytest.raises(EvaluationDatasetError, match="unsupported schema_version"):
+        EvaluationDataset.from_dict(payload)
+
+
+def test_unknown_review_status_is_rejected(valid_payload: dict) -> None:
+    payload = copy.deepcopy(valid_payload)
+    payload["review_status"] = "approved_by_model"
+
+    with pytest.raises(EvaluationDatasetError, match="review_status"):
         EvaluationDataset.from_dict(payload)
 
 

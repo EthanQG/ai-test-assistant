@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,11 @@ SCHEMA_VERSION = 1
 
 class EvaluationDatasetError(ValueError):
     """Raised when an evaluation dataset violates the annotation contract."""
+
+
+class ReviewStatus(str, Enum):
+    DRAFT = "draft"
+    REVIEWED = "reviewed"
 
 
 def _object(value: Any, path: str) -> dict[str, Any]:
@@ -200,6 +206,7 @@ class EvaluationDataset:
     schema_version: int
     dataset_id: str
     description: str
+    review_status: ReviewStatus
     cases: tuple[EvaluationCase, ...]
 
     @classmethod
@@ -207,7 +214,13 @@ class EvaluationDataset:
         payload = _object(value, "dataset")
         _fields(
             payload,
-            {"schema_version", "dataset_id", "description", "cases"},
+            {
+                "schema_version",
+                "dataset_id",
+                "description",
+                "review_status",
+                "cases",
+            },
             "dataset",
         )
         if (
@@ -226,10 +239,17 @@ class EvaluationDataset:
         case_ids = [case.case_id for case in cases]
         if len(case_ids) != len(set(case_ids)):
             raise EvaluationDatasetError("dataset.case_id values must be unique")
+        try:
+            review_status = ReviewStatus(payload["review_status"])
+        except (TypeError, ValueError) as exc:
+            raise EvaluationDatasetError(
+                "dataset.review_status must be draft or reviewed"
+            ) from exc
         return cls(
             schema_version=SCHEMA_VERSION,
             dataset_id=_text(payload["dataset_id"], "dataset.dataset_id"),
             description=_text(payload["description"], "dataset.description"),
+            review_status=review_status,
             cases=cases,
         )
 

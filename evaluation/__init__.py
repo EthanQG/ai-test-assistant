@@ -7,6 +7,7 @@ from .dataset import (
     EvaluationDataset,
     EvaluationDatasetError,
     GoldAnnotations,
+    ReviewStatus,
     load_evaluation_dataset,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "EvaluationDataset",
     "EvaluationDatasetError",
     "GoldAnnotations",
+    "ReviewStatus",
     "load_evaluation_dataset",
 ]
