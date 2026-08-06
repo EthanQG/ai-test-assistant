@@ -10,7 +10,8 @@
 
 - 分支：`main`
 - 阶段2.15.2：`7826099 阶段2.15.2：完善PDF与DOCX结构化解析`
-- 阶段2.15.3代码、测试与文档已完成，尚未创建本阶段提交
+- 阶段2.15.3：`b823c2d 阶段2.15.3：增加扫描文档OCR与置信度分流`
+- 真实Tesseract冒烟验收与集成测试已完成，尚未创建验收提交
 
 ## 当前阶段：2.15.3 OCR与扫描文档
 
@@ -43,18 +44,20 @@ PDF扫描页 / PDF图片 / DOCX图片
 
 ```text
 python -m pytest -q
-373 passed，9 skipped，共收集382项
+373 passed，10 skipped，共收集383项
 python -m unittest discover -s tests -v
-271 tests，OK，6 skipped
+272 tests，OK，7 skipped
+RUN_OCR_INTEGRATION_TESTS=1（真实Tesseract）
+1 passed
 ```
 
-Fake OCR已验证扫描PDF、置信度分流、页码与图片来源、单图失败隔离；Tesseract TSV适配器已通过Mock
-子进程测试。本机尚未安装Tesseract，因此没有把真实OCR识别精度描述为已验证。默认测试没有访问真实
-DeepSeek、Ollama、Milvus、MySQL或视觉模型。
+本机Tesseract 5.5.3、`chi_sim`和`eng`已验证。合成中文图片识别两行置信度约0.95和0.92、耗时约
+0.30秒；DOCX真实链路识别“商户单日提现上限为二十万元”，置信度约0.95，无失败警告。新增显式开启的
+真实OCR集成测试，默认测试仍不会调用外部OCR程序。该冒烟结果不能替代真实PRD样本集的准确率评测。
 
 ## 当前限制
 
-- 本机没有Tesseract与`chi_sim`语言数据，真实OCR集成仍需安装后验证
+- 当前仅完成合成中文图片冒烟，真实扫描PRD准确率、召回率和耗时分布尚未评测
 - 当前AgentState仍只保存兼容纯文本，没有持有完整`DocumentContent`
 - 低置信度OCR已安全标为待复核候选，但页面尚未提供单独确认入口
 - OCR只识别文字，不理解流程节点、箭头、页面操作或状态变化
@@ -71,7 +74,7 @@ DeepSeek、Ollama、Milvus、MySQL或视觉模型。
 4. 限制单文档调用数量、图片尺寸和输出Token；
 5. 结构化保存节点、箭头、条件、页面元素、操作、状态变化、来源与不确定性。
 
-进入2.15.4前，建议先在安装Tesseract的环境执行一份脱敏扫描PRD冒烟验证。
+真实OCR运行边界已经打通，可以进入2.15.4；真实脱敏PRD样本的系统评测仍留在2.16。
 
 ## 新电脑恢复方式
 

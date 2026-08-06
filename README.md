@@ -143,6 +143,8 @@ OCR_TIMEOUT_SECONDS=30
 ```
 
 如果没有安装Tesseract，正文和表格解析仍会继续，系统会记录`OCR_UNAVAILABLE`，不会伪造OCR结果。
+Windows自定义路径建议使用正斜杠，例如`TESSERACT_CMD=D:/Tesseract-OCR-5/tesseract.exe`，避免`.env`
+双引号中的`\t`被解析为制表符。
 
 任务存储默认使用会话级内存。如需启用阶段2.13.2新增的MySQL Repository，在本机`.env`中设置：
 

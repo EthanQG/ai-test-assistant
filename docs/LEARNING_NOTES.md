@@ -5134,3 +5134,17 @@ recognize(image_bytes, mime_type) -> tuple[OcrTextLine, ...]
 - [ ] 能解释为什么低置信度文本不能直接成为事实
 - [ ] 能说明OcrEngine协议带来的替换能力
 - [ ] 能准确区分Fake链路证据和真实OCR效果证据
+
+### 46.11 真实OCR验收记录
+
+本机使用Tesseract 5.5.3和`chi_sim+eng`完成了两层验证：
+
+1. OCR适配器直接识别两行合成中文，置信度约0.95和0.92，耗时约0.30秒；
+2. 中文图片嵌入DOCX后通过DocumentService完整解析，产生1个图片元素、1个OCR元素、0个失败警告。
+
+Windows路径最初写成`"D:\Tesseract-OCR-5\tesseract.exe"`时，python-dotenv把`\t`解释成制表符，
+导致`shutil.which()`找不到程序。改用`D:/Tesseract-OCR-5/tesseract.exe`后恢复正常。这个问题说明环境配置
+也需要真实集成测试，Mock无法发现路径转义错误。
+
+仓库新增了默认跳过的真实集成测试，只有设置`RUN_OCR_INTEGRATION_TESTS=1`才调用本机Tesseract。
+单份合成样本只证明运行链路可用，不能证明面对真实PRD时已经达到某个准确率。
