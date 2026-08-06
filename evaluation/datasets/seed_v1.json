@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "dataset_id": "seed-v1",
+  "description": "完全虚构的脱敏种子集，只用于验证标注契约，不代表真实模型效果。",
+  "cases": [
+    {
+      "case_id": "auth-001",
+      "title": "连续登录失败后的账户保护",
+      "domain": "登录与权限",
+      "source_format": "text",
+      "document_features": [],
+      "requirement": "用户连续5次输错密码后，账户锁定30分钟。锁定期间即使密码正确也不能登录。管理员可以提前解锁，解锁操作需要记录管理员账号和时间。需求未说明失败次数在成功登录后是否清零。",
+      "gold": {
+        "facts": [
+          {"text": "连续5次密码错误后账户锁定30分钟", "evidence": "需求第一句"},
+          {"text": "锁定期间正确密码也不能登录", "evidence": "需求第二句"},
+          {"text": "管理员可以提前解锁并记录账号和时间", "evidence": "需求第三句"}
+        ],
+        "business_rules": [
+          {"text": "锁定阈值为连续5次失败", "evidence": "连续5次输错密码后"},
+          {"text": "自动锁定时长为30分钟", "evidence": "账户锁定30分钟"}
+        ],
+        "risks": [
+          {"text": "并发登录请求可能导致失败次数统计不准确", "evidence": "存在连续失败计数和锁定阈值"},
+          {"text": "管理员解锁操作缺少审计信息会影响追责", "evidence": "明确要求记录管理员账号和时间"}
+        ],
+        "clarification_questions": [
+          {"question": "用户成功登录后，之前累计的失败次数是否清零？", "category": "core_rule", "evidence": "需求明确说连续失败，但未说明成功登录后的计数规则"}
+        ],
+        "necessary_scenarios": [
+          {"text": "第5次连续输错密码时触发锁定", "evidence": "连续5次输错密码后锁定"},
+          {"text": "锁定30分钟到期后可以再次登录", "evidence": "锁定时长为30分钟"},
+          {"text": "管理员提前解锁并生成审计记录", "evidence": "管理员可以提前解锁且需记录账号和时间"}
+        ],
+        "forbidden_assertions": [
+          "系统通过短信通知用户账户被锁定",
+          "管理员解锁必须经过二次审批"
+        ]
+      }
+    },
+    {
+      "case_id": "order-001",
+      "title": "订单创建与库存扣减",
+      "domain": "订单与库存",
+      "source_format": "markdown",
+      "document_features": ["table"],
+      "requirement": "用户提交订单时校验可售库存。库存充足则创建订单并扣减库存；库存不足则拒绝创建并提示库存不足。同一个request_id重复提交时只能创建一张订单。库存扣减失败时订单不得进入已创建状态。需求没有说明订单创建成功后支付超时如何释放库存。",
+      "gold": {
+        "facts": [
+          {"text": "提交订单时校验可售库存", "evidence": "需求第一句"},
+          {"text": "库存不足时拒绝创建订单", "evidence": "库存不足则拒绝创建"},
+          {"text": "相同request_id只能创建一张订单", "evidence": "需求第三句"}
+        ],
+        "business_rules": [
+          {"text": "创建订单与扣减库存必须保持结果一致", "evidence": "库存扣减失败时订单不得进入已创建状态"},
+          {"text": "request_id是订单创建的幂等标识", "evidence": "同一个request_id重复提交时只能创建一张订单"}
+        ],
+        "risks": [
+          {"text": "并发下可能发生超卖", "evidence": "创建前依赖可售库存校验和扣减"},
+          {"text": "重试可能造成重复订单或重复扣减", "evidence": "需求显式要求request_id幂等"}
+        ],
+        "clarification_questions": [
+          {"question": "订单创建成功后如果支付超时，库存何时以及如何释放？", "category": "flow_branch", "evidence": "需求只描述创建阶段，没有说明支付超时分支"}
+        ],
+        "necessary_scenarios": [
+          {"text": "库存充足时订单创建和库存扣减同时成功", "evidence": "库存充足则创建订单并扣减库存"},
+          {"text": "并发请求不会使可售库存变为负数", "evidence": "库存校验与扣减存在并发风险"},
+          {"text": "相同request_id重复提交返回同一业务结果", "evidence": "只能创建一张订单"}
+        ],
+        "forbidden_assertions": [
+          "库存不足时自动创建缺货采购单",
+          "支付超时固定为15分钟"
+        ]
+      }
+    },
+    {
+      "case_id": "upload-001",
+      "title": "发票文件上传与安全校验",
+      "domain": "文件上传",
+      "source_format": "docx",
+      "document_features": ["table", "ui_screenshot"],
+      "requirement": "用户可上传PDF、JPG或PNG格式的发票，单个文件最大10MB，每次最多上传5个文件。不支持的格式或超限文件应被拒绝，其他合法文件继续上传。上传成功后页面显示文件名、大小和处理状态。需求未定义同名文件的处理方式，也未说明病毒扫描失败时的状态。",
+      "gold": {
+        "facts": [
+          {"text": "支持PDF、JPG和PNG格式", "evidence": "需求第一句"},
+          {"text": "单个文件最大10MB且每次最多5个", "evidence": "需求第一句"},
+          {"text": "非法文件不影响同批其他合法文件上传", "evidence": "其他合法文件继续上传"}
+        ],
+        "business_rules": [
+          {"text": "格式白名单为PDF、JPG、PNG", "evidence": "可上传PDF、JPG或PNG"},
+          {"text": "大小限制按单文件10MB判断", "evidence": "单个文件最大10MB"}
+        ],
+        "risks": [
+          {"text": "只校验扩展名可能上传伪装文件", "evidence": "需求要求限制文件格式"},
+          {"text": "批量上传的部分失败处理可能导致页面状态不一致", "evidence": "非法文件拒绝而合法文件继续上传"}
+        ],
+        "clarification_questions": [
+          {"question": "同一批次或历史记录中出现同名文件时应覆盖、拒绝还是并存？", "category": "core_rule", "evidence": "需求未定义同名文件处理方式"},
+          {"question": "病毒扫描失败或超时时，文件应显示什么处理状态？", "category": "flow_branch", "evidence": "需求没有说明病毒扫描失败分支"}
+        ],
+        "necessary_scenarios": [
+          {"text": "10MB边界内外的文件大小校验", "evidence": "单文件最大10MB"},
+          {"text": "第5个和第6个文件的数量边界校验", "evidence": "每次最多上传5个文件"},
+          {"text": "合法与非法文件混合上传时合法文件继续处理", "evidence": "其他合法文件继续上传"}
+        ],
+        "forbidden_assertions": [
+          "系统自动对发票内容进行财务验真",
+          "上传失败后固定重试三次"
+        ]
+      }
+    }
+  ]
+}

@@ -15,62 +15,56 @@
 - 阶段2.15.4：`ca58c5f 阶段2.15.4：增加有界多模态理解`
 - 阶段2.15.5：`f6d1650 阶段2.15.5：增加关键问题筛选与限流`
 - 阶段2.15.6：`3961861 阶段2.15.6：增加节点上下文构建与输入预算`
-- 阶段2.15.7代码、pytest与文档已完成，尚未创建本阶段提交
+- 阶段2.15.7：`039f798 阶段2.15.7：增加分层性能指标与错误分类`
 
-## 当前阶段：2.15.7 分层耗时、Token与错误分类
+## 当前阶段：2.16.1 脱敏评测集与人工标注契约（第一批）
 
-本阶段在不修改Streamlit、AgentState字段、快照schema、Orchestrator和节点顺序的前提下建立统一性能证据：
+本阶段先建立稳定的人工金标准格式，不修改Agent主流程，也不运行真实模型实验：
 
-1. 新增`ServiceCallMetric`、`TokenUsage`、任务级`telemetry_scope`和统一错误类别；
-2. Application Service按任务和当前动作采集指标，附加到已有完成/失败事件的`service_metrics`；
-3. 上传文档解析指标附加到任务创建事件，可随schema v1快照和MySQL任务快照保存恢复；
-4. 记录ContextBuilder、结构化JSON校验、LLM、RAG、Embedding、Milvus、文档解析、OCR和视觉调用耗时；
-5. LLM/视觉API返回usage时标记`provider`，否则使用同一估算口径并标记`estimated`，两类不混算；
-6. LLM记录模型和Prompt指纹，不保存Prompt正文、API Key、服务地址或响应原文；
-7. JSON校验记录重试次数，ContextBuilder超预算、输出截断、传输、校验、OCR、视觉、Embedding和Milvus错误明确分类；
-8. `TaskView.service_metrics`提供只读明细，`performance_summary`汇总依赖耗时、Token来源、重试和错误；
-9. 节点总耗时继续使用既有`NodeExecutionMetric`，服务耗时用于解释节点内部时间分布；
-10. 当前仍为同步串行执行，没有实现后台任务、SSE、轮询或页面性能面板。
+1. 新增schema v1评测数据集契约，严格校验字段、类型、未知字段、版本和重复case_id；
+2. 人工金标准区分事实、业务规则、风险、关键问题、必要场景和禁止断言；
+3. 事实、规则、风险和必要场景必须记录来源依据，不能只保存主观结论；
+4. 关键问题类别复用Agent已有`ClarificationCategory`，避免评测口径与线上模型漂移；
+5. 新增登录权限、订单库存、文件上传3份完全虚构的脱敏种子样例；
+6. 明确双人标注和0～2分可执行性规则，不允许另一个LLM代替人工金标准；
+7. 当前只验证契约，正式10～20份评测集和真实模型结果仍未完成。
 
 ## 当前数据流
 
 ```text
-Application Service为task_id和action开启telemetry_scope
-→ ContextBuilder / LLM / JSON校验 / RAG等服务记录ServiceCallMetric
-→ 节点完成或失败
-→ 指标附加到对应AgentEvent.service_metrics
-→ TaskRepository保存原有TaskRecord快照
-→ TaskView提供明细与performance_summary
+脱敏需求 + 人工标注
+→ schema v1 JSON数据集
+→ load_evaluation_dataset严格校验
+→ EvaluationDataset领域对象
+→ 后续2.16评测Runner消费
 ```
 
 ## 验证结果
 
 ```text
 python -m pytest -q
-405 passed，10 skipped，共收集415项
+418 passed，10 skipped
 ```
 
-新增pytest覆盖任务/action关联、provider与estimated Token区分、Prompt敏感信息隔离、JSON重试、错误分类、
-节点事件附加、上传文档指标以及快照往返。全量测试使用Fake/Mock，没有调用真实LLM或外部服务。
+其中新增13项pytest覆盖种子集加载、领域类型、不可变集合、版本、重复ID、问题类别、必填标注、来源依据和未知字段。
+全量测试未调用真实外部服务。
 
 ## 当前限制
 
-- Fake/Mock验证的是指标链路，当前尚无多份真实PRD的耗时分布和Token成本数据
-- 视觉API未返回usage时，文本估算不包含图片Token，指标中会明确标记图片Token未计入
-- 旧版`MilvusRAGManager`只能记录组合RAG耗时，内部Embedding与Milvus拆分依赖V2检索链路
-- 当前指标保存在任务事件快照中，尚未建设独立时序指标表或监控平台
-- 同步串行架构没有改变，埋点只能解释等待时间，不能直接消除等待
-- ContextBuilder裁剪后的质量、RAG召回和Reviewer效果仍需2.16离线评测
+- 当前只有3份种子样例，未达到10～20份正式评测集验收数量
+- 样例均为纯文本JSON，真实扫描页、流程图和UI图片附件尚未加入
+- 当前没有评测Runner、自动指标计算、真实模型输出或消融结果
+- 种子标注尚未完成两位人工标注者的独立复核
+- 不能根据本阶段宣称RAG、Reviewer或ContextBuilder带来任何质量提升
 
-## 下一步：阶段2.16.1 脱敏评测集与人工标注契约
+## 下一步：阶段2.16.1 扩充与复核
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 定义10～20份脱敏图文需求的数据结构；
-2. 定义事实、规则、风险、关键问题、必要场景和禁止断言的人工标注格式；
-3. 明确客观指标和主观指标评分规则；
-4. 先建立小型样例与校验器，再运行真实模型实验；
-5. 不使用另一个LLM随意代替人工金标准。
+1. 将种子集扩充到至少10份脱敏需求；
+2. 增加扫描页、流程图、UI图和图文冲突等附件样例；
+3. 完成第二位人工标注者独立复核和分歧记录；
+4. 契约稳定后再进入2.16.2图文解析指标，不提前建设评测平台。
 
 ## 新电脑恢复方式
 
