@@ -69,7 +69,8 @@
 | 阶段 2.15.3 | 已完成 | OCR协议、扫描页渲染、置信度分流、失败隔离和真实中文冒烟 | `b823c2d`, `98684e2` |
 | 阶段 2.15.4 | 已完成 | 有界视觉候选筛选、结构化多模态协议、调用限额和失败降级 | `ca58c5f` |
 | 阶段 2.15.5 | 已完成 | 关键问题结构化分类、Python阻塞策略、去重和非阻塞转风险 | `f6d1650` |
-| 阶段 2.15.6 | 代码完成、待提交 | ContextBuilder、节点字段白名单、输入预算、关键片段保留和上下文指标 | 待提交 |
+| 阶段 2.15.6 | 已完成 | ContextBuilder、节点字段白名单、输入预算、关键片段保留和上下文指标 | `3961861` |
+| 阶段 2.15.7 | 代码完成、待提交 | 服务调用指标、真实/估算Token、Prompt指纹、错误分类和任务性能摘要 | 待提交 |
 | 阶段 2.15 | 规划中 | 图文PRD理解、关键问题限流、ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
@@ -3112,7 +3113,7 @@ python -m unittest discover -s tests -v
 
 ### Git提交
 
-待创建本地提交。
+`3961861 阶段2.15.6：增加节点上下文构建与输入预算`
 
 ### 下一步
 
@@ -3214,3 +3215,53 @@ python -m pytest -q：396 passed，10 skipped
 ### 下一步
 
 阶段2.15.7增加分层耗时、真实/估算Token标记、重试次数和错误分类，不改成后台任务或SSE。
+
+## 阶段 2.15.7：分层耗时、Token与错误分类
+
+### 本阶段目标
+
+在现有节点总耗时基础上回答“时间具体花在哪一层”，并建立可以随任务快照恢复的性能证据，
+不修改同步执行架构、Agent状态机和页面。
+
+### 修改内容
+
+1. 新增任务级`telemetry_scope`、`ServiceCallMetric`、`TokenUsage`和统一错误类别；
+2. Application Service在节点执行时关联`task_id`和Orchestrator动作；
+3. 指标附加到已有任务创建、节点完成或任务失败事件，不增加AgentState字段和快照版本；
+4. 文档解析、OCR、视觉模型、ContextBuilder、LLM、结构化JSON校验、RAG、Embedding和Milvus接入统一指标；
+5. LLM和视觉API有usage时记录provider Token，没有时记录estimated Token；
+6. 记录模型、输入输出字符数、Prompt指纹、重试次数、耗时、错误类型和错误类别；
+7. Prompt指纹使用内容哈希截断值，不保存Prompt、API Key、服务地址、响应原文和图片二进制；
+8. `TaskView.service_metrics`返回只读明细，`performance_summary`按依赖、Token来源、重试和错误汇总；
+9. 服务指标跟随AgentEvent完成schema v1 JSON快照往返，可由现有MySQL TaskRepository持久化；
+10. 不增加页面面板、后台任务、SSE、轮询或独立时序数据库。
+
+### 错误分类
+
+当前类别包括超时、传输、输出截断、结构校验、输入预算、文档解析、OCR、视觉、Embedding、Milvus和未知错误。
+分类只用于诊断，不改变原有异常传播和降级决策。
+
+### 验证结果
+
+```text
+定向Telemetry与受影响模块：102 passed
+python -m pytest -q：405 passed，10 skipped
+```
+
+全量测试没有调用真实LLM、Embedding、Milvus、MySQL或OCR。新增测试验证provider/estimated Token区分、
+敏感信息隔离、JSON重试、错误分类、事件附加、文档创建指标、只读汇总和快照往返。
+
+### 当前限制
+
+1. 当前没有多份真实PRD的性能分布，不能声称已经降低多少耗时或Token；
+2. 视觉API无usage时，文本估算不包含图片Token并会明确标记；
+3. 旧MilvusRAGManager只能记录组合RAG耗时，V2链路才可拆分Embedding和Milvus；
+4. 指标保存在任务事件快照中，不是生产监控平台。
+
+### Git提交
+
+待创建本地提交。
+
+### 下一步
+
+进入2.16.1，先定义脱敏评测数据和人工标注契约，不立即运行昂贵的真实模型批量实验。

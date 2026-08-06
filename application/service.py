@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 from io import BytesIO
+from dataclasses import replace
 from time import perf_counter
 from typing import Callable
 from uuid import uuid4
 
 from agent import (
+    AgentEventType,
     AgentOrchestrator,
     AgentStatus,
     FeedbackStatus,
@@ -13,6 +15,7 @@ from agent import (
     TestAnalysisState,
 )
 from services.document_service import DocumentService
+from utils.telemetry import ServiceCallMetric, telemetry_scope
 from utils.knowledge_base import KnowledgeBaseManager
 
 from repositories.task_repository import (
@@ -62,14 +65,17 @@ class TestAnalysisApplicationService:
 
     def create_task(self, command: CreateTaskCommand) -> TaskView:
         requirement = command.requirement.strip()
+        document_metrics: list[ServiceCallMetric] = []
         if command.uploaded_document is not None:
             uploaded = _UploadedDocumentBuffer(
                 command.uploaded_document.filename,
                 command.uploaded_document.content,
             )
-            requirement = DocumentService.extract_text(uploaded)
+            with telemetry_scope(action="document_parse") as document_metrics:
+                requirement = DocumentService.extract_text(uploaded)
 
         state = TestAnalysisState(requirement)
+        self._attach_service_metrics(state, document_metrics, event_start=0)
         state.local_bug_knowledge = self._knowledge_loader()
         record = TaskRecord(
             state=state,
@@ -127,17 +133,28 @@ class TestAnalysisApplicationService:
         started_counter = perf_counter()
         succeeded = False
         error: Exception | None = None
+        event_start = len(record.state.events)
+        service_metrics: list[ServiceCallMetric] = []
 
         try:
-            if record.pending_clarifications is not None:
-                self._resume_with_clarifications(record)
-            else:
-                self._run_next_orchestrator_node(record)
+            with telemetry_scope(
+                task_id=task_id,
+                action=action,
+            ) as service_metrics:
+                if record.pending_clarifications is not None:
+                    self._resume_with_clarifications(record)
+                else:
+                    self._run_next_orchestrator_node(record)
             succeeded = True
         except Exception as exc:
             error = exc
             record.auto_run = False
         finally:
+            self._attach_service_metrics(
+                record.state,
+                service_metrics,
+                event_start=event_start,
+            )
             finished_at = datetime.now(timezone.utc)
             duration = round(perf_counter() - started_counter, 2)
             record.metrics.append(
@@ -165,6 +182,33 @@ class TestAnalysisApplicationService:
         if error is not None:
             raise error
         return TaskView.from_record(record)
+
+    @staticmethod
+    def _attach_service_metrics(
+        state: TestAnalysisState,
+        metrics: list[ServiceCallMetric],
+        *,
+        event_start: int,
+    ) -> None:
+        if not metrics:
+            return
+        event_types = {
+            AgentEventType.STEP_COMPLETED,
+            AgentEventType.TASK_COMPLETED,
+            AgentEventType.TASK_FAILED,
+            AgentEventType.TASK_CREATED,
+        }
+        for index in range(len(state.events) - 1, event_start - 1, -1):
+            event = state.events[index]
+            if event.event_type not in event_types:
+                continue
+            data = dict(event.data)
+            data["service_metrics"] = [
+                metric.with_task_id(state.task_id).to_dict()
+                for metric in metrics
+            ]
+            state.events[index] = replace(event, data=data)
+            return
 
     def submit_clarifications(
         self,

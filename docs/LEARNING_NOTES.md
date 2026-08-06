@@ -5325,3 +5325,67 @@ System/User Prompt。前者控制上下文边界，后者控制提示词表达�
 - [ ] 能解释输入预算为什么要预留输出和安全余量
 - [ ] 能说明估算Token和真实API usage的差异
 - [ ] 能说明为什么结构化测试点不能静默裁剪
+
+## 50. 阶段2.15.7：从“节点很慢”定位到具体依赖
+
+### 50.1 原来能看到什么
+
+原来的`NodeExecutionMetric`只能告诉我们Reviewer一共运行了多少秒。如果Reviewer用了100秒，无法判断是模型请求、
+模型输出过长、JSON第一次校验失败后重试，还是其他依赖导致。
+
+### 50.2 现在如何记录
+
+```text
+Application Service开启telemetry_scope(task_id, action)
+→ 节点调用ContextBuilder、LLM、RAG等服务
+→ 每层产生ServiceCallMetric
+→ 指标附加到本次节点完成/失败事件
+→ TaskRepository保存任务快照
+→ TaskView.performance_summary汇总
+```
+
+`ContextVar`让调用深处的Service不用层层传递task_id，也不会使用一个模块级全局列表混淆不同请求。
+
+### 50.3 provider Token和estimated Token
+
+- `provider`：模型API响应中的usage，属于真实服务返回值；
+- `estimated`：API没有usage时，根据字符构成估算，只能用于规模比较；
+- 两类分别汇总，不能相加后声称是精确成本；
+- 视觉估算如果没有图片Token信息，会明确标记图片Token未计入。
+
+### 50.4 为什么只保存Prompt指纹
+
+完整Prompt可能包含公司PRD、业务规则和用户补充。性能诊断通常只需要知道“是不是同一个Prompt版本”，
+所以保存SHA-256截断指纹、模型和字符数，不保存正文。这样可以比较版本，又减少敏感信息进入日志和数据库。
+
+### 50.5 指标为什么放在AgentEvent中
+
+AgentEvent本来就会跟随任务快照进入内存或MySQL Repository，而且事件的`data`允许结构化扩展。
+因此本阶段不需要修改AgentState字段和schema版本，也不需要新建性能表。未来如果指标规模和查询需求增长，
+再评估独立表或监控系统。
+
+### 50.6 面试问题与参考答案
+
+**问题：节点耗时和服务调用耗时有什么区别？**
+
+参考答案：节点耗时是端到端时间，包括上下文构建、外部请求、解析和状态更新；服务耗时是节点内部某个依赖的时间。
+两者结合才能判断瓶颈，但服务耗时之和不一定严格等于节点耗时，因为还有本地代码开销。
+
+**问题：为什么不把Prompt完整记录下来排查问题？**
+
+参考答案：完整Prompt可能包含敏感PRD，超出了性能观测所需的最小数据范围。项目记录模型、字符数和不可逆指纹；
+需要内容级排查时应在合规环境中使用脱敏样本，而不是默认持久化生产输入。
+
+### 50.7 动手练习
+
+1. 用Fake LLM返回usage，观察Token来源为`provider`；
+2. 删除usage，观察来源变成`estimated`；
+3. 让JSON第一次校验失败，确认`retry_count`为1；
+4. 序列化带`service_metrics`的TaskRecord，再恢复并检查指标仍存在。
+
+### 50.8 掌握检查
+
+- [ ] 能解释ContextVar为什么比模块级全局列表安全
+- [ ] 能区分节点总耗时和依赖调用耗时
+- [ ] 能区分provider与estimated Token
+- [ ] 能说明Prompt指纹和敏感信息最小化原则

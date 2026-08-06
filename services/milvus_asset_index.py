@@ -10,6 +10,7 @@ from knowledge_assets import (
     KnowledgeAssetChunkType,
     KnowledgeAssetVectorHit,
 )
+from utils.telemetry import MetricErrorCategory, observed_service_call
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,11 @@ class MilvusKnowledgeAssetIndex:
         self._client = client
         self._loaded = False
 
+    @observed_service_call(
+        operation="ensure_collection",
+        dependency="milvus",
+        error_category=MetricErrorCategory.MILVUS,
+    )
     def ensure_collection(self, vector_dimension: int) -> None:
         if vector_dimension <= 0:
             raise ValueError("vector_dimension must be positive")
@@ -115,6 +121,11 @@ class MilvusKnowledgeAssetIndex:
             client.load_collection(self._settings.collection_name)
             self._loaded = True
 
+    @observed_service_call(
+        operation="upsert_chunks",
+        dependency="milvus",
+        error_category=MetricErrorCategory.MILVUS,
+    )
     def upsert(
         self,
         chunks: Sequence[KnowledgeAssetChunk],
@@ -146,6 +157,11 @@ class MilvusKnowledgeAssetIndex:
         )
         client.flush(collection_name=self._settings.collection_name)
 
+    @observed_service_call(
+        operation="search_chunks",
+        dependency="milvus",
+        error_category=MetricErrorCategory.MILVUS,
+    )
     def search(
         self,
         query_vector: Sequence[float],
@@ -186,6 +202,11 @@ class MilvusKnowledgeAssetIndex:
             return []
         return [self._parse_hit(hit) for hit in result[0]]
 
+    @observed_service_call(
+        operation="delete_asset_vectors",
+        dependency="milvus",
+        error_category=MetricErrorCategory.MILVUS,
+    )
     def delete_asset(self, asset_id: str, asset_version: int) -> None:
         cleaned_asset_id = asset_id.strip()
         if not cleaned_asset_id:

@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |---|---|
 | 产品名称 | Test Analysis Agent |
-| 文档版本 | V2.22 |
+| 文档版本 | V2.23 |
 | 更新时间 | 2026-08-06 |
 | 文档状态 | 当前有效 |
 | 产品阶段 | Streamlit V1演示、可靠知识资产闭环、OCR与有界多模态代码边界完成 |
@@ -296,7 +296,7 @@ Agent 使用受控编排：
 | FR-605 | KnowledgeAsset准入和权威存储 | P0 | 已实现（后端） | 完成准入、schema v1资产快照、MySQL完整JSON、摘要列、内容哈希与来源版本唯一约束；真实MySQL CRUD测试需显式开启 |
 | FR-606 | Milvus V2知识索引 | P0 | 部分实现（后端） | 已完成有界Chunk、批量Embedding、V2 upsert、阈值召回、按资产聚合、MySQL批量回查和版本/哈希验证；当前Agent节点接入与失败补偿尚未完成 |
 | FR-607 | 节点级ContextBuilder和Token预算 | P0 | 已实现（Agent内部） | 五个节点只接收必要字段；长文本有输入预算、关键片段保护与裁剪记录；真实Token和效果待评测 |
-| FR-608 | 节点与外部服务可观测性 | P0 | 部分实现 | Application Service已记录节点开始、结束、耗时、成功/失败和错误类型；LLM、Embedding、Milvus、Token与重试分层指标留到2.15 |
+| FR-608 | 节点与外部服务可观测性 | P0 | 已实现（后端基础） | 节点与ContextBuilder、JSON校验、LLM、RAG、Embedding、Milvus、文档、OCR、视觉分层耗时可记录；Token区分provider/estimated，指标随事件快照保存；真实数据报告待2.16 |
 | FR-609 | 脱敏离线评测与消融实验 | P0 | 规划中 | 使用10～20份脱敏需求对比基础LLM、LLM+RAG和完整质量闭环 |
 | FR-610 | 图文解析离线评测 | P0 | 规划中 | 使用脱敏图文PRD评测正文、表格、OCR、流程节点、分支关系、UI操作、关键问题和解析耗时 |
 
@@ -642,7 +642,7 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 - [x] 有界多模态协议、候选筛选、调用限额和失败降级（阶段2.15.4，真实效果待评测）
 - [x] 关键问题结构化分类、Python阻塞策略、去重和非阻塞转风险（阶段2.15.5）
 - [x] ContextBuilder和节点级Token预算（阶段2.15.6，真实Token与裁剪效果待2.15.7/2.16验证）
-- [ ] 文档解析、OCR、视觉模型、LLM、Embedding和Milvus分层耗时与错误分类（阶段2.15.7）
+- [x] 文档解析、OCR、视觉模型、LLM、Embedding和Milvus分层耗时与错误分类（阶段2.15.7，真实分布待2.16）
 - [ ] 10～20份脱敏需求评测集（阶段2.16）
 - [ ] RAG和Reviewer/Reviser专项评测（阶段2.16）
 - [ ] 三组消融实验和真实指标报告（阶段2.16）
@@ -693,15 +693,16 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 - Finalizer结构化汇总、表格报告与Markdown下载
 - Fake Service 单元测试
 - 真实MySQL 8.0.32中的TaskRecord CRUD、事件持久化和跨Application Service实例任务恢复
+- 基于version、execution_id和执行租约的并发与重复执行保护
+- 用户确认后的MySQL KnowledgeAsset与Milvus V2索引闭环
+- provider/estimated Token区分、分层调用耗时、Prompt指纹、重试和错误分类链路
 
 ### 完成后才能描述
 
 - Agent 自主选择工具
 - Agent自主规划和不受控反思
 - 多 Agent 协作
-- 基于version、execution_id和执行租约的并发与重复执行保护
-- 用户确认后的MySQL KnowledgeAsset与Milvus V2索引闭环
-- 真实Token和分层耗时统计
+- 多份真实PRD的Token成本和分层耗时分布结论
 - RAG、Reviewer和三组方案的离线评测结果
 - 覆盖率提升的具体数值
 - 前后端分离
@@ -737,3 +738,4 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 | V2.20 | 2026-08-06 | 完成有界视觉候选筛选、结构化多模态协议、调用限额和失败降级 |
 | V2.21 | 2026-08-06 | 完成关键问题结构化分类、Python阻塞策略、去重和非阻塞转风险 |
 | V2.22 | 2026-08-06 | 完成五个节点的ContextBuilder字段白名单、输入预算、关键片段保护和上下文指标 |
+| V2.23 | 2026-08-06 | 完成任务级服务调用指标、真实/估算Token、Prompt指纹、错误分类和只读性能摘要 |

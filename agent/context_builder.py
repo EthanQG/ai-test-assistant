@@ -8,6 +8,8 @@ import math
 import re
 from typing import Any
 
+from utils.telemetry import MetricErrorCategory, observed_service_call
+
 from .state import TestAnalysisState
 
 
@@ -115,6 +117,11 @@ class ContextBuilder:
     )
     _TRUNCATION_MARKER = "[上下文已按节点预算裁剪]"
 
+    @observed_service_call(
+        operation="build_requirement_analysis_context",
+        dependency="context_builder",
+        error_category=MetricErrorCategory.INPUT_BUDGET,
+    )
     def build_requirement_analysis(self, state: TestAnalysisState) -> BuiltContext:
         requirement, truncated = self._fit_text(
             state.requirement,
@@ -132,6 +139,11 @@ class ContextBuilder:
             truncated_sections=("requirement",) if truncated else (),
         )
 
+    @observed_service_call(
+        operation="build_knowledge_retrieval_context",
+        dependency="context_builder",
+        error_category=MetricErrorCategory.INPUT_BUDGET,
+    )
     def build_knowledge_retrieval(self, state: TestAnalysisState) -> BuiltContext:
         requirement, truncated = self._fit_text(
             state.requirement,
@@ -153,6 +165,11 @@ class ContextBuilder:
             truncated_sections=("requirement",) if truncated else (),
         )
 
+    @observed_service_call(
+        operation="build_test_point_generation_context",
+        dependency="context_builder",
+        error_category=MetricErrorCategory.INPUT_BUDGET,
+    )
     def build_test_point_generation(self, state: TestAnalysisState) -> BuiltContext:
         local_knowledge, local_truncated = self._fit_text(
             state.local_bug_knowledge,
@@ -183,6 +200,11 @@ class ContextBuilder:
             truncated_sections=tuple(truncated_sections),
         )
 
+    @observed_service_call(
+        operation="build_test_point_review_context",
+        dependency="context_builder",
+        error_category=MetricErrorCategory.INPUT_BUDGET,
+    )
     def build_test_point_review(self, state: TestAnalysisState) -> BuiltContext:
         values = {
             "requirement_analysis": self.requirement_analysis_payload(state),
@@ -190,6 +212,11 @@ class ContextBuilder:
         }
         return self._result(ContextNode.TEST_POINT_REVIEW, values)
 
+    @observed_service_call(
+        operation="build_test_point_revision_context",
+        dependency="context_builder",
+        error_category=MetricErrorCategory.INPUT_BUDGET,
+    )
     def build_test_point_revision(
         self,
         state: TestAnalysisState,

@@ -5,9 +5,18 @@ from dataclasses import dataclass
 from io import BytesIO
 import json
 import os
+from time import perf_counter
 from typing import Protocol
 
 import requests
+from utils.telemetry import (
+    MetricErrorCategory,
+    TokenUsageSource,
+    provider_or_estimated_token_usage,
+    record_service_call,
+    service_metric,
+    utc_now,
+)
 
 from documents import (
     DocumentUiElement,
@@ -136,10 +145,27 @@ class OpenAICompatibleVisualUnderstandingEngine:
         context: str,
         ocr_text: str,
     ) -> VisualUnderstandingResult:
+        started_at = utc_now()
+        started_counter = perf_counter()
         if not self._api_key or not self._base_url or not self._model:
-            raise VisualUnderstandingUnavailableError(
+            error = VisualUnderstandingUnavailableError(
                 "visual model is not configured"
             )
+            record_service_call(
+                service_metric(
+                    operation="analyze_image",
+                    dependency="vision",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=False,
+                    model=self._model or None,
+                    input_chars=len(context) + len(ocr_text),
+                    error=error,
+                    error_category=MetricErrorCategory.VISION,
+                    metadata={"configured": False},
+                )
+            )
+            raise error
         if not isinstance(image_bytes, bytes) or not image_bytes:
             raise ValueError("visual image content must be non-empty bytes")
         prepared, prepared_mime = self._prepare_image(image_bytes, mime_type)
@@ -189,12 +215,77 @@ class OpenAICompatibleVisualUnderstandingEngine:
             body = response.json()
             content = body["choices"][0]["message"]["content"]
         except Exception as exc:
+            record_service_call(
+                service_metric(
+                    operation="analyze_image",
+                    dependency="vision",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=False,
+                    model=self._model,
+                    input_chars=len(context) + len(ocr_text),
+                    error=exc,
+                    error_category=(
+                        MetricErrorCategory.TIMEOUT
+                        if isinstance(exc, requests.Timeout)
+                        else MetricErrorCategory.VISION
+                    ),
+                    metadata={
+                        "mime_type": prepared_mime,
+                        "input_bytes": len(prepared),
+                    },
+                )
+            )
             raise VisualUnderstandingError(
                 "visual model request failed"
             ) from exc
         try:
-            return self._parse_result(json.loads(content))
+            result = self._parse_result(json.loads(content))
+            token_usage = provider_or_estimated_token_usage(
+                body.get("usage"),
+                input_text=prompt,
+                output_text=content,
+            )
+            record_service_call(
+                service_metric(
+                    operation="analyze_image",
+                    dependency="vision",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=True,
+                    model=self._model,
+                    input_chars=len(context) + len(ocr_text),
+                    output_chars=len(content),
+                    token_usage=token_usage,
+                    metadata={
+                        "mime_type": prepared_mime,
+                        "input_bytes": len(prepared),
+                        "image_tokens_accounted_for": (
+                            token_usage.source is TokenUsageSource.PROVIDER
+                        ),
+                    },
+                )
+            )
+            return result
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            record_service_call(
+                service_metric(
+                    operation="analyze_image",
+                    dependency="vision",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=False,
+                    model=self._model,
+                    input_chars=len(context) + len(ocr_text),
+                    output_chars=len(content),
+                    error=exc,
+                    error_category=MetricErrorCategory.VALIDATION,
+                    metadata={
+                        "mime_type": prepared_mime,
+                        "input_bytes": len(prepared),
+                    },
+                )
+            )
             raise VisualUnderstandingError(
                 "visual model returned invalid structured output"
             ) from exc

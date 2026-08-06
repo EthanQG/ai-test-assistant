@@ -4,7 +4,15 @@ from dataclasses import dataclass
 import os
 import shutil
 import subprocess
+from time import perf_counter
 from typing import Protocol
+
+from utils.telemetry import (
+    MetricErrorCategory,
+    record_service_call,
+    service_metric,
+    utc_now,
+)
 
 
 class OcrError(RuntimeError):
@@ -66,10 +74,14 @@ class TesseractOcrEngine:
     ) -> tuple[OcrTextLine, ...]:
         if not isinstance(image_bytes, bytes) or not image_bytes:
             raise ValueError("OCR image content must be non-empty bytes")
-        executable = shutil.which(self._command)
-        if executable is None:
-            raise OcrUnavailableError("Tesseract executable is not available")
+        started_at = utc_now()
+        started_counter = perf_counter()
         try:
+            executable = shutil.which(self._command)
+            if executable is None:
+                raise OcrUnavailableError(
+                    "Tesseract executable is not available"
+                )
             completed = subprocess.run(
                 [
                     executable,
@@ -84,11 +96,57 @@ class TesseractOcrEngine:
                 check=False,
                 timeout=self._timeout_seconds,
             )
-        except subprocess.TimeoutExpired as exc:
-            raise OcrError("Tesseract OCR timed out") from exc
-        if completed.returncode != 0:
-            raise OcrError("Tesseract OCR execution failed")
-        return self._parse_tsv(completed.stdout.decode("utf-8", errors="replace"))
+            if completed.returncode != 0:
+                raise OcrError("Tesseract OCR execution failed")
+            result = self._parse_tsv(
+                completed.stdout.decode("utf-8", errors="replace")
+            )
+            record_service_call(
+                service_metric(
+                    operation="recognize_image",
+                    dependency="ocr",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=True,
+                    output_chars=sum(len(line.text) for line in result),
+                    metadata={
+                        "engine": "tesseract",
+                        "input_bytes": len(image_bytes),
+                        "line_count": len(result),
+                        "mime_type": mime_type,
+                    },
+                )
+            )
+            return result
+        except Exception as exc:
+            error = (
+                OcrError("Tesseract OCR timed out")
+                if isinstance(exc, subprocess.TimeoutExpired)
+                else exc
+            )
+            record_service_call(
+                service_metric(
+                    operation="recognize_image",
+                    dependency="ocr",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=False,
+                    error=error,
+                    error_category=(
+                        MetricErrorCategory.TIMEOUT
+                        if isinstance(exc, subprocess.TimeoutExpired)
+                        else MetricErrorCategory.OCR
+                    ),
+                    metadata={
+                        "engine": "tesseract",
+                        "input_bytes": len(image_bytes),
+                        "mime_type": mime_type,
+                    },
+                )
+            )
+            if isinstance(exc, subprocess.TimeoutExpired):
+                raise error from exc
+            raise
 
     @staticmethod
     def _parse_tsv(payload: str) -> tuple[OcrTextLine, ...]:

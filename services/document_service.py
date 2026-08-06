@@ -4,6 +4,7 @@ import hashlib
 import mimetypes
 import os
 import re
+from time import perf_counter
 from io import BytesIO
 from typing import Iterable
 
@@ -38,6 +39,12 @@ from services.visual_service import (
     OpenAICompatibleVisualUnderstandingEngine,
     VisualUnderstandingEngine,
     VisualUnderstandingUnavailableError,
+)
+from utils.telemetry import (
+    MetricErrorCategory,
+    record_service_call,
+    service_metric,
+    utc_now,
 )
 
 
@@ -116,10 +123,14 @@ class DocumentService:
         document_format = cls._FORMATS.get(extension)
         if document_format is None:
             raise ValueError(f"不支持的文件格式: {extension}")
+        started_at = utc_now()
+        started_counter = perf_counter()
+        payload_size: int | None = None
         try:
             payload = uploaded_file.read()
             if not isinstance(payload, bytes):
                 raise TypeError("上传文件必须提供二进制内容")
+            payload_size = len(payload)
             identity = filename.encode("utf-8") + b"\0" + payload
             document_id = "doc-" + hashlib.sha256(identity).hexdigest()
             engine = ocr_engine or TesseractOcrEngine.from_environment()
@@ -128,28 +139,61 @@ class DocumentService:
                 or OpenAICompatibleVisualUnderstandingEngine.from_environment()
             )
             if document_format in {DocumentFormat.TEXT, DocumentFormat.MARKDOWN}:
-                return cls._parse_text_document(
+                result = cls._parse_text_document(
                     filename,
                     document_id,
                     document_format,
                     payload,
                 )
-            if document_format is DocumentFormat.PDF:
-                return cls._parse_pdf(
+            elif document_format is DocumentFormat.PDF:
+                result = cls._parse_pdf(
                     filename,
                     document_id,
                     payload,
                     ocr_engine=engine,
                     visual_engine=configured_visual_engine,
                 )
-            return cls._parse_docx(
-                filename,
-                document_id,
-                payload,
-                ocr_engine=engine,
-                visual_engine=configured_visual_engine,
+            else:
+                result = cls._parse_docx(
+                    filename,
+                    document_id,
+                    payload,
+                    ocr_engine=engine,
+                    visual_engine=configured_visual_engine,
+                )
+            record_service_call(
+                service_metric(
+                    operation="parse_document",
+                    dependency="document_parser",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=True,
+                    output_chars=len(result.to_plain_text()),
+                    metadata={
+                        "format": document_format.value,
+                        "input_bytes": payload_size,
+                        "element_count": len(result.elements),
+                        "warning_count": len(result.warnings),
+                    },
+                )
             )
+            return result
         except Exception as exc:
+            record_service_call(
+                service_metric(
+                    operation="parse_document",
+                    dependency="document_parser",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=False,
+                    error=exc,
+                    error_category=MetricErrorCategory.DOCUMENT_PARSE,
+                    metadata={
+                        "format": document_format.value,
+                        "input_bytes": payload_size,
+                    },
+                )
+            )
             raise ValueError(f"文件解析失败: {type(exc).__name__}") from exc
 
     @classmethod

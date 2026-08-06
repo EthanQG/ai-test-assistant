@@ -1,7 +1,16 @@
 import json
+import hashlib
+from time import perf_counter
 from typing import Any
 
 import requests
+from utils.telemetry import (
+    MetricErrorCategory,
+    provider_or_estimated_token_usage,
+    record_service_call,
+    service_metric,
+    utc_now,
+)
 from utils.config import ConfigManager
 
 
@@ -21,6 +30,12 @@ class DeepSeekClient:
         response_format: dict[str, str] | None = None,
         max_tokens: int | None = None,
     ) -> str:
+        started_at = utc_now()
+        started_counter = perf_counter()
+        input_text = f"{system_prompt}\n{prompt}" if system_prompt else prompt
+        prompt_fingerprint = hashlib.sha256(
+            input_text.encode("utf-8")
+        ).hexdigest()[:16]
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json"
@@ -41,18 +56,69 @@ class DeepSeekClient:
         if response_format is not None:
             payload["response_format"] = response_format
 
-        response = requests.post(
-            f"{self.config.base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=self.config.request_timeout,
-        )
-
-        if response.status_code != 200:
-            raise ValueError(f"API调用失败，状态码: {response.status_code}, 响应: {response.text}")
-
-        result = response.json()
-        return self._extract_content(result)
+        try:
+            response = requests.post(
+                f"{self.config.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=self.config.request_timeout,
+            )
+            if response.status_code != 200:
+                raise ValueError(
+                    f"LLM API request failed with status {response.status_code}"
+                )
+            result = response.json()
+            content = self._extract_content(result)
+            record_service_call(
+                service_metric(
+                    operation="chat_completion",
+                    dependency="llm",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=True,
+                    model=self.config.model,
+                    input_chars=len(input_text),
+                    output_chars=len(content),
+                    token_usage=provider_or_estimated_token_usage(
+                        result.get("usage"),
+                        input_text=input_text,
+                        output_text=content,
+                    ),
+                    metadata={
+                        "finish_reason": result.get("choices", [{}])[0].get(
+                            "finish_reason"
+                        ),
+                        "prompt_fingerprint": prompt_fingerprint,
+                    },
+                )
+            )
+            return content
+        except Exception as exc:
+            if isinstance(exc, requests.Timeout):
+                category = MetricErrorCategory.TIMEOUT
+            elif "max_tokens" in str(exc) or "finish_reason=length" in str(exc):
+                category = MetricErrorCategory.OUTPUT_TRUNCATED
+            elif isinstance(exc, requests.RequestException) or (
+                "API request failed with status" in str(exc)
+            ):
+                category = MetricErrorCategory.TRANSPORT
+            else:
+                category = MetricErrorCategory.VALIDATION
+            record_service_call(
+                service_metric(
+                    operation="chat_completion",
+                    dependency="llm",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=False,
+                    model=self.config.model,
+                    input_chars=len(input_text),
+                    error=exc,
+                    error_category=category,
+                    metadata={"prompt_fingerprint": prompt_fingerprint},
+                )
+            )
+            raise
 
     def call_stream(self, prompt: str, system_prompt: str = ""):
         headers = {

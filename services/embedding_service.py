@@ -2,9 +2,17 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Sequence
 
 import requests
+
+from utils.telemetry import (
+    MetricErrorCategory,
+    record_service_call,
+    service_metric,
+    utc_now,
+)
 
 
 @dataclass(frozen=True)
@@ -50,21 +58,57 @@ class OllamaBatchEmbeddingService:
         cleaned = [text.strip() for text in texts]
         if not cleaned or any(not text for text in cleaned):
             raise ValueError("embedding texts must be non-empty")
-        response = self._session.post(
-            f"{self._settings.base_url}/api/embed",
-            json={
-                "model": self._settings.model,
-                "input": cleaned,
-                "truncate": False,
-            },
-            timeout=self._settings.timeout_seconds,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        embeddings = payload.get("embeddings")
-        if not isinstance(embeddings, list):
-            raise ValueError("Ollama response.embeddings must be a list")
-        return embeddings
+        started_at = utc_now()
+        started_counter = perf_counter()
+        try:
+            response = self._session.post(
+                f"{self._settings.base_url}/api/embed",
+                json={
+                    "model": self._settings.model,
+                    "input": cleaned,
+                    "truncate": False,
+                },
+                timeout=self._settings.timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            embeddings = payload.get("embeddings")
+            if not isinstance(embeddings, list):
+                raise ValueError("Ollama response.embeddings must be a list")
+            record_service_call(
+                service_metric(
+                    operation="embed_batch",
+                    dependency="embedding",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=True,
+                    model=self._settings.model,
+                    input_chars=sum(len(text) for text in cleaned),
+                    metadata={"batch_size": len(cleaned)},
+                )
+            )
+            return embeddings
+        except Exception as exc:
+            category = (
+                MetricErrorCategory.TIMEOUT
+                if isinstance(exc, requests.Timeout)
+                else MetricErrorCategory.EMBEDDING
+            )
+            record_service_call(
+                service_metric(
+                    operation="embed_batch",
+                    dependency="embedding",
+                    started_at=started_at,
+                    started_counter=started_counter,
+                    succeeded=False,
+                    model=self._settings.model,
+                    input_chars=sum(len(text) for text in cleaned),
+                    error=exc,
+                    error_category=category,
+                    metadata={"batch_size": len(cleaned)},
+                )
+            )
+            raise
 
 
 def _positive_int_env(name: str, default: int) -> int:

@@ -120,3 +120,55 @@ class TaskView:
             sum(metric.duration_seconds for metric in self.metrics),
             2,
         )
+
+    @property
+    def service_metrics(self) -> tuple[dict[str, Any], ...]:
+        metrics: list[dict[str, Any]] = []
+        for event in self._state_data["events"]:
+            raw_metrics = event.data.get("service_metrics", [])
+            if isinstance(raw_metrics, list):
+                metrics.extend(
+                    deepcopy(item)
+                    for item in raw_metrics
+                    if isinstance(item, dict)
+                )
+        return tuple(metrics)
+
+    @property
+    def performance_summary(self) -> dict[str, Any]:
+        duration_by_dependency: dict[str, int] = {}
+        token_totals = {
+            "provider": {"input": 0, "output": 0, "total": 0},
+            "estimated": {"input": 0, "output": 0, "total": 0},
+        }
+        error_counts: dict[str, int] = {}
+        retry_count = 0
+        for metric in self.service_metrics:
+            dependency = str(metric.get("dependency") or "unknown")
+            duration_by_dependency[dependency] = (
+                duration_by_dependency.get(dependency, 0)
+                + int(metric.get("duration_ms") or 0)
+            )
+            retry_count += int(metric.get("retry_count") or 0)
+            error_category = metric.get("error_category")
+            if error_category:
+                key = str(error_category)
+                error_counts[key] = error_counts.get(key, 0) + 1
+            usage = metric.get("token_usage")
+            if not isinstance(usage, dict):
+                continue
+            source = usage.get("source")
+            if source not in token_totals:
+                continue
+            target = token_totals[source]
+            target["input"] += int(usage.get("input_tokens") or 0)
+            target["output"] += int(usage.get("output_tokens") or 0)
+            target["total"] += int(usage.get("total_tokens") or 0)
+        return {
+            "task_execution_seconds": self.total_execution_seconds,
+            "service_call_count": len(self.service_metrics),
+            "duration_by_dependency_ms": duration_by_dependency,
+            "token_totals_by_source": token_totals,
+            "retry_count": retry_count,
+            "error_counts": error_counts,
+        }
