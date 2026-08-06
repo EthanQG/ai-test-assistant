@@ -1,4 +1,5 @@
 import os
+from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -7,6 +8,7 @@ from dotenv import load_dotenv
 
 from knowledge_assets import (
     KnowledgeAssetAdmissionPolicy,
+    KnowledgeAssetIndexRequestStatus,
     KnowledgeAssetSnapshotSerializer,
     KnowledgeAssetStatus,
 )
@@ -42,6 +44,10 @@ def mysql_asset_repository():
     cursor = connection.cursor()
     try:
         for asset_id in created_ids:
+            cursor.execute(
+                "DELETE FROM knowledge_asset_index_requests WHERE asset_id = %s",
+                (asset_id,),
+            )
             cursor.execute(
                 "DELETE FROM knowledge_assets WHERE asset_id = %s",
                 (asset_id,),
@@ -91,3 +97,50 @@ def test_real_mysql_knowledge_asset_missing(mysql_asset_repository):
 
     with pytest.raises(KnowledgeAssetNotFoundError):
         repository.get(str(uuid4()))
+
+
+def test_real_mysql_knowledge_asset_retry_audit_is_idempotent(
+    mysql_asset_repository,
+):
+    repository, _, created_ids = mysql_asset_repository
+    asset_id = str(uuid4())
+    request_id = str(uuid4())
+    asset = KnowledgeAssetAdmissionPolicy(
+        asset_id_factory=lambda: asset_id,
+        clock=lambda: datetime.now(timezone.utc),
+    ).admit(
+        make_eligible_state(),
+        user_confirmed=True,
+        data_safety_confirmed=True,
+        asset_version=1,
+    )
+    asset = replace(asset, status=KnowledgeAssetStatus.INDEX_FAILED)
+    created_ids.append(asset_id)
+    repository.create(asset)
+
+    request, created = repository.begin_index_retry(
+        asset_id,
+        request_id,
+        started_at=datetime.now(timezone.utc),
+    )
+    replayed, replay_created = repository.begin_index_retry(
+        asset_id,
+        request_id,
+        started_at=datetime.now(timezone.utc),
+    )
+    finished = repository.finish_index_request(
+        request_id,
+        KnowledgeAssetIndexRequestStatus.SUCCEEDED,
+        chunk_count=5,
+        omitted_chunk_count=1,
+        error_type=None,
+        error_message=None,
+        finished_at=datetime.now(timezone.utc),
+    )
+
+    assert created is True
+    assert replay_created is False
+    assert replayed == request
+    assert repository.get(asset_id).status is KnowledgeAssetStatus.PENDING_INDEX
+    assert finished.status is KnowledgeAssetIndexRequestStatus.SUCCEEDED
+    assert repository.list_index_requests(asset_id) == [finished]

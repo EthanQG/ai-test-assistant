@@ -11,9 +11,12 @@ from .knowledge_asset_service import (
     KnowledgeAssetView,
 )
 from .knowledge_asset_indexing_service import (
+    KnowledgeAssetIndexingBusyError,
     KnowledgeAssetIndexingError,
+    KnowledgeAssetIndexingRequestFinishedError,
     KnowledgeAssetIndexingResult,
     KnowledgeAssetIndexingService,
+    KnowledgeAssetRetirementResult,
 )
 from .knowledge_asset_retrieval_service import (
     KnowledgeAssetRetrievalError,
@@ -54,8 +57,11 @@ __all__ = [
     "NodeExecutionMetric",
     "KnowledgeAssetApplicationService",
     "KnowledgeAssetIndexingError",
+    "KnowledgeAssetIndexingBusyError",
+    "KnowledgeAssetIndexingRequestFinishedError",
     "KnowledgeAssetIndexingResult",
     "KnowledgeAssetIndexingService",
+    "KnowledgeAssetRetirementResult",
     "KnowledgeAssetRetrievalError",
     "KnowledgeAssetRetrievalService",
     "KnowledgeAssetView",

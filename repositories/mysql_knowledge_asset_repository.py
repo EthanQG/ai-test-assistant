@@ -5,10 +5,17 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
-from knowledge_assets import KnowledgeAsset, KnowledgeAssetStatus
+from knowledge_assets import (
+    KnowledgeAsset,
+    KnowledgeAssetIndexRequest,
+    KnowledgeAssetIndexRequestStatus,
+    KnowledgeAssetStatus,
+)
 
 from .knowledge_asset_repository import (
     KnowledgeAssetAlreadyExistsError,
+    KnowledgeAssetIndexRequestConflictError,
+    KnowledgeAssetIndexRequestNotFoundError,
     KnowledgeAssetNotFoundError,
     KnowledgeAssetRepository,
     KnowledgeAssetRepositoryError,
@@ -54,6 +61,23 @@ CREATE TABLE IF NOT EXISTS knowledge_assets (
 """.strip()
 
 
+CREATE_KNOWLEDGE_ASSET_INDEX_REQUESTS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS knowledge_asset_index_requests (
+    request_id VARCHAR(64) NOT NULL PRIMARY KEY,
+    asset_id VARCHAR(36) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    chunk_count INT UNSIGNED NOT NULL DEFAULT 0,
+    omitted_chunk_count INT UNSIGNED NOT NULL DEFAULT 0,
+    error_type VARCHAR(128) NULL,
+    error_message VARCHAR(512) NULL,
+    started_at DATETIME(6) NOT NULL,
+    finished_at DATETIME(6) NULL,
+    INDEX idx_asset_index_requests_asset_started (asset_id, started_at),
+    INDEX idx_asset_index_requests_status_started (status, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+""".strip()
+
+
 class MySQLKnowledgeAssetRepository(KnowledgeAssetRepository):
     """Stores complete KnowledgeAsset JSON as the authoritative record."""
 
@@ -70,6 +94,7 @@ class MySQLKnowledgeAssetRepository(KnowledgeAssetRepository):
         cursor = connection.cursor()
         try:
             cursor.execute(CREATE_KNOWLEDGE_ASSETS_TABLE_SQL)
+            cursor.execute(CREATE_KNOWLEDGE_ASSET_INDEX_REQUESTS_TABLE_SQL)
             connection.commit()
         except Exception as exc:
             connection.rollback()
@@ -294,6 +319,238 @@ class MySQLKnowledgeAssetRepository(KnowledgeAssetRepository):
             cursor.close()
             connection.close()
 
+    def begin_index_retry(
+        self,
+        asset_id: str,
+        request_id: str,
+        *,
+        started_at: datetime,
+    ) -> tuple[KnowledgeAssetIndexRequest, bool]:
+        _validate_index_request_identity(request_id, asset_id, started_at)
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT asset_json
+                FROM knowledge_assets
+                WHERE asset_id = %s
+                FOR UPDATE
+                """,
+                (asset_id,),
+            )
+            asset_row = cursor.fetchone()
+            if asset_row is None:
+                raise KnowledgeAssetNotFoundError(asset_id)
+            asset = self._asset_from_row(asset_row)
+
+            cursor.execute(
+                """
+                SELECT request_id, asset_id, status, chunk_count,
+                       omitted_chunk_count, error_type, error_message,
+                       started_at, finished_at
+                FROM knowledge_asset_index_requests
+                WHERE request_id = %s
+                FOR UPDATE
+                """,
+                (request_id,),
+            )
+            request_row = cursor.fetchone()
+            if request_row is not None:
+                request = _index_request_from_row(request_row)
+                if request.asset_id != asset_id:
+                    raise KnowledgeAssetIndexRequestConflictError(
+                        request_id,
+                        "request_id belongs to another asset",
+                    )
+                connection.commit()
+                return request, False
+
+            if asset.status is not KnowledgeAssetStatus.INDEX_FAILED:
+                raise KnowledgeAssetStatusConflictError(
+                    asset_id,
+                    KnowledgeAssetStatus.INDEX_FAILED,
+                    asset.status,
+                )
+            pending = replace(
+                asset,
+                status=KnowledgeAssetStatus.PENDING_INDEX,
+            )
+            snapshot = self._snapshot_codec.to_dict(pending)
+            cursor.execute(
+                """
+                UPDATE knowledge_assets
+                SET status = %s, asset_json = %s, updated_at = %s
+                WHERE asset_id = %s AND status = %s
+                """,
+                (
+                    KnowledgeAssetStatus.PENDING_INDEX.value,
+                    _json_text(snapshot),
+                    _mysql_datetime(started_at),
+                    asset_id,
+                    KnowledgeAssetStatus.INDEX_FAILED.value,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise KnowledgeAssetStatusConflictError(
+                    asset_id,
+                    KnowledgeAssetStatus.INDEX_FAILED,
+                    asset.status,
+                )
+            cursor.execute(
+                """
+                INSERT INTO knowledge_asset_index_requests (
+                    request_id, asset_id, status, chunk_count,
+                    omitted_chunk_count, error_type, error_message,
+                    started_at, finished_at
+                ) VALUES (%s, %s, %s, 0, 0, NULL, NULL, %s, NULL)
+                """,
+                (
+                    request_id,
+                    asset_id,
+                    KnowledgeAssetIndexRequestStatus.RUNNING.value,
+                    _mysql_datetime(started_at),
+                ),
+            )
+            request = KnowledgeAssetIndexRequest(
+                request_id=request_id,
+                asset_id=asset_id,
+                status=KnowledgeAssetIndexRequestStatus.RUNNING,
+                chunk_count=0,
+                omitted_chunk_count=0,
+                error_type=None,
+                error_message=None,
+                started_at=started_at,
+            )
+            connection.commit()
+            return request, True
+        except (
+            KnowledgeAssetNotFoundError,
+            KnowledgeAssetStatusConflictError,
+            KnowledgeAssetIndexRequestConflictError,
+        ):
+            connection.rollback()
+            raise
+        except Exception as exc:
+            connection.rollback()
+            raise KnowledgeAssetRepositoryError(
+                "failed to begin MySQL knowledge asset index retry"
+            ) from exc
+        finally:
+            cursor.close()
+            connection.close()
+
+    def finish_index_request(
+        self,
+        request_id: str,
+        status: KnowledgeAssetIndexRequestStatus,
+        *,
+        chunk_count: int,
+        omitted_chunk_count: int,
+        error_type: str | None,
+        error_message: str | None,
+        finished_at: datetime,
+    ) -> KnowledgeAssetIndexRequest:
+        if status is KnowledgeAssetIndexRequestStatus.RUNNING:
+            raise ValueError("finished index request cannot remain running")
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT request_id, asset_id, status, chunk_count,
+                       omitted_chunk_count, error_type, error_message,
+                       started_at, finished_at
+                FROM knowledge_asset_index_requests
+                WHERE request_id = %s
+                FOR UPDATE
+                """,
+                (request_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise KnowledgeAssetIndexRequestNotFoundError(request_id)
+            current = _index_request_from_row(row)
+            if current.status is not KnowledgeAssetIndexRequestStatus.RUNNING:
+                connection.commit()
+                return current
+            cursor.execute(
+                """
+                UPDATE knowledge_asset_index_requests
+                SET status = %s, chunk_count = %s,
+                    omitted_chunk_count = %s, error_type = %s,
+                    error_message = %s, finished_at = %s
+                WHERE request_id = %s AND status = %s
+                """,
+                (
+                    status.value,
+                    chunk_count,
+                    omitted_chunk_count,
+                    error_type,
+                    _bounded_error_message(error_message),
+                    _mysql_datetime(finished_at),
+                    request_id,
+                    KnowledgeAssetIndexRequestStatus.RUNNING.value,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise KnowledgeAssetIndexRequestConflictError(
+                    request_id,
+                    "request is no longer running",
+                )
+            updated = replace(
+                current,
+                status=status,
+                chunk_count=chunk_count,
+                omitted_chunk_count=omitted_chunk_count,
+                error_type=error_type,
+                error_message=_bounded_error_message(error_message),
+                finished_at=finished_at,
+            )
+            connection.commit()
+            return updated
+        except (
+            KnowledgeAssetIndexRequestNotFoundError,
+            KnowledgeAssetIndexRequestConflictError,
+        ):
+            connection.rollback()
+            raise
+        except Exception as exc:
+            connection.rollback()
+            raise KnowledgeAssetRepositoryError(
+                "failed to finish MySQL knowledge asset index request"
+            ) from exc
+        finally:
+            cursor.close()
+            connection.close()
+
+    def list_index_requests(
+        self,
+        asset_id: str,
+    ) -> list[KnowledgeAssetIndexRequest]:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT request_id, asset_id, status, chunk_count,
+                       omitted_chunk_count, error_type, error_message,
+                       started_at, finished_at
+                FROM knowledge_asset_index_requests
+                WHERE asset_id = %s
+                ORDER BY started_at ASC, request_id ASC
+                """,
+                (asset_id,),
+            )
+            return [_index_request_from_row(row) for row in cursor.fetchall()]
+        except Exception as exc:
+            raise KnowledgeAssetRepositoryError(
+                "failed to list MySQL knowledge asset index requests"
+            ) from exc
+        finally:
+            cursor.close()
+            connection.close()
+
     def _fetch_one(
         self,
         sql: str,
@@ -358,3 +615,75 @@ def _mysql_error_code(exc: Exception) -> int | None:
     if not exc.args:
         return None
     return exc.args[0] if isinstance(exc.args[0], int) else None
+
+
+def _validate_index_request_identity(
+    request_id: str,
+    asset_id: str,
+    started_at: datetime,
+) -> None:
+    KnowledgeAssetIndexRequest(
+        request_id=request_id,
+        asset_id=asset_id,
+        status=KnowledgeAssetIndexRequestStatus.RUNNING,
+        chunk_count=0,
+        omitted_chunk_count=0,
+        error_type=None,
+        error_message=None,
+        started_at=started_at,
+    )
+
+
+def _index_request_from_row(row: Any) -> KnowledgeAssetIndexRequest:
+    required = {
+        "request_id",
+        "asset_id",
+        "status",
+        "chunk_count",
+        "omitted_chunk_count",
+        "error_type",
+        "error_message",
+        "started_at",
+        "finished_at",
+    }
+    if not isinstance(row, dict) or not required.issubset(row):
+        raise KnowledgeAssetRepositoryError(
+            "MySQL knowledge asset index request row is invalid"
+        )
+    try:
+        return KnowledgeAssetIndexRequest(
+            request_id=str(row["request_id"]),
+            asset_id=str(row["asset_id"]),
+            status=KnowledgeAssetIndexRequestStatus(row["status"]),
+            chunk_count=int(row["chunk_count"]),
+            omitted_chunk_count=int(row["omitted_chunk_count"]),
+            error_type=row["error_type"],
+            error_message=row["error_message"],
+            started_at=_aware_mysql_datetime(row["started_at"]),
+            finished_at=(
+                None
+                if row["finished_at"] is None
+                else _aware_mysql_datetime(row["finished_at"])
+            ),
+        )
+    except (TypeError, ValueError) as exc:
+        raise KnowledgeAssetRepositoryError(
+            "MySQL knowledge asset index request row is invalid"
+        ) from exc
+
+
+def _aware_mysql_datetime(value: Any) -> datetime:
+    if not isinstance(value, datetime):
+        raise KnowledgeAssetRepositoryError(
+            "MySQL knowledge asset index datetime is invalid"
+        )
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _bounded_error_message(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned[:512] or None

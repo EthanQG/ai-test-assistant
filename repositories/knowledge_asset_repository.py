@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from dataclasses import replace
+from datetime import datetime
 from threading import RLock
 
-from knowledge_assets import KnowledgeAsset, KnowledgeAssetStatus
+from knowledge_assets import (
+    KnowledgeAsset,
+    KnowledgeAssetIndexRequest,
+    KnowledgeAssetIndexRequestStatus,
+    KnowledgeAssetStatus,
+)
 
 
 class KnowledgeAssetRepositoryError(RuntimeError):
@@ -37,6 +44,19 @@ class KnowledgeAssetStatusConflictError(KnowledgeAssetRepositoryError):
         self.asset_id = asset_id
         self.expected = expected
         self.actual = actual
+
+
+class KnowledgeAssetIndexRequestConflictError(KnowledgeAssetRepositoryError):
+    def __init__(self, request_id: str, reason: str):
+        super().__init__(f"knowledge asset index request conflict: {reason}")
+        self.request_id = request_id
+        self.reason = reason
+
+
+class KnowledgeAssetIndexRequestNotFoundError(KnowledgeAssetRepositoryError):
+    def __init__(self, request_id: str):
+        super().__init__(f"knowledge asset index request not found: {request_id}")
+        self.request_id = request_id
 
 
 class KnowledgeAssetRepository(ABC):
@@ -85,6 +105,39 @@ class KnowledgeAssetRepository(ABC):
     ) -> KnowledgeAsset:
         raise NotImplementedError
 
+    @abstractmethod
+    def begin_index_retry(
+        self,
+        asset_id: str,
+        request_id: str,
+        *,
+        started_at: datetime,
+    ) -> tuple[KnowledgeAssetIndexRequest, bool]:
+        """Atomically create a retry request and reset index_failed state."""
+
+        raise NotImplementedError
+
+    @abstractmethod
+    def finish_index_request(
+        self,
+        request_id: str,
+        status: KnowledgeAssetIndexRequestStatus,
+        *,
+        chunk_count: int,
+        omitted_chunk_count: int,
+        error_type: str | None,
+        error_message: str | None,
+        finished_at: datetime,
+    ) -> KnowledgeAssetIndexRequest:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_index_requests(
+        self,
+        asset_id: str,
+    ) -> list[KnowledgeAssetIndexRequest]:
+        raise NotImplementedError
+
 
 class InMemoryKnowledgeAssetRepository(KnowledgeAssetRepository):
     """Process-local asset repository used before MySQL is introduced."""
@@ -93,6 +146,7 @@ class InMemoryKnowledgeAssetRepository(KnowledgeAssetRepository):
         self._assets: dict[str, KnowledgeAsset] = {}
         self._content_hashes: dict[str, str] = {}
         self._source_versions: dict[tuple[str, int], str] = {}
+        self._index_requests: dict[str, KnowledgeAssetIndexRequest] = {}
         self._lock = RLock()
 
     def create(self, asset: KnowledgeAsset) -> None:
@@ -171,8 +225,6 @@ class InMemoryKnowledgeAssetRepository(KnowledgeAssetRepository):
         *,
         expected_status: KnowledgeAssetStatus,
     ) -> KnowledgeAsset:
-        from dataclasses import replace
-
         with self._lock:
             if asset_id not in self._assets:
                 raise KnowledgeAssetNotFoundError(asset_id)
@@ -186,3 +238,88 @@ class InMemoryKnowledgeAssetRepository(KnowledgeAssetRepository):
             updated = replace(current, status=status)
             self._assets[asset_id] = updated
             return deepcopy(updated)
+
+    def begin_index_retry(
+        self,
+        asset_id: str,
+        request_id: str,
+        *,
+        started_at: datetime,
+    ) -> tuple[KnowledgeAssetIndexRequest, bool]:
+        with self._lock:
+            existing = self._index_requests.get(request_id)
+            if existing is not None:
+                if existing.asset_id != asset_id:
+                    raise KnowledgeAssetIndexRequestConflictError(
+                        request_id,
+                        "request_id belongs to another asset",
+                    )
+                return deepcopy(existing), False
+            if asset_id not in self._assets:
+                raise KnowledgeAssetNotFoundError(asset_id)
+            current = self._assets[asset_id]
+            if current.status is not KnowledgeAssetStatus.INDEX_FAILED:
+                raise KnowledgeAssetStatusConflictError(
+                    asset_id,
+                    KnowledgeAssetStatus.INDEX_FAILED,
+                    current.status,
+                )
+            request = KnowledgeAssetIndexRequest(
+                request_id=request_id,
+                asset_id=asset_id,
+                status=KnowledgeAssetIndexRequestStatus.RUNNING,
+                chunk_count=0,
+                omitted_chunk_count=0,
+                error_type=None,
+                error_message=None,
+                started_at=started_at,
+            )
+            self._assets[asset_id] = replace(
+                current,
+                status=KnowledgeAssetStatus.PENDING_INDEX,
+            )
+            self._index_requests[request_id] = request
+            return deepcopy(request), True
+
+    def finish_index_request(
+        self,
+        request_id: str,
+        status: KnowledgeAssetIndexRequestStatus,
+        *,
+        chunk_count: int,
+        omitted_chunk_count: int,
+        error_type: str | None,
+        error_message: str | None,
+        finished_at: datetime,
+    ) -> KnowledgeAssetIndexRequest:
+        if status is KnowledgeAssetIndexRequestStatus.RUNNING:
+            raise ValueError("finished index request cannot remain running")
+        with self._lock:
+            current = self._index_requests.get(request_id)
+            if current is None:
+                raise KnowledgeAssetIndexRequestNotFoundError(request_id)
+            if current.status is not KnowledgeAssetIndexRequestStatus.RUNNING:
+                return deepcopy(current)
+            updated = replace(
+                current,
+                status=status,
+                chunk_count=chunk_count,
+                omitted_chunk_count=omitted_chunk_count,
+                error_type=error_type,
+                error_message=error_message,
+                finished_at=finished_at,
+            )
+            self._index_requests[request_id] = updated
+            return deepcopy(updated)
+
+    def list_index_requests(
+        self,
+        asset_id: str,
+    ) -> list[KnowledgeAssetIndexRequest]:
+        with self._lock:
+            matching = [
+                deepcopy(request)
+                for request in self._index_requests.values()
+                if request.asset_id == asset_id
+            ]
+        return sorted(matching, key=lambda request: request.started_at)

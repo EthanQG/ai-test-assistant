@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from time import perf_counter
-from typing import Protocol, Sequence
+from typing import Callable, Protocol, Sequence
 
 from knowledge_assets import (
     KnowledgeAssetChunk,
     KnowledgeAssetChunkBuilder,
+    KnowledgeAssetIndexRequest,
+    KnowledgeAssetIndexRequestStatus,
     KnowledgeAssetStatus,
 )
 from repositories import (
@@ -28,9 +31,19 @@ class KnowledgeAssetVectorIndex(Protocol):
         vectors: Sequence[Sequence[float]],
     ) -> None: ...
 
+    def delete_asset(self, asset_id: str, asset_version: int) -> None: ...
+
 
 class KnowledgeAssetIndexingError(RuntimeError):
     """Raised when a pending KnowledgeAsset cannot be indexed."""
+
+
+class KnowledgeAssetIndexingBusyError(KnowledgeAssetIndexingError):
+    """Raised when the same retry request is still running."""
+
+
+class KnowledgeAssetIndexingRequestFinishedError(KnowledgeAssetIndexingError):
+    """Raised when a failed request_id is submitted again."""
 
 
 @dataclass(frozen=True)
@@ -41,6 +54,15 @@ class KnowledgeAssetIndexingResult:
     omitted_chunk_count: int
     duration_seconds: float
     already_indexed: bool = False
+    request_id: str | None = None
+    replayed_request: bool = False
+
+
+@dataclass(frozen=True)
+class KnowledgeAssetRetirementResult:
+    asset_id: str
+    status: KnowledgeAssetStatus
+    vector_cleanup_completed: bool
 
 
 class KnowledgeAssetIndexingService:
@@ -53,11 +75,13 @@ class KnowledgeAssetIndexingService:
         vector_index: KnowledgeAssetVectorIndex,
         *,
         chunk_builder: KnowledgeAssetChunkBuilder | None = None,
+        clock: Callable[[], datetime] | None = None,
     ):
         self._asset_repository = asset_repository
         self._embedding_service = embedding_service
         self._vector_index = vector_index
         self._chunk_builder = chunk_builder or KnowledgeAssetChunkBuilder()
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def index_asset(self, asset_id: str) -> KnowledgeAssetIndexingResult:
         started_at = perf_counter()
@@ -118,6 +142,151 @@ class KnowledgeAssetIndexingService:
             chunk_count=len(build_result.chunks),
             omitted_chunk_count=build_result.omitted_count,
             duration_seconds=perf_counter() - started_at,
+        )
+
+    def retry_failed_asset(
+        self,
+        asset_id: str,
+        request_id: str,
+    ) -> KnowledgeAssetIndexingResult:
+        started_at = self._clock()
+        request, created = self._asset_repository.begin_index_retry(
+            asset_id,
+            request_id,
+            started_at=started_at,
+        )
+        if not created:
+            return self._replay_index_request(request)
+
+        try:
+            result = self.index_asset(asset_id)
+        except Exception as exc:
+            try:
+                self._asset_repository.finish_index_request(
+                    request_id,
+                    KnowledgeAssetIndexRequestStatus.FAILED,
+                    chunk_count=0,
+                    omitted_chunk_count=0,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    finished_at=self._clock(),
+                )
+            except Exception as audit_exc:
+                raise KnowledgeAssetIndexingError(
+                    "knowledge asset indexing failed and its retry audit "
+                    f"could not be saved: {type(audit_exc).__name__}"
+                ) from exc
+            raise
+
+        self._asset_repository.finish_index_request(
+            request_id,
+            KnowledgeAssetIndexRequestStatus.SUCCEEDED,
+            chunk_count=result.chunk_count,
+            omitted_chunk_count=result.omitted_chunk_count,
+            error_type=None,
+            error_message=None,
+            finished_at=self._clock(),
+        )
+        return KnowledgeAssetIndexingResult(
+            asset_id=result.asset_id,
+            status=result.status,
+            chunk_count=result.chunk_count,
+            omitted_chunk_count=result.omitted_chunk_count,
+            duration_seconds=result.duration_seconds,
+            request_id=request_id,
+        )
+
+    def retire_asset(
+        self,
+        asset_id: str,
+    ) -> KnowledgeAssetRetirementResult:
+        asset = self._asset_repository.get(asset_id)
+        if asset.status is KnowledgeAssetStatus.INDEXED:
+            asset = self._asset_repository.update_status(
+                asset_id,
+                KnowledgeAssetStatus.RETIRED,
+                expected_status=KnowledgeAssetStatus.INDEXED,
+            )
+        elif asset.status is not KnowledgeAssetStatus.RETIRED:
+            raise KnowledgeAssetIndexingError(
+                "only indexed knowledge assets can be retired"
+            )
+        try:
+            self._vector_index.delete_asset(
+                asset.asset_id,
+                asset.asset_version,
+            )
+        except Exception as exc:
+            raise KnowledgeAssetIndexingError(
+                "knowledge asset was retired but vector cleanup failed: "
+                f"{type(exc).__name__}"
+            ) from exc
+        return KnowledgeAssetRetirementResult(
+            asset_id=asset.asset_id,
+            status=KnowledgeAssetStatus.RETIRED,
+            vector_cleanup_completed=True,
+        )
+
+    def _replay_index_request(
+        self,
+        request: KnowledgeAssetIndexRequest,
+    ) -> KnowledgeAssetIndexingResult:
+        if request.status is KnowledgeAssetIndexRequestStatus.SUCCEEDED:
+            return KnowledgeAssetIndexingResult(
+                asset_id=request.asset_id,
+                status=KnowledgeAssetStatus.INDEXED,
+                chunk_count=request.chunk_count,
+                omitted_chunk_count=request.omitted_chunk_count,
+                duration_seconds=0.0,
+                already_indexed=True,
+                request_id=request.request_id,
+                replayed_request=True,
+            )
+        if request.status is KnowledgeAssetIndexRequestStatus.FAILED:
+            raise KnowledgeAssetIndexingRequestFinishedError(
+                "index retry request already failed; use a new request_id"
+            )
+
+        asset = self._asset_repository.get(request.asset_id)
+        if asset.status is KnowledgeAssetStatus.INDEXED:
+            recovered = self._asset_repository.finish_index_request(
+                request.request_id,
+                KnowledgeAssetIndexRequestStatus.SUCCEEDED,
+                chunk_count=request.chunk_count,
+                omitted_chunk_count=request.omitted_chunk_count,
+                error_type=None,
+                error_message=None,
+                finished_at=self._clock(),
+            )
+            return KnowledgeAssetIndexingResult(
+                asset_id=request.asset_id,
+                status=KnowledgeAssetStatus.INDEXED,
+                chunk_count=recovered.chunk_count,
+                omitted_chunk_count=recovered.omitted_chunk_count,
+                duration_seconds=0.0,
+                already_indexed=True,
+                request_id=request.request_id,
+                replayed_request=True,
+            )
+        if asset.status is KnowledgeAssetStatus.INDEX_FAILED:
+            self._asset_repository.finish_index_request(
+                request.request_id,
+                KnowledgeAssetIndexRequestStatus.FAILED,
+                chunk_count=request.chunk_count,
+                omitted_chunk_count=request.omitted_chunk_count,
+                error_type="RecoveredIndexFailure",
+                error_message=(
+                    "asset was already index_failed when a running retry "
+                    "request was recovered"
+                ),
+                finished_at=self._clock(),
+            )
+            raise KnowledgeAssetIndexingRequestFinishedError(
+                "index retry request was recovered as failed; "
+                "use a new request_id"
+            )
+        raise KnowledgeAssetIndexingBusyError(
+            "index retry request is still running"
         )
 
     @staticmethod

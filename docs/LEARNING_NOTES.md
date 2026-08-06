@@ -4781,3 +4781,86 @@ Human-in-the-loop应只处理少数高影响不确定项：
 - [ ] 能解释为什么图文解析必须早于ContextBuilder
 - [ ] 能说明哪些不确定项需要人工确认，哪些不应打扰用户
 - [ ] 能说明图文解析需要哪些离线评测指标
+
+## 四十三、阶段2.14.5：为什么失败重试需要request_id和补偿
+
+### 43.1 这次解决了什么
+
+以前索引失败后，MySQL会留下`index_failed`，但系统没有一个受控入口说明“谁发起了哪次重试、是否执行过、结果是什么”。
+现在每次重试都携带`request_id`并保存审计记录。
+
+```text
+index_failed资产
+→ request_id创建running记录
+→ 资产切回pending_index
+→ Embedding和Milvus upsert
+→ succeeded或failed
+```
+
+### 43.2 request_id和asset_id有什么区别
+
+- `asset_id`标识哪一份知识资产；
+- `request_id`标识用户或系统发起的某一次重试动作。
+
+同一资产可以先后发生多次重试，因此可能对应多个`request_id`。同一个`request_id`只能属于一份资产，
+重复提交成功请求时只返回原结果，不会重复访问外部服务。
+
+### 43.3 为什么失败后必须换request_id
+
+如果失败请求可以直接再次执行，就无法分辨这是网络重放、用户重复点击，还是一次真正的新尝试。
+当前规则是：失败记录保持不变，新尝试使用新`request_id`。这样每一次尝试都有独立、可追踪的结果。
+
+### 43.4 为什么MySQL和Milvus不能一起回滚
+
+它们是两个独立系统，没有共享事务。项目不假装能够做到跨库原子提交，而是：
+
+1. 用MySQL状态作为权威判断；
+2. 用稳定Chunk ID让Milvus upsert可以安全重放；
+3. 用请求审计记录失败；
+4. 用显式重试或清理完成补偿。
+
+这叫可补偿一致性，不等于Exactly Once。
+
+### 43.5 为什么停用时先改MySQL
+
+如果先删除Milvus、再修改MySQL，而MySQL更新失败，资产仍被视为`indexed`，但暂时搜不到。反过来先标记
+`retired`，即使删除向量失败，检索回查MySQL时也会拒绝它，不会让过期规则继续污染新任务。
+
+### 43.6 两张相关表分别保存什么
+
+| 表 | 保存内容 | 作用 |
+|---|---|---|
+| `knowledge_assets` | 完整知识资产JSON、状态、版本、哈希和摘要 | 权威业务内容 |
+| `knowledge_asset_index_requests` | 每次重试的请求ID、状态、错误和时间 | 幂等与补偿审计 |
+
+Milvus仍只保存向量、短检索文本和关联元数据，不替代这两张MySQL表。
+
+### 43.7 代码阅读顺序
+
+1. `knowledge_assets/indexing.py`：请求状态和审计对象。
+2. `repositories/knowledge_asset_repository.py`：内存事务语义。
+3. `repositories/mysql_knowledge_asset_repository.py`：行锁、状态更新和审计插入。
+4. `application/knowledge_asset_indexing_service.py`：重试、重放和停用用例。
+5. `services/milvus_asset_index.py`：定向删除向量。
+
+### 43.8 面试问题与参考答案
+
+**问题1：如何防止用户重复点击导致重复索引？**
+
+参考答案：每次动作携带request_id并持久化。相同request_id成功后再次提交只返回已保存结果；运行中返回忙；失败后要求新request_id。Milvus使用稳定Chunk ID upsert，提供第二层重复保护。
+
+**问题2：MySQL成功但Milvus失败怎么办？**
+
+参考答案：资产回到index_failed并保存失败审计，之后使用新request_id显式重试。MySQL是权威状态，未indexed的资产不会被可信检索。
+
+**问题3：停用资产时向量删除失败会不会继续被召回？**
+
+参考答案：Milvus可能暂时仍命中，但检索服务会批量回查MySQL并拒绝retired资产，因此不会进入最终可信上下文。向量删除可稍后重试。
+
+### 43.9 掌握检查
+
+- [ ] 能区分asset_id与request_id
+- [ ] 能解释为什么同一失败请求不能直接重复执行
+- [ ] 能说明稳定Chunk ID如何配合upsert
+- [ ] 能说明为什么停用时先写MySQL
+- [ ] 能准确说明本阶段没有后台自动补偿和页面入口

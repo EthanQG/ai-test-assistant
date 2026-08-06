@@ -4,11 +4,14 @@ from datetime import datetime, timezone
 import pytest
 
 from application import (
+    KnowledgeAssetIndexingBusyError,
     KnowledgeAssetIndexingError,
+    KnowledgeAssetIndexingRequestFinishedError,
     KnowledgeAssetIndexingService,
 )
 from knowledge_assets import (
     KnowledgeAssetAdmissionPolicy,
+    KnowledgeAssetIndexRequestStatus,
     KnowledgeAssetStatus,
 )
 from repositories import InMemoryKnowledgeAssetRepository
@@ -20,8 +23,10 @@ class _FakeEmbeddingService:
         self.vectors = vectors
         self.error = error
         self.texts = []
+        self.calls = 0
 
     def embed_batch(self, texts):
+        self.calls += 1
         self.texts = list(texts)
         if self.error:
             raise self.error
@@ -34,6 +39,8 @@ class _FakeVectorIndex:
         self.dimension = None
         self.chunks = []
         self.vectors = []
+        self.deletions = []
+        self.delete_error = None
 
     def ensure_collection(self, vector_dimension):
         self.dimension = vector_dimension
@@ -43,6 +50,11 @@ class _FakeVectorIndex:
     def upsert(self, chunks, vectors):
         self.chunks = list(chunks)
         self.vectors = [list(vector) for vector in vectors]
+
+    def delete_asset(self, asset_id, asset_version):
+        self.deletions.append((asset_id, asset_version))
+        if self.delete_error:
+            raise self.delete_error
 
 
 def _asset(asset_id="asset-index-service"):
@@ -168,3 +180,165 @@ def test_indexing_service_rejects_failed_asset_until_retry_stage_exists():
             _FakeEmbeddingService(),
             _FakeVectorIndex(),
         ).index_asset(asset.asset_id)
+
+
+def test_retry_failed_asset_records_success_and_replays_without_external_calls():
+    asset = replace(_asset(), status=KnowledgeAssetStatus.INDEX_FAILED)
+    repository = _repository(asset)
+    embedding = _FakeEmbeddingService()
+    vector_index = _FakeVectorIndex()
+    clock_values = iter(
+        [
+            datetime(2026, 8, 6, 1, 0, tzinfo=timezone.utc),
+            datetime(2026, 8, 6, 1, 1, tzinfo=timezone.utc),
+            datetime(2026, 8, 6, 1, 2, tzinfo=timezone.utc),
+        ]
+    )
+    service = KnowledgeAssetIndexingService(
+        repository,
+        embedding,
+        vector_index,
+        clock=lambda: next(clock_values),
+    )
+
+    first = service.retry_failed_asset(asset.asset_id, "retry-request-1")
+    first_embedding_calls = embedding.calls
+    first_chunk_ids = [chunk.chunk_id for chunk in vector_index.chunks]
+    replayed = service.retry_failed_asset(asset.asset_id, "retry-request-1")
+
+    assert first.status is KnowledgeAssetStatus.INDEXED
+    assert first.request_id == "retry-request-1"
+    assert replayed.replayed_request is True
+    assert replayed.chunk_count == first.chunk_count
+    assert embedding.calls == first_embedding_calls
+    assert [chunk.chunk_id for chunk in vector_index.chunks] == first_chunk_ids
+    request = repository.list_index_requests(asset.asset_id)[0]
+    assert request.status is KnowledgeAssetIndexRequestStatus.SUCCEEDED
+    assert request.chunk_count == first.chunk_count
+
+
+def test_retry_failure_is_audited_and_requires_a_new_request_id():
+    asset = replace(_asset(), status=KnowledgeAssetStatus.INDEX_FAILED)
+    repository = _repository(asset)
+    embedding = _FakeEmbeddingService(error=RuntimeError("unavailable"))
+    service = KnowledgeAssetIndexingService(
+        repository,
+        embedding,
+        _FakeVectorIndex(),
+    )
+
+    with pytest.raises(KnowledgeAssetIndexingError):
+        service.retry_failed_asset(asset.asset_id, "failed-request")
+    with pytest.raises(KnowledgeAssetIndexingRequestFinishedError):
+        service.retry_failed_asset(asset.asset_id, "failed-request")
+
+    request = repository.list_index_requests(asset.asset_id)[0]
+    assert request.status is KnowledgeAssetIndexRequestStatus.FAILED
+    assert request.error_type == "KnowledgeAssetIndexingError"
+    assert repository.get(asset.asset_id).status is KnowledgeAssetStatus.INDEX_FAILED
+
+    embedding.error = None
+    recovered = service.retry_failed_asset(asset.asset_id, "new-request")
+    assert recovered.status is KnowledgeAssetStatus.INDEXED
+
+
+def test_retry_running_request_is_not_executed_twice():
+    asset = replace(_asset(), status=KnowledgeAssetStatus.INDEX_FAILED)
+    repository = _repository(asset)
+    repository.begin_index_retry(
+        asset.asset_id,
+        "running-request",
+        started_at=datetime.now(timezone.utc),
+    )
+    embedding = _FakeEmbeddingService()
+
+    with pytest.raises(KnowledgeAssetIndexingBusyError):
+        KnowledgeAssetIndexingService(
+            repository,
+            embedding,
+            _FakeVectorIndex(),
+        ).retry_failed_asset(asset.asset_id, "running-request")
+
+    assert embedding.texts == []
+
+
+def test_retry_repairs_running_audit_after_asset_was_marked_failed():
+    asset = replace(_asset(), status=KnowledgeAssetStatus.INDEX_FAILED)
+    repository = _repository(asset)
+    repository.begin_index_retry(
+        asset.asset_id,
+        "interrupted-request",
+        started_at=datetime.now(timezone.utc),
+    )
+    repository.update_status(
+        asset.asset_id,
+        KnowledgeAssetStatus.INDEX_FAILED,
+        expected_status=KnowledgeAssetStatus.PENDING_INDEX,
+    )
+
+    with pytest.raises(KnowledgeAssetIndexingRequestFinishedError):
+        KnowledgeAssetIndexingService(
+            repository,
+            _FakeEmbeddingService(),
+            _FakeVectorIndex(),
+        ).retry_failed_asset(asset.asset_id, "interrupted-request")
+
+    request = repository.list_index_requests(asset.asset_id)[0]
+    assert request.status is KnowledgeAssetIndexRequestStatus.FAILED
+    assert request.error_type == "RecoveredIndexFailure"
+
+
+def test_retire_asset_marks_mysql_first_and_deletes_vectors():
+    asset = replace(_asset(), status=KnowledgeAssetStatus.INDEXED)
+    repository = _repository(asset)
+
+    class _AssertingVectorIndex(_FakeVectorIndex):
+        def delete_asset(self, asset_id, asset_version):
+            assert repository.get(asset_id).status is KnowledgeAssetStatus.RETIRED
+            super().delete_asset(asset_id, asset_version)
+
+    vector_index = _AssertingVectorIndex()
+    result = KnowledgeAssetIndexingService(
+        repository,
+        _FakeEmbeddingService(),
+        vector_index,
+    ).retire_asset(asset.asset_id)
+
+    assert result.status is KnowledgeAssetStatus.RETIRED
+    assert result.vector_cleanup_completed is True
+    assert vector_index.deletions == [(asset.asset_id, asset.asset_version)]
+
+
+def test_retire_asset_cleanup_can_be_retried_after_milvus_failure():
+    asset = replace(_asset(), status=KnowledgeAssetStatus.INDEXED)
+    repository = _repository(asset)
+    vector_index = _FakeVectorIndex()
+    vector_index.delete_error = RuntimeError("milvus unavailable")
+    service = KnowledgeAssetIndexingService(
+        repository,
+        _FakeEmbeddingService(),
+        vector_index,
+    )
+
+    with pytest.raises(KnowledgeAssetIndexingError, match="cleanup failed"):
+        service.retire_asset(asset.asset_id)
+
+    assert repository.get(asset.asset_id).status is KnowledgeAssetStatus.RETIRED
+    vector_index.delete_error = None
+    result = service.retire_asset(asset.asset_id)
+    assert result.vector_cleanup_completed is True
+    assert len(vector_index.deletions) == 2
+
+
+def test_retire_asset_rejects_non_indexed_asset_without_vector_deletion():
+    asset = _asset()
+    vector_index = _FakeVectorIndex()
+
+    with pytest.raises(KnowledgeAssetIndexingError, match="only indexed"):
+        KnowledgeAssetIndexingService(
+            _repository(asset),
+            _FakeEmbeddingService(),
+            vector_index,
+        ).retire_asset(asset.asset_id)
+
+    assert vector_index.deletions == []

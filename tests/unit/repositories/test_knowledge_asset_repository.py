@@ -3,11 +3,16 @@ from datetime import datetime, timezone
 
 import pytest
 
-from knowledge_assets import KnowledgeAssetAdmissionPolicy, KnowledgeAssetStatus
+from knowledge_assets import (
+    KnowledgeAssetAdmissionPolicy,
+    KnowledgeAssetIndexRequestStatus,
+    KnowledgeAssetStatus,
+)
 from repositories import (
     InMemoryKnowledgeAssetRepository,
     KnowledgeAssetAlreadyExistsError,
     KnowledgeAssetNotFoundError,
+    KnowledgeAssetIndexRequestConflictError,
     KnowledgeAssetStatusConflictError,
 )
 
@@ -151,3 +156,93 @@ def test_repository_rejects_stale_status_update():
             KnowledgeAssetStatus.RETIRED,
             expected_status=KnowledgeAssetStatus.INDEXED,
         )
+
+
+def test_repository_index_retry_is_atomic_idempotent_and_auditable():
+    repository = InMemoryKnowledgeAssetRepository()
+    asset = replace(_make_asset(), status=KnowledgeAssetStatus.INDEX_FAILED)
+    repository.create(asset)
+    started_at = datetime(2026, 8, 6, 2, 0, tzinfo=timezone.utc)
+
+    request, created = repository.begin_index_retry(
+        asset.asset_id,
+        "request-1",
+        started_at=started_at,
+    )
+    replayed, replay_created = repository.begin_index_retry(
+        asset.asset_id,
+        "request-1",
+        started_at=started_at,
+    )
+
+    assert created is True
+    assert replay_created is False
+    assert replayed == request
+    assert request.status is KnowledgeAssetIndexRequestStatus.RUNNING
+    assert repository.get(asset.asset_id).status is KnowledgeAssetStatus.PENDING_INDEX
+    assert repository.list_index_requests(asset.asset_id) == [request]
+
+    finished = repository.finish_index_request(
+        request.request_id,
+        KnowledgeAssetIndexRequestStatus.SUCCEEDED,
+        chunk_count=8,
+        omitted_chunk_count=2,
+        error_type=None,
+        error_message=None,
+        finished_at=datetime(2026, 8, 6, 2, 1, tzinfo=timezone.utc),
+    )
+    duplicate_finish = repository.finish_index_request(
+        request.request_id,
+        KnowledgeAssetIndexRequestStatus.FAILED,
+        chunk_count=0,
+        omitted_chunk_count=0,
+        error_type="ignored",
+        error_message="ignored",
+        finished_at=datetime(2026, 8, 6, 2, 2, tzinfo=timezone.utc),
+    )
+
+    assert finished.status is KnowledgeAssetIndexRequestStatus.SUCCEEDED
+    assert finished.chunk_count == 8
+    assert duplicate_finish == finished
+
+
+def test_repository_retry_request_id_cannot_be_reused_for_another_asset():
+    first = replace(_make_asset("asset-retry-1"), status=KnowledgeAssetStatus.INDEX_FAILED)
+    second = replace(
+        first,
+        asset_id="asset-retry-2",
+        content_hash="c" * 64,
+        source_task_id="task-retry-2",
+    )
+    repository = InMemoryKnowledgeAssetRepository()
+    repository.create(first)
+    repository.create(second)
+    started_at = datetime(2026, 8, 6, 2, 0, tzinfo=timezone.utc)
+    repository.begin_index_retry(
+        first.asset_id,
+        "shared-request",
+        started_at=started_at,
+    )
+
+    with pytest.raises(KnowledgeAssetIndexRequestConflictError):
+        repository.begin_index_retry(
+            second.asset_id,
+            "shared-request",
+            started_at=started_at,
+        )
+
+
+def test_repository_rejects_retry_for_asset_that_has_not_failed():
+    repository = InMemoryKnowledgeAssetRepository()
+    asset = _make_asset()
+    repository.create(asset)
+
+    with pytest.raises(KnowledgeAssetStatusConflictError):
+        repository.begin_index_retry(
+            asset.asset_id,
+            "invalid-retry",
+            started_at=datetime.now(timezone.utc),
+        )
+
+    assert repository.get(asset.asset_id).status is KnowledgeAssetStatus.PENDING_INDEX
+    assert repository.list_index_requests(asset.asset_id) == []

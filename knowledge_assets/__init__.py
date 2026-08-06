@@ -11,6 +11,8 @@ from .indexing import (
     KnowledgeAssetChunkBuilder,
     KnowledgeAssetChunkBuildResult,
     KnowledgeAssetChunkType,
+    KnowledgeAssetIndexRequest,
+    KnowledgeAssetIndexRequestStatus,
 )
 from .policy import (
     KnowledgeAssetAdmissionError,
@@ -35,6 +37,8 @@ __all__ = [
     "KnowledgeAssetChunkBuilder",
     "KnowledgeAssetChunkBuildResult",
     "KnowledgeAssetChunkType",
+    "KnowledgeAssetIndexRequest",
+    "KnowledgeAssetIndexRequestStatus",
     "KnowledgeAssetAdmissionError",
     "KnowledgeAssetAdmissionPolicy",
     "KnowledgeAssetStatus",

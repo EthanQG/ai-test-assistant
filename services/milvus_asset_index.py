@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass
 from typing import Any, Sequence
 
@@ -184,6 +185,26 @@ class MilvusKnowledgeAssetIndex:
         if not isinstance(result, list) or not result:
             return []
         return [self._parse_hit(hit) for hit in result[0]]
+
+    def delete_asset(self, asset_id: str, asset_version: int) -> None:
+        cleaned_asset_id = asset_id.strip()
+        if not cleaned_asset_id:
+            raise ValueError("asset_id cannot be empty")
+        if asset_version <= 0:
+            raise ValueError("asset_version must be positive")
+        client, _, _ = self._dependencies()
+        if not client.has_collection(
+            collection_name=self._settings.collection_name
+        ):
+            return
+        client.delete(
+            collection_name=self._settings.collection_name,
+            filter=(
+                f"asset_id == {json.dumps(cleaned_asset_id)} "
+                f"and asset_version == {asset_version}"
+            ),
+        )
+        client.flush(collection_name=self._settings.collection_name)
 
     @staticmethod
     def _parse_hit(hit: Any) -> KnowledgeAssetVectorHit:

@@ -267,9 +267,14 @@ Milvus 是语义检索索引，负责保存：
 
 ### 2.14.5 发布、去重和失败重试
 
-- request_id 防止重复发布
-- content_hash 防止相同内容重复建资产
-- Embedding 或 Milvus 失败时保留 MySQL 资产并允许重试
+- **已完成（2026-08-06）**
+- 只有`index_failed`资产可以通过显式入口重试，普通资产不能绕过状态约束
+- `request_id`记录`running/succeeded/failed`，相同请求重放不会重复调用外部服务
+- 重试开始时在同一MySQL事务内创建审计记录并把资产切回`pending_index`
+- Embedding或Milvus失败时资产回到`index_failed`，并保存有界错误摘要
+- 稳定Chunk ID与upsert保证重试不会产生另一组重复向量
+- 停用时MySQL先标记`retired`，随后定向清理Milvus；清理失败可再次补偿
+- 页面入口、后台补偿任务和真实跨服务故障演练留到后续服务化阶段
 
 ## 2.15 图文PRD理解、上下文工程与可观测性
 

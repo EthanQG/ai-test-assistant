@@ -61,8 +61,9 @@
 | 阶段 2.14.2 | 已完成 | 版本化资产快照、MySQL权威表、唯一索引和Repository实现 | `f88a426` |
 | 阶段 2.14.3 | 已完成 | 有界语义Chunk、批量Embedding和Milvus V2索引写入边界 | `66f12fa` |
 | 阶段 2.14.4 | 已完成 | Milvus V2阈值召回、资产聚合、MySQL批量回查和来源验证 | `aa2abd9` |
-| 图文PRD路线图校正 | 已完成（仅文档） | 将结构化文档、OCR、多模态理解和关键问题限流提升为P0 | 本次提交 |
-| 阶段 2.14 | 进行中 | KnowledgeAsset准入、MySQL权威存储和Milvus V2索引闭环 | - |
+| 图文PRD路线图校正 | 已完成（仅文档） | 将结构化文档、OCR、多模态理解和关键问题限流提升为P0 | `ec633e7` |
+| 阶段 2.14.5 | 已完成 | 索引失败显式重试、request_id幂等审计和停用向量清理 | 本次提交 |
+| 阶段 2.14 | 已完成 | KnowledgeAsset准入、MySQL权威存储、Milvus V2索引与补偿闭环 | - |
 | 阶段 2.15 | 规划中 | 图文PRD理解、关键问题限流、ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
@@ -2811,3 +2812,76 @@ git diff --check
 ```
 
 本次没有修改生产代码、测试代码、页面或依赖配置，也没有调用真实外部服务。
+
+## 阶段 2.14.5：索引失败重试与补偿审计
+
+### 本阶段目标
+
+阶段2.14.3已经使用稳定Chunk ID和upsert建立了安全重放基础，但`index_failed`资产没有正式重试入口，
+重复请求也缺少持久化审计。阶段2.14.5补齐失败恢复和停用清理边界，不增加页面或后台任务。
+
+### 实际实现
+
+- 增加`KnowledgeAssetIndexRequest`及`running/succeeded/failed`状态
+- 新增MySQL表`knowledge_asset_index_requests`，保存请求ID、资产、结果、Chunk数量、错误摘要和起止时间
+- Repository提供`begin_index_retry()`、`finish_index_request()`和`list_index_requests()`
+- MySQL在同一事务内锁定资产、创建重试审计并把`index_failed`切回`pending_index`
+- Application Service提供显式`retry_failed_asset(asset_id, request_id)`用例
+- 已成功请求重放时直接返回已有结果，不再次调用Embedding或Milvus
+- 已失败请求重放时明确拒绝并要求新`request_id`，避免同一批动作重复消费
+- 中断后若资产已经是`indexed`或`index_failed`，重放会修复仍为`running`的请求审计
+- 资产停用时先将MySQL状态改为`retired`，再按资产ID和版本删除Milvus V2向量
+- Milvus清理失败不会恢复资产为可检索状态，可再次调用停用用例补偿清理
+
+### 为什么不做跨库事务
+
+MySQL和Milvus无法共享同一个本地ACID事务。项目采用“权威状态 + 幂等副作用 + 可审计补偿”：
+
+```text
+MySQL状态决定资产是否可信
++ 稳定Chunk ID保证Milvus upsert可重放
++ request_id保证同一用户动作不重复执行
++ 失败审计说明哪一步需要补偿
+```
+
+检索侧仍会回查MySQL状态，所以即使Milvus暂时残留已停用向量，也不会把它返回为可信资产。
+
+### 测试证据
+
+自动化测试覆盖：
+
+- 成功重试和同一请求重放不重复调用外部服务
+- 失败请求审计、新请求恢复和运行中请求保护
+- Repository重试状态变化、请求归属冲突和重复结束保护
+- MySQL同事务更新资产与创建请求、行锁读取和请求结果写入
+- Milvus按`asset_id + asset_version`定向删除及集合不存在时幂等返回
+- MySQL先`retired`、Milvus后清理，以及清理失败后的再次补偿
+- 可选真实MySQL重试审计集成测试，默认不访问外部数据库
+
+完整验证：
+
+```text
+python -m pytest -q
+353 passed，9 skipped，共收集362项
+
+python -m unittest discover -s tests -v
+260 tests，OK，6 skipped
+
+python -m compileall -q agent application knowledge_assets repositories services utils views tests main.py
+通过
+
+git diff --check
+通过
+```
+
+### 范围边界
+
+本阶段没有修改Streamlit、AgentState、Orchestrator、Prompt、节点顺序和当前KnowledgeRetriever，
+也没有实现自动重试Worker、FastAPI、SSE或LLM重排。页面仍未提供知识资产管理按钮。
+进程若在创建`running`请求后、真正开始索引前崩溃，仍需未来租约或运维恢复策略；Milvus全量孤儿
+扫描清理器也未实现，本阶段只提供已知资产版本的定向停用清理。
+
+### 下一步
+
+阶段2.15.1建立统一`DocumentContent`，先完整表达段落、表格、图片、页码、来源和解析警告，
+再逐步实现PDF/DOCX结构化解析、OCR和受控多模态理解。

@@ -18,9 +18,11 @@ class _FakeMilvusClient:
         self.flushes = []
         self.search_result = []
         self.search_calls = []
+        self.deletes = []
+        self.collection_exists = True
 
     def has_collection(self, collection_name):
-        return True
+        return self.collection_exists
 
     def load_collection(self, collection_name):
         self.loaded.append(collection_name)
@@ -34,6 +36,9 @@ class _FakeMilvusClient:
     def search(self, **kwargs):
         self.search_calls.append(kwargs)
         return self.search_result
+
+    def delete(self, **kwargs):
+        self.deletes.append(kwargs)
 
 
 def _chunk():
@@ -99,3 +104,35 @@ def test_milvus_v2_search_restores_stable_asset_association():
     assert hits[0].score == 0.87
     assert client.search_calls[0]["limit"] == 10
     assert client.search_calls[0]["search_params"]["metric_type"] == "COSINE"
+
+
+def test_milvus_v2_deletes_only_target_asset_version():
+    client = _FakeMilvusClient()
+    index = MilvusKnowledgeAssetIndex(
+        MilvusAssetIndexSettings("http://milvus", "knowledge_assets_v2"),
+        client=client,
+    )
+
+    index.delete_asset('asset-"quoted"', 3)
+
+    assert client.deletes == [
+        {
+            "collection_name": "knowledge_assets_v2",
+            "filter": 'asset_id == "asset-\\\"quoted\\\"" and asset_version == 3',
+        }
+    ]
+    assert client.flushes == ["knowledge_assets_v2"]
+
+
+def test_milvus_v2_delete_is_noop_when_collection_does_not_exist():
+    client = _FakeMilvusClient()
+    client.collection_exists = False
+    index = MilvusKnowledgeAssetIndex(
+        MilvusAssetIndexSettings("http://milvus", "knowledge_assets_v2"),
+        client=client,
+    )
+
+    index.delete_asset("asset-missing", 1)
+
+    assert client.deletes == []
+    assert client.flushes == []

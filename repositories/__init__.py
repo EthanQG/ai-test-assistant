@@ -19,12 +19,15 @@ from .mysql_task_repository import (
 from .knowledge_asset_repository import (
     InMemoryKnowledgeAssetRepository,
     KnowledgeAssetAlreadyExistsError,
+    KnowledgeAssetIndexRequestConflictError,
+    KnowledgeAssetIndexRequestNotFoundError,
     KnowledgeAssetNotFoundError,
     KnowledgeAssetRepository,
     KnowledgeAssetRepositoryError,
     KnowledgeAssetStatusConflictError,
 )
 from .mysql_knowledge_asset_repository import (
+    CREATE_KNOWLEDGE_ASSET_INDEX_REQUESTS_TABLE_SQL,
     CREATE_KNOWLEDGE_ASSETS_TABLE_SQL,
     MySQLKnowledgeAssetRepository,
 )
@@ -33,11 +36,14 @@ __all__ = [
     "InMemoryTaskRepository",
     "InMemoryKnowledgeAssetRepository",
     "KnowledgeAssetAlreadyExistsError",
+    "KnowledgeAssetIndexRequestConflictError",
+    "KnowledgeAssetIndexRequestNotFoundError",
     "KnowledgeAssetNotFoundError",
     "KnowledgeAssetRepository",
     "KnowledgeAssetRepositoryError",
     "KnowledgeAssetStatusConflictError",
     "CREATE_KNOWLEDGE_ASSETS_TABLE_SQL",
+    "CREATE_KNOWLEDGE_ASSET_INDEX_REQUESTS_TABLE_SQL",
     "MySQLKnowledgeAssetRepository",
     "MySQLSettings",
     "MySQLTaskRepository",

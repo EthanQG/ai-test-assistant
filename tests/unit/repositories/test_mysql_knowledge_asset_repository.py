@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -7,12 +8,14 @@ import pytest
 from application.bootstrap import build_knowledge_asset_repository
 from knowledge_assets import (
     KnowledgeAssetAdmissionPolicy,
+    KnowledgeAssetIndexRequestStatus,
     KnowledgeAssetSnapshotSerializer,
     KnowledgeAssetStatus,
 )
 from repositories import (
     KnowledgeAssetAlreadyExistsError,
     KnowledgeAssetNotFoundError,
+    KnowledgeAssetIndexRequestConflictError,
     KnowledgeAssetRepositoryError,
     KnowledgeAssetStatusConflictError,
     MySQLKnowledgeAssetRepository,
@@ -28,6 +31,7 @@ class _FakeCursor:
     def __init__(self):
         self.executed = []
         self.fetchone_result = None
+        self.fetchone_results = []
         self.fetchall_result = []
         self.fail_exception = None
         self.closed = False
@@ -40,6 +44,8 @@ class _FakeCursor:
             raise self.fail_exception
 
     def fetchone(self):
+        if self.fetchone_results:
+            return self.fetchone_results.pop(0)
         return self.fetchone_result
 
     def fetchall(self):
@@ -92,15 +98,38 @@ def _row(asset):
     return {"asset_json": KnowledgeAssetSnapshotSerializer.to_json(asset)}
 
 
+def _request_row(
+    *,
+    request_id="request-mysql-1",
+    asset_id="asset-mysql-1",
+    status="running",
+    finished_at=None,
+):
+    return {
+        "request_id": request_id,
+        "asset_id": asset_id,
+        "status": status,
+        "chunk_count": 0,
+        "omitted_chunk_count": 0,
+        "error_type": None,
+        "error_message": None,
+        "started_at": datetime(2026, 8, 6, 1, 0),
+        "finished_at": finished_at,
+    }
+
+
 def test_mysql_asset_repository_initializes_authoritative_table():
     connection = _FakeConnection()
 
     _repository(connection).initialize_schema()
 
-    sql = connection.cursor_instance.executed[0][0]
-    assert "CREATE TABLE IF NOT EXISTS knowledge_assets" in sql
-    assert "uq_knowledge_assets_content_hash" in sql
-    assert "uq_knowledge_assets_source_version" in sql
+    asset_sql = connection.cursor_instance.executed[0][0]
+    request_sql = connection.cursor_instance.executed[1][0]
+    assert "CREATE TABLE IF NOT EXISTS knowledge_assets" in asset_sql
+    assert "uq_knowledge_assets_content_hash" in asset_sql
+    assert "uq_knowledge_assets_source_version" in asset_sql
+    assert "CREATE TABLE IF NOT EXISTS knowledge_asset_index_requests" in request_sql
+    assert "request_id VARCHAR(64) NOT NULL PRIMARY KEY" in request_sql
     assert connection.commits == 1
     assert connection.closed is True
 
@@ -258,6 +287,107 @@ def test_mysql_asset_repository_rejects_stale_status_update():
         )
 
     assert connection.rollbacks == 1
+
+
+def test_mysql_asset_repository_begins_retry_in_one_transaction():
+    connection = _FakeConnection()
+    failed_asset = replace(_asset(), status=KnowledgeAssetStatus.INDEX_FAILED)
+    connection.cursor_instance.fetchone_results = [_row(failed_asset), None]
+    started_at = datetime(2026, 8, 6, 1, 0, tzinfo=timezone.utc)
+
+    request, created = _repository(connection).begin_index_retry(
+        failed_asset.asset_id,
+        "request-mysql-1",
+        started_at=started_at,
+    )
+
+    statements = [sql for sql, _ in connection.cursor_instance.executed]
+    assert created is True
+    assert request.status is KnowledgeAssetIndexRequestStatus.RUNNING
+    assert any("UPDATE knowledge_assets" in sql for sql in statements)
+    assert any("INSERT INTO knowledge_asset_index_requests" in sql for sql in statements)
+    update_params = next(
+        params
+        for sql, params in connection.cursor_instance.executed
+        if "UPDATE knowledge_assets" in sql
+    )
+    assert json.loads(update_params[1])["asset"]["status"] == "pending_index"
+    assert connection.commits == 1
+
+
+def test_mysql_asset_repository_replays_existing_retry_without_mutation():
+    connection = _FakeConnection()
+    failed_asset = replace(_asset(), status=KnowledgeAssetStatus.INDEX_FAILED)
+    connection.cursor_instance.fetchone_results = [
+        _row(failed_asset),
+        _request_row(),
+    ]
+
+    request, created = _repository(connection).begin_index_retry(
+        failed_asset.asset_id,
+        "request-mysql-1",
+        started_at=datetime(2026, 8, 6, 1, 0, tzinfo=timezone.utc),
+    )
+
+    assert created is False
+    assert request.request_id == "request-mysql-1"
+    assert len(connection.cursor_instance.executed) == 2
+    assert connection.commits == 1
+
+
+def test_mysql_asset_repository_rejects_request_id_for_another_asset():
+    connection = _FakeConnection()
+    failed_asset = replace(_asset(), status=KnowledgeAssetStatus.INDEX_FAILED)
+    connection.cursor_instance.fetchone_results = [
+        _row(failed_asset),
+        _request_row(asset_id="another-asset"),
+    ]
+
+    with pytest.raises(KnowledgeAssetIndexRequestConflictError):
+        _repository(connection).begin_index_retry(
+            failed_asset.asset_id,
+            "request-mysql-1",
+            started_at=datetime.now(timezone.utc),
+        )
+
+    assert connection.rollbacks == 1
+
+
+def test_mysql_asset_repository_finishes_and_lists_retry_audit():
+    finish_connection = _FakeConnection()
+    finish_connection.cursor_instance.fetchone_result = _request_row()
+    finished_at = datetime(2026, 8, 6, 1, 1, tzinfo=timezone.utc)
+
+    finished = _repository(finish_connection).finish_index_request(
+        "request-mysql-1",
+        KnowledgeAssetIndexRequestStatus.SUCCEEDED,
+        chunk_count=6,
+        omitted_chunk_count=1,
+        error_type=None,
+        error_message=None,
+        finished_at=finished_at,
+    )
+
+    assert finished.status is KnowledgeAssetIndexRequestStatus.SUCCEEDED
+    assert finished.chunk_count == 6
+    assert any(
+        "UPDATE knowledge_asset_index_requests" in sql
+        for sql, _ in finish_connection.cursor_instance.executed
+    )
+    assert finish_connection.commits == 1
+
+    list_connection = _FakeConnection()
+    list_connection.cursor_instance.fetchall_result = [
+        _request_row(
+            status="succeeded",
+            finished_at=datetime(2026, 8, 6, 1, 1),
+        )
+    ]
+    requests = _repository(list_connection).list_index_requests(
+        "asset-mysql-1"
+    )
+    assert requests[0].status is KnowledgeAssetIndexRequestStatus.SUCCEEDED
+    assert requests[0].started_at.tzinfo is not None
 
 
 @patch("application.bootstrap.MySQLKnowledgeAssetRepository")

@@ -47,7 +47,8 @@
 
 当前 Agent 页面只接入了 Milvus 历史资产检索，尚未接入“用户确认后沉淀知识资产”的入口。
 阶段2.14.3已经完成有界语义Chunk、一次批量Embedding和Milvus V2 upsert；阶段2.14.4已经完成
-一次查询Embedding、Milvus阈值召回、按资产聚合和MySQL批量回查。页面和当前KnowledgeRetriever尚未触发这些用例，
+一次查询Embedding、Milvus阈值召回、按资产聚合和MySQL批量回查；阶段2.14.5增加了显式失败重试、
+`request_id`幂等审计和资产停用后的向量清理。页面和当前KnowledgeRetriever尚未触发这些用例，
 因此现在仍不能描述为用户主流程已经使用V2历史资产。
 旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
 知识闭环。后续将由 MySQL 保存完整、可审计的知识资产，Milvus 只承担向量候选检索。
@@ -217,7 +218,7 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 8. 阶段2.14.2：已完成完整KnowledgeAsset的MySQL权威存储实现
 9. 阶段2.14.3：已完成有界Chunk、批量Embedding和Milvus V2索引写入边界
 10. 阶段2.14.4：已完成V2候选召回、阈值过滤、MySQL批量回查和来源验证
-11. 阶段2.14.5：实现索引失败的显式重试、重复请求保护和补偿审计
+11. 阶段2.14.5：已实现索引失败的显式重试、重复请求保护、补偿审计和停用清理
 12. 阶段2.15.1～2.15.5：统一图文文档模型，增加结构化解析、OCR、多模态理解和关键问题限流
 13. 阶段2.15.6～2.15.7：增加ContextBuilder、节点Token预算和分层耗时记录
 14. 阶段2.16：建立10～20份脱敏图文需求评测集，完成解析、RAG、Reviewer和三方案实验
