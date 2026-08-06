@@ -1,9 +1,11 @@
 from dataclasses import FrozenInstanceError
+import hashlib
 
 import pytest
 
 from documents import (
     DocumentContent,
+    DocumentAttachment,
     DocumentFormat,
     DocumentImage,
     DocumentImageElement,
@@ -12,6 +14,7 @@ from documents import (
     DocumentTableElement,
     DocumentTextElement,
     DocumentTextKind,
+    DocumentParseStats,
 )
 
 
@@ -26,6 +29,8 @@ def _source(index=0, *, document_id="doc-1"):
 
 
 def test_document_content_expresses_text_table_image_and_source_order():
+    image_bytes = b"image-bytes"
+    attachment_id = "doc-1:attachment:image"
     elements = (
         DocumentTextElement(
             source=_source(0),
@@ -44,7 +49,7 @@ def test_document_content_expresses_text_table_image_and_source_order():
             image=DocumentImage(
                 image_id="image-1",
                 mime_type="image/png",
-                content_ref="document://doc-1/images/1",
+                content_ref=f"attachment://{attachment_id}",
                 caption="退款流程图",
                 width=800,
                 height=600,
@@ -58,12 +63,28 @@ def test_document_content_expresses_text_table_image_and_source_order():
         document_format=DocumentFormat.DOCX,
         extracted_text="退款规则",
         elements=elements,
+        attachments=(
+            DocumentAttachment(
+                attachment_id=attachment_id,
+                mime_type="image/png",
+                content=image_bytes,
+                sha256=hashlib.sha256(image_bytes).hexdigest(),
+            ),
+        ),
+        stats=DocumentParseStats(
+            page_count=1,
+            text_element_count=1,
+            table_count=1,
+            image_count=1,
+        ),
     )
 
     assert content.elements == elements
     assert content.to_plain_text() == "退款规则"
     assert content.elements[1].table.rows[1][1] == "原路退款"
-    assert content.elements[2].image.content_ref.endswith("/images/1")
+    assert content.elements[2].image.content_ref.endswith(attachment_id)
+    assert content.attachments[0].content == image_bytes
+    assert content.stats.table_count == 1
 
 
 def test_document_models_are_immutable_and_use_immutable_nested_rows():
@@ -117,4 +138,24 @@ def test_table_and_source_validation_reject_invalid_structure():
             filename="需求.pdf",
             element_index=0,
             page_number=0,
+        )
+
+
+def test_image_attachment_reference_must_resolve():
+    image = DocumentImageElement(
+        source=_source(0),
+        image=DocumentImage(
+            image_id="image-1",
+            mime_type="image/png",
+            content_ref="attachment://missing",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="missing attachment"):
+        DocumentContent(
+            document_id="doc-1",
+            filename="需求.docx",
+            document_format=DocumentFormat.DOCX,
+            extracted_text="需求",
+            elements=(image,),
         )

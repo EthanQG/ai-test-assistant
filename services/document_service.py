@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import os
 import re
 from io import BytesIO
 from typing import Iterable
 
 from documents import (
+    DocumentAttachment,
     DocumentContent,
+    DocumentElement,
     DocumentFormat,
+    DocumentImage,
+    DocumentImageElement,
+    DocumentParseStats,
     DocumentParsingWarning,
     DocumentSourceRef,
+    DocumentTable,
+    DocumentTableElement,
     DocumentTextElement,
     DocumentTextKind,
     DocumentWarningCode,
@@ -26,6 +34,9 @@ class DocumentService:
         ".pdf": DocumentFormat.PDF,
         ".docx": DocumentFormat.DOCX,
     }
+    _MAX_IMAGE_COUNT = 20
+    _MAX_IMAGE_BYTES = 5 * 1024 * 1024
+    _MAX_TOTAL_IMAGE_BYTES = 25 * 1024 * 1024
 
     @classmethod
     def parse(cls, uploaded_file) -> DocumentContent:
@@ -104,43 +115,127 @@ class DocumentService:
         document_id: str,
         payload: bytes,
     ) -> DocumentContent:
+        import pdfplumber
         from pypdf import PdfReader
 
         reader = PdfReader(BytesIO(payload))
-        elements: list[DocumentTextElement] = []
+        elements: list[DocumentElement] = []
         warnings: list[DocumentParsingWarning] = []
+        attachments: list[DocumentAttachment] = []
         page_texts: list[str] = []
-        for page_number, page in enumerate(reader.pages, start=1):
-            page_text = page.extract_text() or ""
-            if not page_text.strip():
-                warnings.append(
-                    cls._warning(
-                        filename,
-                        document_id,
-                        len(elements),
-                        DocumentWarningCode.EMPTY_PAGE,
-                        f"第{page_number}页没有可提取的文本层",
-                        page_number=page_number,
-                        warning_index=len(warnings),
+        skipped_tables = 0
+        skipped_images = 0
+        total_image_bytes = 0
+        with pdfplumber.open(BytesIO(payload)) as pdf:
+            for page_number, page in enumerate(pdf.pages, start=1):
+                page_text = page.extract_text() or ""
+                cleaned = page_text.strip()
+                if cleaned:
+                    page_texts.append(cleaned)
+                    blocks = [
+                        (DocumentTextKind.PARAGRAPH, block)
+                        for block in re.split(r"\r?\n\s*\r?\n", cleaned)
+                        if block.strip()
+                    ]
+                    elements.extend(
+                        cls._text_elements(
+                            filename,
+                            document_id,
+                            blocks,
+                            start_index=len(elements),
+                            page_number=page_number,
+                        )
                     )
-                )
-                continue
-            cleaned = page_text.strip()
-            page_texts.append(cleaned)
-            blocks = [
-                (DocumentTextKind.PARAGRAPH, block)
-                for block in re.split(r"\r?\n\s*\r?\n", cleaned)
-                if block.strip()
-            ]
-            elements.extend(
-                cls._text_elements(
-                    filename,
-                    document_id,
-                    blocks,
-                    start_index=len(elements),
-                    page_number=page_number,
-                )
-            )
+                else:
+                    warnings.append(
+                        cls._warning(
+                            filename,
+                            document_id,
+                            len(elements),
+                            DocumentWarningCode.EMPTY_PAGE,
+                            f"第{page_number}页没有可提取的文本层",
+                            page_number=page_number,
+                            warning_index=len(warnings),
+                        )
+                    )
+                try:
+                    for raw_table in page.extract_tables() or []:
+                        table = cls._table_from_rows(raw_table)
+                        if table is None:
+                            continue
+                        elements.append(
+                            DocumentTableElement(
+                                source=cls._source(
+                                    filename,
+                                    document_id,
+                                    len(elements),
+                                    page_number=page_number,
+                                ),
+                                table=table,
+                            )
+                        )
+                        if not cleaned:
+                            page_texts.append(cls._table_plain_text(table))
+                except Exception:
+                    skipped_tables += 1
+                    warnings.append(
+                        cls._warning(
+                            filename,
+                            document_id,
+                            len(elements),
+                            DocumentWarningCode.TABLE_EXTRACTION_FAILED,
+                            f"第{page_number}页表格提取失败，已保留页面来源",
+                            page_number=page_number,
+                            warning_index=len(warnings),
+                        )
+                    )
+                if getattr(page, "curves", None):
+                    warnings.append(
+                        cls._warning(
+                            filename,
+                            document_id,
+                            len(elements),
+                            DocumentWarningCode.PAGE_RENDER_REQUIRED,
+                            f"第{page_number}页包含矢量图形，后续视觉阶段需按整页渲染",
+                            page_number=page_number,
+                            warning_index=len(warnings),
+                        )
+                    )
+
+                pdf_page = reader.pages[page_number - 1]
+                try:
+                    page_images = list(getattr(pdf_page, "images", ()) or ())
+                except Exception:
+                    page_images = []
+                    skipped_images += 1
+                    warnings.append(
+                        cls._warning(
+                            filename,
+                            document_id,
+                            len(elements),
+                            DocumentWarningCode.IMAGE_EXTRACTION_FAILED,
+                            f"第{page_number}页内嵌图片提取失败",
+                            page_number=page_number,
+                            warning_index=len(warnings),
+                        )
+                    )
+                for image in page_images:
+                    blob = getattr(image, "data", b"")
+                    name = str(getattr(image, "name", "image.bin"))
+                    accepted, total_image_bytes = cls._append_image(
+                        filename=filename,
+                        document_id=document_id,
+                        page_number=page_number,
+                        name=name,
+                        blob=blob,
+                        mime_type=cls._image_mime_type(name, image),
+                        elements=elements,
+                        attachments=attachments,
+                        warnings=warnings,
+                        total_image_bytes=total_image_bytes,
+                    )
+                    if not accepted:
+                        skipped_images += 1
         return cls._content(
             filename,
             document_id,
@@ -148,6 +243,10 @@ class DocumentService:
             "\n\n".join(page_texts),
             elements,
             warnings,
+            attachments=attachments,
+            page_count=len(reader.pages),
+            skipped_table_count=skipped_tables,
+            skipped_image_count=skipped_images,
         )
 
     @classmethod
@@ -159,55 +258,80 @@ class DocumentService:
     ) -> DocumentContent:
         from docx import Document
 
-        document = Document(BytesIO(payload))
-        elements: list[DocumentTextElement] = []
-        paragraphs: list[str] = []
-        for paragraph in document.paragraphs:
-            text = paragraph.text.strip()
-            if not text:
-                continue
-            style_name = str(getattr(getattr(paragraph, "style", None), "name", ""))
-            kind = cls._docx_text_kind(style_name)
-            elements.extend(
-                cls._text_elements(
-                    filename,
-                    document_id,
-                    [(kind, text)],
-                    start_index=len(elements),
-                )
-            )
-            paragraphs.append(text)
+        from docx.table import Table
 
+        document = Document(BytesIO(payload))
+        elements: list[DocumentElement] = []
+        plain_text_parts: list[str] = []
         warnings: list[DocumentParsingWarning] = []
-        if getattr(document, "tables", ()):
-            warnings.append(
-                cls._warning(
-                    filename,
-                    document_id,
-                    len(elements),
-                    DocumentWarningCode.TABLE_NOT_EXTRACTED,
-                    "检测到DOCX表格；阶段2.15.1尚未提取表格内容",
-                    warning_index=len(warnings),
+        attachments: list[DocumentAttachment] = []
+        total_image_bytes = 0
+        skipped_images = 0
+        blocks = (
+            document.iter_inner_content()
+            if hasattr(document, "iter_inner_content")
+            else list(getattr(document, "paragraphs", ()))
+            + list(getattr(document, "tables", ()))
+        )
+        for block in blocks:
+            if isinstance(block, Table) or hasattr(block, "rows"):
+                table = cls._table_from_rows(
+                    [[cell.text for cell in row.cells] for row in block.rows]
                 )
-            )
-        if getattr(document, "inline_shapes", ()):
-            warnings.append(
-                cls._warning(
-                    filename,
-                    document_id,
-                    len(elements),
-                    DocumentWarningCode.IMAGE_NOT_EXTRACTED,
-                    "检测到DOCX内嵌图片；阶段2.15.1尚未解析图片内容",
-                    warning_index=len(warnings),
+                if table is not None:
+                    elements.append(
+                        DocumentTableElement(
+                            source=cls._source(
+                                filename, document_id, len(elements)
+                            ),
+                            table=table,
+                        )
+                    )
+                    plain_text_parts.append(cls._table_plain_text(table))
+                continue
+
+            text = str(getattr(block, "text", "")).strip()
+            if text:
+                style_name = str(
+                    getattr(getattr(block, "style", None), "name", "")
                 )
-            )
+                kind = cls._docx_text_kind(style_name)
+                elements.extend(
+                    cls._text_elements(
+                        filename,
+                        document_id,
+                        [(kind, text)],
+                        start_index=len(elements),
+                    )
+                )
+                plain_text_parts.append(text)
+            for name, mime_type, blob in cls._docx_paragraph_images(
+                document, block
+            ):
+                accepted, total_image_bytes = cls._append_image(
+                    filename=filename,
+                    document_id=document_id,
+                    page_number=None,
+                    name=name,
+                    blob=blob,
+                    mime_type=mime_type,
+                    elements=elements,
+                    attachments=attachments,
+                    warnings=warnings,
+                    total_image_bytes=total_image_bytes,
+                )
+                if not accepted:
+                    skipped_images += 1
         return cls._content(
             filename,
             document_id,
             DocumentFormat.DOCX,
-            "\n\n".join(paragraphs),
+            "\n\n".join(plain_text_parts),
             elements,
             warnings,
+            attachments=attachments,
+            page_count=1,
+            skipped_image_count=skipped_images,
         )
 
     @staticmethod
@@ -245,6 +369,153 @@ class DocumentService:
         if "list" in normalized:
             return DocumentTextKind.LIST_ITEM
         return DocumentTextKind.PARAGRAPH
+
+    @staticmethod
+    def _table_from_rows(rows) -> DocumentTable | None:
+        normalized = [
+            tuple("" if cell is None else str(cell).strip() for cell in row)
+            for row in rows
+            if row is not None
+        ]
+        normalized = [row for row in normalized if any(row)]
+        if not normalized:
+            return None
+        width = max(len(row) for row in normalized)
+        if width == 0:
+            return None
+        padded = tuple(row + ("",) * (width - len(row)) for row in normalized)
+        return DocumentTable(rows=padded)
+
+    @staticmethod
+    def _table_plain_text(table: DocumentTable) -> str:
+        return "\n".join(" | ".join(row) for row in table.rows)
+
+    @staticmethod
+    def _docx_paragraph_images(document, paragraph):
+        from docx.oxml.ns import qn
+
+        for run in getattr(paragraph, "runs", ()):
+            element = getattr(run, "_element", None)
+            if element is None:
+                continue
+            for blip in element.xpath(".//a:blip"):
+                relationship_id = blip.get(qn("r:embed"))
+                part = document.part.related_parts.get(relationship_id)
+                blob = getattr(part, "blob", b"")
+                if not blob:
+                    continue
+                name = str(getattr(part, "partname", "image.bin")).rsplit(
+                    "/", 1
+                )[-1]
+                yield name, str(
+                    getattr(part, "content_type", "application/octet-stream")
+                ), blob
+
+    @classmethod
+    def _append_image(
+        cls,
+        *,
+        filename: str,
+        document_id: str,
+        page_number: int | None,
+        name: str,
+        blob: bytes,
+        mime_type: str,
+        elements: list[DocumentElement],
+        attachments: list[DocumentAttachment],
+        warnings: list[DocumentParsingWarning],
+        total_image_bytes: int,
+    ) -> tuple[bool, int]:
+        if not isinstance(blob, bytes) or not blob:
+            warnings.append(
+                cls._warning(
+                    filename,
+                    document_id,
+                    len(elements),
+                    DocumentWarningCode.IMAGE_EXTRACTION_FAILED,
+                    "图片内容为空，已跳过该图片",
+                    page_number=page_number,
+                    warning_index=len(warnings),
+                )
+            )
+            return False, total_image_bytes
+        if len(blob) > cls._MAX_IMAGE_BYTES:
+            warnings.append(
+                cls._warning(
+                    filename,
+                    document_id,
+                    len(elements),
+                    DocumentWarningCode.IMAGE_TOO_LARGE,
+                    "单张图片超过5MB限制，已保留警告并跳过",
+                    page_number=page_number,
+                    warning_index=len(warnings),
+                )
+            )
+            return False, total_image_bytes
+        if (
+            sum(
+                isinstance(element, DocumentImageElement)
+                for element in elements
+            )
+            >= cls._MAX_IMAGE_COUNT
+            or total_image_bytes + len(blob) > cls._MAX_TOTAL_IMAGE_BYTES
+        ):
+            warnings.append(
+                cls._warning(
+                    filename,
+                    document_id,
+                    len(elements),
+                    DocumentWarningCode.IMAGE_LIMIT_EXCEEDED,
+                    "文档图片数量或总大小超过解析限制，剩余图片已跳过",
+                    page_number=page_number,
+                    warning_index=len(warnings),
+                )
+            )
+            return False, total_image_bytes
+
+        digest = hashlib.sha256(blob).hexdigest()
+        attachment_id = f"{document_id}:attachment:{digest[:16]}"
+        if not any(item.attachment_id == attachment_id for item in attachments):
+            attachments.append(
+                DocumentAttachment(
+                    attachment_id=attachment_id,
+                    mime_type=mime_type,
+                    content=blob,
+                    sha256=digest,
+                )
+            )
+            total_image_bytes += len(blob)
+        image_index = sum(
+            isinstance(element, DocumentImageElement) for element in elements
+        )
+        elements.append(
+            DocumentImageElement(
+                source=cls._source(
+                    filename,
+                    document_id,
+                    len(elements),
+                    page_number=page_number,
+                ),
+                image=DocumentImage(
+                    image_id=f"{document_id}:image:{image_index}",
+                    mime_type=mime_type,
+                    content_ref=f"attachment://{attachment_id}",
+                    caption=name,
+                ),
+            )
+        )
+        return True, total_image_bytes
+
+    @staticmethod
+    def _image_mime_type(name: str, image) -> str:
+        guessed = mimetypes.guess_type(name)[0]
+        if guessed:
+            return guessed
+        pil_image = getattr(image, "image", None)
+        image_format = str(getattr(pil_image, "format", "")).lower()
+        if image_format:
+            return f"image/{'jpeg' if image_format == 'jpg' else image_format}"
+        return "application/octet-stream"
 
     @classmethod
     def _text_elements(
@@ -319,8 +590,13 @@ class DocumentService:
         document_id: str,
         document_format: DocumentFormat,
         extracted_text: str,
-        elements: Iterable[DocumentTextElement],
+        elements: Iterable[DocumentElement],
         warnings: Iterable[DocumentParsingWarning],
+        *,
+        attachments: Iterable[DocumentAttachment] = (),
+        page_count: int = 0,
+        skipped_table_count: int = 0,
+        skipped_image_count: int = 0,
     ) -> DocumentContent:
         element_tuple = tuple(elements)
         warning_list = list(warnings)
@@ -335,6 +611,7 @@ class DocumentService:
                     warning_index=len(warning_list),
                 )
             )
+        attachment_tuple = tuple(attachments)
         return DocumentContent(
             document_id=document_id,
             filename=filename,
@@ -342,4 +619,23 @@ class DocumentService:
             extracted_text=extracted_text,
             elements=element_tuple,
             warnings=tuple(warning_list),
+            attachments=attachment_tuple,
+            stats=DocumentParseStats(
+                page_count=page_count,
+                text_element_count=sum(
+                    isinstance(element, DocumentTextElement)
+                    for element in element_tuple
+                ),
+                table_count=sum(
+                    isinstance(element, DocumentTableElement)
+                    for element in element_tuple
+                ),
+                image_count=sum(
+                    isinstance(element, DocumentImageElement)
+                    for element in element_tuple
+                ),
+                warning_count=len(warning_list),
+                skipped_table_count=skipped_table_count,
+                skipped_image_count=skipped_image_count,
+            ),
         )

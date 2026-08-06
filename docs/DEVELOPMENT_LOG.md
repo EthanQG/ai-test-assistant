@@ -64,7 +64,8 @@
 | 图文PRD路线图校正 | 已完成（仅文档） | 将结构化文档、OCR、多模态理解和关键问题限流提升为P0 | `ec633e7` |
 | 阶段 2.14.5 | 已完成 | 索引失败显式重试、request_id幂等审计和停用向量清理 | `5ecd956` |
 | 阶段 2.14 | 已完成 | KnowledgeAsset准入、MySQL权威存储、Milvus V2索引与补偿闭环 | - |
-| 阶段 2.15.1 | 已完成 | DocumentContent、文本/表格/图片元素、来源ID和解析警告 | 本次提交 |
+| 阶段 2.15.1 | 已完成 | DocumentContent、文本/表格/图片元素、来源ID和解析警告 | `785f42e` |
+| 阶段 2.15.2 | 已完成 | PDF/DOCX原生结构、真实图片附件、边界警告和覆盖统计 | 待提交 |
 | 阶段 2.15 | 规划中 | 图文PRD理解、关键问题限流、ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16 | 规划中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
@@ -2963,3 +2964,46 @@ git diff --check
 
 本阶段没有修改Streamlit、AgentState、Orchestrator、Prompt和任务快照，也没有接入OCR、视觉模型或
 MySQL文档存储。阶段2.15.2将在该模型上实现PDF/DOCX原生结构提取，仍不接OCR和多模态理解。
+
+## 阶段 2.15.2：PDF与DOCX结构化解析
+
+### 阶段目标
+
+让阶段2.15.1定义的表格和图片模型承载真实解析结果，同时保持当前Agent纯文本入口和页面行为不变。
+
+### 修改内容
+
+- 引入`pdfplumber 0.11.7`提取PDF页文本和可识别表格，并保持`pypdf`负责内嵌图片读取
+- DOCX改为使用`iter_inner_content()`保持标题、段落、列表和表格的正文块顺序
+- 新增`DocumentAttachment`，保存图片MIME、二进制内容和SHA-256，图片元素使用稳定引用关联附件
+- 新增`DocumentParseStats`，记录页、文本、表格、图片、警告和跳过数量
+- 为表格失败、图片失败、超限图片及PDF矢量图增加明确警告
+- 图片解析限制为单图5MB、最多20个图片元素、附件总量25MB
+- DOCX表格文字进入`to_plain_text()`兼容视图，现有Agent无需修改即可读取
+
+### 核心设计
+
+```text
+DocumentImageElement
+→ content_ref
+→ DocumentAttachment
+   ├─ MIME
+   ├─ bytes
+   └─ SHA-256
+```
+
+附件与元素分离，既避免在每个元素里重复保存大段二进制，也给后续OCR和视觉模型提供真实输入。
+PDF矢量图不能可靠拆成有业务意义的单张图片，因此只记录整页渲染提示，不把零散线条误报为流程图。
+
+### 验证
+
+- 真实内存DOCX验证标题、表格和PNG图片的顺序与附件关联
+- Fake PDF边界验证页码、表格、位图、矢量图警告、表格失败和超限图片
+- `python -m pytest -q`：367 passed，9 skipped
+- `python -m unittest discover -s tests -v`：269 tests，OK，6 skipped
+- `compileall`、`git diff --check`和`pip check`通过
+- Streamlit、Agent状态机、Application Service和Repository均未修改
+
+### 下一步
+
+阶段2.15.3只增加OCR与扫描文档处理，不在同一阶段实现流程图和UI图语义理解。

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import hashlib
 from typing import TypeAlias
 
 
@@ -23,6 +24,54 @@ class DocumentWarningCode(str, Enum):
     EMPTY_PAGE = "empty_page"
     TABLE_NOT_EXTRACTED = "table_not_extracted"
     IMAGE_NOT_EXTRACTED = "image_not_extracted"
+    TABLE_EXTRACTION_FAILED = "table_extraction_failed"
+    IMAGE_EXTRACTION_FAILED = "image_extraction_failed"
+    IMAGE_TOO_LARGE = "image_too_large"
+    IMAGE_LIMIT_EXCEEDED = "image_limit_exceeded"
+    PAGE_RENDER_REQUIRED = "page_render_required"
+
+
+@dataclass(frozen=True)
+class DocumentAttachment:
+    attachment_id: str
+    mime_type: str
+    content: bytes
+    sha256: str
+
+    def __post_init__(self) -> None:
+        if not self.attachment_id.strip():
+            raise ValueError("attachment_id cannot be empty")
+        if not self.mime_type.strip():
+            raise ValueError("attachment mime_type cannot be empty")
+        if not isinstance(self.content, bytes) or not self.content:
+            raise ValueError("attachment content must be non-empty bytes")
+        actual_hash = hashlib.sha256(self.content).hexdigest()
+        if self.sha256 != actual_hash:
+            raise ValueError("attachment sha256 does not match content")
+
+
+@dataclass(frozen=True)
+class DocumentParseStats:
+    page_count: int = 0
+    text_element_count: int = 0
+    table_count: int = 0
+    image_count: int = 0
+    warning_count: int = 0
+    skipped_table_count: int = 0
+    skipped_image_count: int = 0
+
+    def __post_init__(self) -> None:
+        values = (
+            self.page_count,
+            self.text_element_count,
+            self.table_count,
+            self.image_count,
+            self.warning_count,
+            self.skipped_table_count,
+            self.skipped_image_count,
+        )
+        if any(isinstance(value, bool) or value < 0 for value in values):
+            raise ValueError("document parse statistics cannot be negative")
 
 
 @dataclass(frozen=True)
@@ -145,6 +194,8 @@ class DocumentContent:
     extracted_text: str
     elements: tuple[DocumentElement, ...]
     warnings: tuple[DocumentParsingWarning, ...] = ()
+    attachments: tuple[DocumentAttachment, ...] = ()
+    stats: DocumentParseStats = DocumentParseStats()
 
     def __post_init__(self) -> None:
         if not self.document_id.strip():
@@ -159,6 +210,10 @@ class DocumentContent:
             raise ValueError("elements must be an immutable tuple")
         if not isinstance(self.warnings, tuple):
             raise ValueError("warnings must be an immutable tuple")
+        if not isinstance(self.attachments, tuple):
+            raise ValueError("attachments must be an immutable tuple")
+        if not isinstance(self.stats, DocumentParseStats):
+            raise ValueError("stats must be DocumentParseStats")
         source_ids: set[str] = set()
         for index, element in enumerate(self.elements):
             if not isinstance(
@@ -187,6 +242,21 @@ class DocumentContent:
             if warning.source.source_id in source_ids:
                 raise ValueError("document source IDs must be unique")
             source_ids.add(warning.source.source_id)
+        attachment_ids: set[str] = set()
+        for attachment in self.attachments:
+            if not isinstance(attachment, DocumentAttachment):
+                raise ValueError("attachments must contain DocumentAttachment")
+            if attachment.attachment_id in attachment_ids:
+                raise ValueError("attachment IDs must be unique")
+            attachment_ids.add(attachment.attachment_id)
+        for element in self.elements:
+            if not isinstance(element, DocumentImageElement):
+                continue
+            prefix = "attachment://"
+            if element.image.content_ref.startswith(prefix):
+                attachment_id = element.image.content_ref[len(prefix) :]
+                if attachment_id not in attachment_ids:
+                    raise ValueError("image content_ref points to missing attachment")
 
     def to_plain_text(self) -> str:
         """Returns the legacy text view without discarding structured data."""

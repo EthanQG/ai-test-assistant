@@ -1,10 +1,12 @@
 from .models import (
+    DocumentAttachment,
     DocumentContent,
     DocumentElement,
     DocumentFormat,
     DocumentImage,
     DocumentImageElement,
     DocumentParsingWarning,
+    DocumentParseStats,
     DocumentSourceRef,
     DocumentTable,
     DocumentTableElement,
@@ -14,12 +16,14 @@ from .models import (
 )
 
 __all__ = [
+    "DocumentAttachment",
     "DocumentContent",
     "DocumentElement",
     "DocumentFormat",
     "DocumentImage",
     "DocumentImageElement",
     "DocumentParsingWarning",
+    "DocumentParseStats",
     "DocumentSourceRef",
     "DocumentTable",
     "DocumentTableElement",
