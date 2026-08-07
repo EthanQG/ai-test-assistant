@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "document-parsing-v1",
+  "description": "用于文档解析能力评测的脱敏合成样本与人工金标准。",
+  "fixtures": [
+    {
+      "fixture_id": "native-pdf-001",
+      "path": "assets/native_order_requirement.pdf",
+      "media_type": "application/pdf",
+      "evaluation_target": "native_text",
+      "gold": {
+        "text_lines": [
+          "订单创建需求",
+          "用户提交订单时校验可售库存。",
+          "库存充足时创建订单并扣减库存。",
+          "库存不足时拒绝创建，并提示“库存不足”。",
+          "相同 request_id 重复提交时只能创建一张订单。"
+        ]
+      }
+    },
+    {
+      "fixture_id": "docx-table-001",
+      "path": "assets/role_permission_matrix.docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "evaluation_target": "table_structure",
+      "gold": {
+        "text_lines": [
+          "项目角色权限矩阵",
+          "角色变更后，新权限立即生效。"
+        ],
+        "table": {
+          "headers": ["角色", "查看项目", "修改项目", "管理成员"],
+          "rows": [
+            ["管理员", "允许", "允许", "允许"],
+            ["编辑者", "允许", "允许", "拒绝"],
+            ["查看者", "允许", "拒绝", "拒绝"]
+          ]
+        }
+      }
+    },
+    {
+      "fixture_id": "scanned-pdf-001",
+      "path": "assets/scanned_refund_requirement.pdf",
+      "media_type": "application/pdf",
+      "evaluation_target": "ocr_text",
+      "gold": {
+        "text_lines": [
+          "退款处理规则",
+          "已支付订单允许多次部分退款。",
+          "累计退款金额不得超过订单实付金额。",
+          "退款成功后记录退款单号和累计退款金额。",
+          "退款处理中不得重复提交同一退款申请。"
+        ]
+      }
+    },
+    {
+      "fixture_id": "flow-image-001",
+      "path": "assets/order_inventory_flow.png",
+      "media_type": "image/png",
+      "evaluation_target": "flow_semantics",
+      "gold": {
+        "nodes": ["提交订单", "校验库存", "创建订单", "提示库存不足"],
+        "relations": [
+          {"from": "提交订单", "to": "校验库存", "condition": ""},
+          {"from": "校验库存", "to": "创建订单", "condition": "库存充足"},
+          {"from": "校验库存", "to": "提示库存不足", "condition": "库存不足"}
+        ]
+      }
+    },
+    {
+      "fixture_id": "ui-image-001",
+      "path": "assets/invoice_upload_ui.png",
+      "media_type": "image/png",
+      "evaluation_target": "ui_semantics",
+      "gold": {
+        "text_lines": [
+          "发票上传",
+          "支持 PDF、JPG、PNG，单个文件最大 10MB",
+          "拖拽文件到此处",
+          "选择文件",
+          "文件名",
+          "大小",
+          "处理状态",
+          "invoice-001.pdf",
+          "2.4MB",
+          "上传成功",
+          "invoice-002.exe",
+          "1.2MB",
+          "格式不支持"
+        ],
+        "ui_elements": [
+          {"type": "upload_area", "label": "拖拽文件到此处"},
+          {"type": "button", "label": "选择文件"},
+          {"type": "status", "label": "上传成功"},
+          {"type": "status", "label": "格式不支持"}
+        ]
+      }
+    }
+  ]
+}
