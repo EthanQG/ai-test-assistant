@@ -41,6 +41,13 @@ class _FakeMilvusClient:
         self.deletes.append(kwargs)
 
 
+class _PyMilvusHit(dict):
+    def __init__(self, *, hit_id, distance, entity):
+        super().__init__(entity=entity)
+        self.id = hit_id
+        self.distance = distance
+
+
 def _chunk():
     asset = KnowledgeAssetAdmissionPolicy(
         asset_id_factory=lambda: "asset-milvus-v2",
@@ -104,6 +111,33 @@ def test_milvus_v2_search_restores_stable_asset_association():
     assert hits[0].score == 0.87
     assert client.search_calls[0]["limit"] == 10
     assert client.search_calls[0]["search_params"]["metric_type"] == "COSINE"
+
+
+def test_milvus_v2_search_accepts_pymilvus_hit_properties():
+    client = _FakeMilvusClient()
+    chunk = _chunk()
+    client.search_result = [[_PyMilvusHit(
+        hit_id=chunk.chunk_id,
+        distance=0.91,
+        entity={
+            "asset_id": chunk.asset_id,
+            "source_task_id": chunk.source_task_id,
+            "asset_version": chunk.asset_version,
+            "content_hash": chunk.content_hash,
+            "chunk_type": chunk.chunk_type.value,
+            "chunk_index": chunk.chunk_index,
+            "search_text": chunk.search_text,
+        },
+    )]]
+    index = MilvusKnowledgeAssetIndex(
+        MilvusAssetIndexSettings("http://milvus", "knowledge_assets_v2"),
+        client=client,
+    )
+
+    hits = index.search([0.1, 0.2], limit=3)
+
+    assert hits[0].chunk_id == chunk.chunk_id
+    assert hits[0].score == 0.91
 
 
 def test_milvus_v2_deletes_only_target_asset_version():

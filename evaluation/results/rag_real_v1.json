@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "rag-retrieval-v1",
+  "k": 3,
+  "case_count": 5,
+  "summary": {
+    "mean_recall_at_k": 1.0,
+    "mean_precision_at_k": 0.3333,
+    "mean_reciprocal_rank": 1.0,
+    "mean_forbidden_hit_rate": 0.1
+  },
+  "results": [
+    {
+      "case_id": "rag-order-001",
+      "retrieved_asset_ids": [
+        "asset-order-inventory"
+      ],
+      "recall_at_k": 1.0,
+      "precision_at_k": 0.3333,
+      "reciprocal_rank": 1.0,
+      "forbidden_hit_rate": 0.0
+    },
+    {
+      "case_id": "rag-refund-001",
+      "retrieved_asset_ids": [
+        "asset-refund-cumulative",
+        "asset-file-upload"
+      ],
+      "recall_at_k": 1.0,
+      "precision_at_k": 0.3333,
+      "reciprocal_rank": 1.0,
+      "forbidden_hit_rate": 0.0
+    },
+    {
+      "case_id": "rag-auth-001",
+      "retrieved_asset_ids": [
+        "asset-login-lock",
+        "asset-order-inventory",
+        "asset-role-permission"
+      ],
+      "recall_at_k": 1.0,
+      "precision_at_k": 0.3333,
+      "reciprocal_rank": 1.0,
+      "forbidden_hit_rate": 0.0
+    },
+    {
+      "case_id": "rag-upload-001",
+      "retrieved_asset_ids": [
+        "asset-file-upload",
+        "asset-refund-cumulative"
+      ],
+      "recall_at_k": 1.0,
+      "precision_at_k": 0.3333,
+      "reciprocal_rank": 1.0,
+      "forbidden_hit_rate": 0.0
+    },
+    {
+      "case_id": "rag-permission-001",
+      "retrieved_asset_ids": [
+        "asset-role-permission",
+        "asset-order-inventory",
+        "asset-login-lock"
+      ],
+      "recall_at_k": 1.0,
+      "precision_at_k": 0.3333,
+      "reciprocal_rank": 1.0,
+      "forbidden_hit_rate": 0.5
+    }
+  ],
+  "retrieval_boundary": "KnowledgeAssetRetrievalService",
+  "evidence_scope": "real_embedding_milvus_mysql",
+  "embedding_model": "nomic-embed-text",
+  "milvus_collection": "knowledge_assets_v2"
+}

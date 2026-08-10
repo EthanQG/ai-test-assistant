@@ -235,8 +235,14 @@ class MilvusKnowledgeAssetIndex:
         if not isinstance(entity, dict):
             raise ValueError("Milvus search entity must be an object")
         try:
+            chunk_id = hit.get("id") or getattr(hit, "id", None)
+            distance = hit.get("distance")
+            if distance is None:
+                distance = getattr(hit, "distance", None)
+            if chunk_id is None or distance is None:
+                raise ValueError("Milvus hit identity or distance is missing")
             return KnowledgeAssetVectorHit(
-                chunk_id=str(hit["id"]),
+                chunk_id=str(chunk_id),
                 asset_id=str(entity["asset_id"]),
                 source_task_id=str(entity["source_task_id"]),
                 asset_version=int(entity["asset_version"]),
@@ -244,7 +250,7 @@ class MilvusKnowledgeAssetIndex:
                 chunk_type=KnowledgeAssetChunkType(entity["chunk_type"]),
                 chunk_index=int(entity["chunk_index"]),
                 search_text=str(entity["search_text"]),
-                score=float(hit["distance"]),
+                score=float(distance),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("Milvus search hit metadata is invalid") from exc

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "asset_set_id": "rag-assets-v1",
+  "confirmed_at": "2026-08-10T00:00:00+00:00",
+  "assets": [
+    {
+      "asset_id": "asset-order-inventory",
+      "source_task_id": "eval-task-order",
+      "summary": "订单创建、库存扣减与重复请求控制",
+      "module": "订单库存",
+      "requirement": "创建订单前校验库存；库存充足时只创建一张订单并扣减一次库存，相同request_id重复提交不得重复扣减。",
+      "fact": "相同request_id重复提交只能创建一张订单且库存只扣减一次",
+      "rule": "库存充足时创建订单并扣减库存，库存不足时不得创建订单",
+      "risk": "并发重复请求可能造成重复下单或超卖",
+      "test_title": "验证重复request_id不会重复扣减库存"
+    },
+    {
+      "asset_id": "asset-refund-cumulative",
+      "source_task_id": "eval-task-refund",
+      "summary": "多次部分退款累计金额控制",
+      "module": "退款",
+      "requirement": "订单允许多次部分退款，累计退款金额不得超过订单实付金额，退款处理中不得重复提交。",
+      "fact": "多次部分退款的累计金额不能超过订单实付金额",
+      "rule": "累计退款达到实付金额后继续退款必须被拒绝",
+      "risk": "并发退款可能使累计退款金额超过实付金额",
+      "test_title": "验证累计退款金额上限"
+    },
+    {
+      "asset_id": "asset-login-lock",
+      "source_task_id": "eval-task-auth",
+      "summary": "连续密码错误后的账号锁定与提前解锁",
+      "module": "认证",
+      "requirement": "连续第五次密码错误后账号锁定30分钟，锁定期间正确密码仍被拒绝，管理员可以提前解锁并记录审计。",
+      "fact": "连续第五次密码错误后账号锁定30分钟",
+      "rule": "锁定期间登录均被拒绝，管理员提前解锁需要记录审计",
+      "risk": "锁定时间边界或提前解锁处理错误可能造成越权登录",
+      "test_title": "验证第五次错误后的锁定和管理员解锁"
+    },
+    {
+      "asset_id": "asset-file-upload",
+      "source_task_id": "eval-task-upload",
+      "summary": "批量文件上传限制与部分成功结果",
+      "module": "文件上传",
+      "requirement": "单次最多上传5个文件，校验格式和大小，混合上传允许部分成功，并展示文件名、大小和处理状态。",
+      "fact": "单次最多上传5个文件并展示每个文件的处理结果",
+      "rule": "合法文件成功、非法文件失败时需要分别展示对应状态",
+      "risk": "批量校验错误可能导致合法文件被整体拒绝或非法文件被接受",
+      "test_title": "验证混合文件上传的部分成功结果"
+    },
+    {
+      "asset_id": "asset-role-permission",
+      "source_task_id": "eval-task-permission",
+      "summary": "管理员、编辑者和查看者权限隔离",
+      "module": "权限",
+      "requirement": "管理员、编辑者和查看者具有不同权限，角色升级或降级后新权限立即生效，旧权限立即失效。",
+      "fact": "角色变更后新权限立即生效且旧权限失效",
+      "rule": "每种角色只能执行被授权的操作，越权操作必须被拒绝",
+      "risk": "权限缓存未刷新可能使角色降级后仍能执行旧权限操作",
+      "test_title": "验证角色变更后的权限立即生效"
+    }
+  ]
+}

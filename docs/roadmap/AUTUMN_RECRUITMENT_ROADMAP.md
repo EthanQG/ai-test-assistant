@@ -373,10 +373,11 @@ Milvus 是语义检索索引，负责保存：
 
 - **第一小步已完成（2026-08-10）**：5份虚构查询和Recall@K、Precision@K、MRR、禁止资产命中率
 - **第二小步已完成（2026-08-10）**：Fake外部依赖下跑通真实Retrieval Service、内存权威回查和受控链路报告
+- **第三小步已完成（2026-08-10）**：5份合成KnowledgeAsset真实MySQL/Embedding/Milvus评测；Recall@3=1.0，禁止资产命中率=0.1
 - Recall@K、Precision@K、MRR
 - 无关资产召回率和历史规则污染数量
 - legacy 资产与用户确认资产分别统计
-- 当前已验证指标公式与Retrieval Service接线，尚无真实Embedding、Milvus或阈值效果数据
+- 当前已有5份简单合成资产的真实结果，下一步比较少量Top-K和阈值；结果不能外推到生产知识库
 
 ### 2.16.4 Reviewer/Reviser 评测
 

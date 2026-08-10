@@ -3459,3 +3459,28 @@ python -m pytest -q tests/unit/evaluation/test_rag_evaluation.py tests/unit/eval
 python -m pytest -q
 439 passed，10 skipped
 ```
+
+### 第三小步：合成资产种子与真实评测入口
+
+本轮增加5份与查询金标准一一对应的合成KnowledgeAsset种子，并新增显式真实运行入口：
+
+1. 种子数据包含完整需求、结构化事实/规则/风险、测试点和Reviewer结果；
+2. Loader构造标准`KnowledgeAsset`并计算真实内容哈希；
+3. Runner只在`RUN_RAG_INTEGRATION_EVALUATION=1`时运行；
+4. Runner强制使用MySQL资产Repository，先保存资产，再通过现有Indexing Service写入Milvus；
+5. 相同资产重复运行会校验内容哈希，避免悄悄覆盖不同内容；
+6. 检索报告标记`real_embedding_milvus_mysql`并记录模型和集合名，不记录密码或Token。
+
+真实运行首次暴露PyMilvus返回对象兼容问题：真实`Hit`通过`.id`和`.distance`属性提供主键与分数，
+Fake测试使用的是字典键。适配器现同时兼容两种形式，并增加属性式Hit回归测试。
+
+修复后真实链路成功写入MySQL和Milvus并完成5份查询：Mean Recall@3=1.0、Mean Precision@3=0.3333、
+Mean MRR=1.0、Mean forbidden hit rate=0.1。权限查询虽然第一名正确，但同时召回了明确禁止的订单库存资产，
+说明只看召回率会掩盖知识污染风险。完整结果保存于`evaluation/results/rag_real_v1.json`。
+
+默认pytest仅验证种子、适配器和真实入口关闭保护，不访问外部服务。
+
+```text
+python -m pytest -q
+442 passed，10 skipped
+```

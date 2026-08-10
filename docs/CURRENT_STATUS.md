@@ -21,10 +21,11 @@
 - 阶段2.16.2第二小步：`7395b8d 阶段2.16.2：增加文档解析确定性评分`
 - 阶段2.16.2第三小步：`5a32bc6 阶段2.16.2：增加流程与UI语义评分`
 - 阶段2.16.3第一小步：`2760923 阶段2.16.3：建立RAG资产级评测指标`
+- 阶段2.16.3第二小步：`1f6537b 阶段2.16.3：接入RAG检索服务评测边界`
 
-## 当前阶段：2.16.3 RAG专项评测（第二小步已完成）
+## 当前阶段：2.16.3 RAG专项评测（第三小步已完成）
 
-本轮把已有资产级指标接到真实`KnowledgeAssetRetrievalService`边界，但全部外部依赖仍使用Fake：
+本轮为真实RAG实验准备可重复资产和显式执行入口：
 
 1. 新增5份完全虚构查询，覆盖订单库存、退款、登录锁定、文件上传和角色权限；
 2. 每份查询标注期望召回资产和明确不应召回资产；
@@ -33,9 +34,10 @@
 5. `MRR`衡量第一个相关资产出现得是否足够靠前；
 6. `forbidden_hit_rate`衡量已知无关资产是否污染结果；
 7. Runner按case输出明细并计算平均指标；
-8. Runner把`KnowledgeAssetRetrievalResult.candidates`按原排序转换为asset_id；
-9. 5份查询实际经过查询Embedding、向量搜索、资产聚合和内存Repository权威回查；
-10. 受控报告明确标记`fake_dependencies_only`，不冒充真实Milvus效果。
+8. 新增5份与查询金标准一一对应的合成KnowledgeAsset种子；
+9. 种子包含需求、事实、规则、风险、测试点和Reviewer结果，不包含公司数据；
+10. 真实Runner已依次写入MySQL、索引Milvus、调用Retrieval Service并输出独立报告；
+11. 必须显式设置`RUN_RAG_INTEGRATION_EVALUATION=1`和MySQL资产Repository，默认pytest不会访问外部服务。
 
 ## 当前数据流
 
@@ -56,26 +58,34 @@ python -m pytest -q tests/unit/evaluation/test_rag_evaluation.py tests/unit/eval
 6 passed
 
 python -m pytest -q
-439 passed，10 skipped
+442 passed，10 skipped
 ```
 
-全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
+默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型；真实RAG评测通过独立命令显式运行。
+
+真实RAG结果（5份合成资产，Top-K=3，`nomic-embed-text`）：
+
+- Mean Recall@3：1.0
+- Mean Precision@3：0.3333
+- Mean MRR：1.0
+- Mean forbidden hit rate：0.1
+- 权限查询召回了明确禁止的订单库存资产，因此不能只报告Recall和MRR
 
 ## 当前限制
 
 - 5份查询、KnowledgeAsset和向量命中均为合成数据
 - Fake链路只证明服务边界接线、权威回查和指标计算正确，不证明现有Embedding或阈值效果
-- 当前没有真实Recall@K、Precision@K或MRR结果
+- 当前只有5份简单合成资产的真实结果，不能外推到真实PRD和大规模知识库
 - `k=3`是当前评测参数，不代表已经证明最优
 
-## 下一步：阶段2.16.3 RAG专项评测（第三小步）
+## 下一步：阶段2.16.3阈值与Top-K对比
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 准备与5份查询对应的可重复KnowledgeAsset种子数据；
-2. 设计显式开启的真实Embedding/Milvus评测入口，不进入默认pytest；
-3. 用户授权后再运行真实服务并保存独立报告；
-4. 对比不同Top-K和阈值，不能用Fake报告选择线上参数。
+1. 在同一批固定资产上比较少量Top-K和相似度阈值组合；
+2. 重点观察权限查询的错误召回能否下降，同时避免漏掉正确资产；
+3. 不根据5份样本直接修改线上默认参数，先输出对比证据；
+4. 完成后再进入2.16.4 Reviewer/Reviser专项评测。
 
 ## 新电脑恢复方式
 
