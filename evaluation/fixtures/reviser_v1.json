@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "reviser-fixes-v1",
+  "cases": [
+    {
+      "case_id": "revise-omission-001", "defect_type": "requirement_omission",
+      "requirement_facts": ["库存充足时创建订单", "库存不足时拒绝创建订单"],
+      "before_test_points": [
+        {"title": "库存充足", "scenario": "库存等于购买量", "expected": "创建订单并扣减库存", "sources": ["库存充足时创建订单"]}
+      ],
+      "expected_test_points": [
+        {"title": "库存充足", "scenario": "库存等于购买量", "expected": "创建订单并扣减库存", "sources": ["库存充足时创建订单"]},
+        {"title": "库存不足", "scenario": "库存小于购买量", "expected": "拒绝创建订单且不扣减库存", "sources": ["库存不足时拒绝创建订单"]}
+      ],
+      "changed_titles": ["库存不足"]
+    },
+    {
+      "case_id": "revise-boundary-001", "defect_type": "boundary_missing",
+      "requirement_facts": ["商品金额满200元可使用优惠券"],
+      "before_test_points": [
+        {"title": "满200元", "scenario": "商品金额200元", "expected": "优惠券可用", "sources": ["商品金额满200元可使用优惠券"]}
+      ],
+      "expected_test_points": [
+        {"title": "满200元", "scenario": "商品金额200元", "expected": "优惠券可用", "sources": ["商品金额满200元可使用优惠券"]},
+        {"title": "未满200元", "scenario": "商品金额199.99元", "expected": "优惠券不可用", "sources": ["商品金额满200元可使用优惠券"]}
+      ],
+      "changed_titles": ["未满200元"]
+    },
+    {
+      "case_id": "revise-duplicate-001", "defect_type": "duplicate_test_point",
+      "requirement_facts": ["库存充足时创建订单"],
+      "before_test_points": [
+        {"title": "库存足够创建", "scenario": "库存大于购买量", "expected": "订单创建成功", "sources": ["库存充足时创建订单"]},
+        {"title": "库存充足下单", "scenario": "库存多于下单量", "expected": "订单创建成功", "sources": ["库存充足时创建订单"]}
+      ],
+      "expected_test_points": [
+        {"title": "库存足够创建", "scenario": "库存大于购买量", "expected": "订单创建成功", "sources": ["库存充足时创建订单"]}
+      ],
+      "changed_titles": ["库存充足下单"]
+    },
+    {
+      "case_id": "revise-hallucination-001", "defect_type": "unsupported_assertion",
+      "requirement_facts": ["支付回调失败时记录失败原因"],
+      "before_test_points": [
+        {"title": "支付回调失败", "scenario": "回调处理失败", "expected": "自动重试3次并发送短信", "sources": ["支付回调失败时记录失败原因"]},
+        {"title": "记录失败原因", "scenario": "回调失败", "expected": "保存失败原因", "sources": ["支付回调失败时记录失败原因"]}
+      ],
+      "expected_test_points": [
+        {"title": "支付回调失败", "scenario": "回调处理失败", "expected": "记录失败原因", "sources": ["支付回调失败时记录失败原因"]},
+        {"title": "记录失败原因", "scenario": "回调失败", "expected": "保存失败原因", "sources": ["支付回调失败时记录失败原因"]}
+      ],
+      "changed_titles": ["支付回调失败"]
+    },
+    {
+      "case_id": "revise-vague-001", "defect_type": "vague_expectation",
+      "requirement_facts": ["库存不足时提示订单创建失败"],
+      "before_test_points": [
+        {"title": "库存不足", "scenario": "库存小于购买量", "expected": "系统正确处理", "sources": ["库存不足时提示订单创建失败"]},
+        {"title": "失败提示", "scenario": "订单创建失败", "expected": "展示创建失败提示", "sources": ["库存不足时提示订单创建失败"]}
+      ],
+      "expected_test_points": [
+        {"title": "库存不足", "scenario": "库存小于购买量", "expected": "拒绝创建订单并展示失败提示", "sources": ["库存不足时提示订单创建失败"]},
+        {"title": "失败提示", "scenario": "订单创建失败", "expected": "展示创建失败提示", "sources": ["库存不足时提示订单创建失败"]}
+      ],
+      "changed_titles": ["库存不足"]
+    },
+    {
+      "case_id": "revise-source-001", "defect_type": "missing_source",
+      "requirement_facts": ["已取消订单收到支付回调时不得恢复订单"],
+      "before_test_points": [
+        {"title": "取消订单支付回调", "scenario": "已取消后收到成功回调", "expected": "订单仍保持取消", "sources": []},
+        {"title": "取消状态保持", "scenario": "订单已取消", "expected": "订单状态为已取消", "sources": ["已取消订单收到支付回调时不得恢复订单"]}
+      ],
+      "expected_test_points": [
+        {"title": "取消订单支付回调", "scenario": "已取消后收到成功回调", "expected": "订单仍保持取消", "sources": ["已取消订单收到支付回调时不得恢复订单"]},
+        {"title": "取消状态保持", "scenario": "订单已取消", "expected": "订单状态为已取消", "sources": ["已取消订单收到支付回调时不得恢复订单"]}
+      ],
+      "changed_titles": ["取消订单支付回调"]
+    }
+  ]
+}

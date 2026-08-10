@@ -3568,3 +3568,24 @@ Recall=0.3333；3份样本在受控重试后仍不符合结构化契约。2份�
 python -m pytest -q
 454 passed，10 skipped
 ```
+
+### 第五小步：Reviser修复样本与副作用指标
+
+本轮新增6份最小修复样本，对应需求遗漏、边界缺失、重复测试点、无依据断言、模糊预期和来源缺失。
+每份样本除待修目标外，还保留至少一个正确测试点作为保护对象。
+
+评测Runner使用现有`TestAnalysisState`和可注入的`revise(state)`边界，分别统计：
+
+- `target_fix_rate`：待修目标是否达到金标准；
+- `preservation_rate`：不相关的正确测试点是否保持不变；
+- `unexpected_titles`：是否产生金标准外的新测试点。
+
+Fake报告两项均为1.0，只证明数据流和指标可工作。错误Fake测试会故意保留缺陷并修改保护测试点，验证两类问题都会被指标发现。
+
+```text
+python -m pytest -q tests/unit/evaluation/test_reviser_evaluation.py
+4 passed
+
+python -m pytest -q
+458 passed，10 skipped
+```
