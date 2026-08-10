@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "document-parsing-v1",
+  "evaluated_fixture_count": 3,
+  "results": [
+    {
+      "fixture_id": "native-pdf-001",
+      "evaluation_target": "native_text",
+      "metrics": {
+        "text_line_recall": 1.0,
+        "character_accuracy": 1.0
+      },
+      "missing_items": [],
+      "warning_codes": []
+    },
+    {
+      "fixture_id": "docx-table-001",
+      "evaluation_target": "table_structure",
+      "metrics": {
+        "text_line_recall": 1.0,
+        "table_cell_accuracy": 1.0
+      },
+      "missing_items": [],
+      "warning_codes": []
+    },
+    {
+      "fixture_id": "scanned-pdf-001",
+      "evaluation_target": "ocr_text",
+      "metrics": {
+        "text_line_recall": 1.0,
+        "character_accuracy": 1.0
+      },
+      "missing_items": [],
+      "warning_codes": [
+        "empty_page"
+      ]
+    }
+  ]
+}

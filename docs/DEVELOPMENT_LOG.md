@@ -73,7 +73,7 @@
 | 阶段 2.15.7 | 已完成 | 服务调用指标、真实/估算Token、Prompt指纹、错误分类和任务性能摘要 | `039f798` |
 | 阶段 2.15 | 已完成 | 图文PRD理解、关键问题限流、ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16.1 | 已完成 | schema v1契约、标注指南和10份单人复核的虚构评测需求 | `abdb0cb`, `143b2a0` |
-| 阶段 2.16.2 | 第一小步已完成 | 5份合成图文附件、解析金标准和确定性样本测试 | 本次提交 |
+| 阶段 2.16.2 | 第二小步已完成 | 合成图文附件、正文/表格/OCR最小评分和真实本机基线 | `744228b`，本次提交 |
 | 阶段 2.16 | 进行中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
@@ -3363,3 +3363,28 @@ python -m pytest -q
 ### 下一步
 
 在保持小代码量的前提下，为现有文档解析输出增加最小评测适配和正文、表格、OCR确定性指标；暂不建设通用评测平台。
+
+### 第二小步：正文、表格和OCR确定性评分
+
+新增约190行的`evaluation.document_parsing`，直接复用现有`DocumentService`和`DocumentContent`，没有再建立Parser接口或评测平台。
+Runner只处理`native_text`、`table_structure`和`ocr_text`三类样本：
+
+1. 正文按金标准行计算召回率，并输出缺失行；
+2. 原生文字与OCR文字使用去空白后的编辑距离计算字符准确率；
+3. DOCX表格按行列位置比较单元格；
+4. OCR只读取`DocumentOcrElement.text`，不把来源标签计入字符准确率；
+5. 流程图和UI图明确跳过，`_NoVisualEngine`确保本轮不会误调用视觉API；
+6. 输出逐样本JSON，不计算会掩盖错误类型的综合总分。
+
+本机使用已配置Tesseract实际运行后，3份简单合成样本的对应指标均为1.0。该结果只证明当前样本链路可工作，
+不能外推为真实PRD准确率。扫描PDF保留`empty_page`警告，这是“没有原生文本层并进入OCR”的预期事实。
+
+```text
+python -m pytest tests/unit/evaluation/test_document_parsing.py -q
+4 passed
+
+python -m pytest -q
+429 passed，10 skipped
+```
+
+下一步只补流程节点、分支关系和UI元素的确定性评分；真实视觉模型调用继续受费用和显式授权约束。
