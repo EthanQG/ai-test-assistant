@@ -3640,3 +3640,20 @@ python -m pytest -q tests/unit/evaluation/test_experiments.py
 python -m pytest -q
 465 passed，10 skipped
 ```
+
+### 第三小步：三组执行策略与暂停处理
+
+本轮固定三组只在`use_rag`和`use_quality_loop`两个开关上存在差异，原始需求、数据集和用户补充策略保持一致。
+统一应用驱动器通过Application Service创建和推进任务；遇到待确认问题时，对每个问题提交`None`表示“暂不确定”，
+并恢复同一个`task_id`，避免人工答案污染组间对比。
+
+驱动器默认最多允许2轮待确认和20次推进，超过即明确失败，防止离线实验卡死。Fake Application Service测试验证
+两轮暂停恢复、同任务继续和限额拒绝；本轮尚未改变真实Orchestrator节点装配。
+
+```text
+python -m pytest -q tests/unit/evaluation/test_experiment_execution.py tests/unit/evaluation/test_experiments.py
+8 passed
+
+python -m pytest -q
+468 passed，10 skipped
+```

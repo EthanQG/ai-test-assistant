@@ -27,7 +27,7 @@
 - 阶段2.16.4第一小步：`2cf636a 阶段2.16.4：建立Reviewer缺陷评测基线`
 - 阶段2.16.4第二小步：`ed6be71 阶段2.16.4：适配Reviewer结构化缺陷输出`
 
-## 当前阶段：2.16.5 三方案消融实验（第二小步已完成）
+## 当前阶段：2.16.5 三方案消融实验（第三小步已完成）
 
 本轮先建立Reviewer可重复缺陷数据和确定性指标，不调用真实LLM：
 
@@ -71,6 +71,11 @@
 38. 从`TaskView.performance_summary`读取节点总耗时和Token；
 39. Token优先使用供应商返回值，不可用时才使用已有估算值；
 40. 评测适配层不读取Repository，也不直接修改`AgentState`。
+41. 固定三组仅在`use_rag`和`use_quality_loop`两个能力开关上不同；
+42. 三组都通过Application Service创建和推进任务；
+43. 待确认问题统一回答`None`，表示“暂不确定”，不向任一组额外泄露答案；
+44. 补充恢复始终使用同一个`task_id`；
+45. 默认最多2轮待确认、20次推进，防止离线任务无限循环。
 
 ## 当前数据流
 
@@ -91,7 +96,7 @@ python -m pytest -q tests/unit/evaluation/test_reviewer_runner.py tests/unit/eva
 8 passed
 
 python -m pytest -q
-465 passed，10 skipped
+468 passed，10 skipped
 ```
 
 默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
@@ -107,17 +112,18 @@ python -m pytest -q
 - 真实报告没有保存完整模型输出，尚不能人工复核3个改名结果是否语义等价
 - 三方案第一小步只有Fake接线证据，尚无三组真实结果
 - 严格文本匹配会漏掉同义表达，需要在最终报告中同时保留人工复核口径
+- 三组节点开关尚未装配到真实Orchestrator，本轮只固定应用层执行协议
 - 自由文本映射依赖明确关键词，Reviewer换一种表达可能造成漏检
 - Reviser修复正确率和副作用尚未评测
 
-## 下一步：阶段2.16.5 三组执行策略
+## 下一步：阶段2.16.5 三组Orchestrator装配
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 用现有Application Service或受控节点组合实现三组差异；
-2. 固定待确认问题的离线处理策略，保证三组输入一致；
-3. RAG组固定相同历史资产快照；
-4. 先用Fake节点验证执行顺序，再决定真实实验批次。
+1. 基础组使用无历史上下文节点和确定性质量旁路；
+2. RAG组使用真实KnowledgeRetriever和相同质量旁路；
+3. 完整组使用真实Retriever、Reviewer和Reviser；
+4. 用Fake节点验证三组调用差异，不修改生产Orchestrator。
 
 ## 新电脑恢复方式
 
