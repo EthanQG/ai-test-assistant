@@ -27,7 +27,7 @@
 - 阶段2.16.4第一小步：`2cf636a 阶段2.16.4：建立Reviewer缺陷评测基线`
 - 阶段2.16.4第二小步：`ed6be71 阶段2.16.4：适配Reviewer结构化缺陷输出`
 
-## 当前阶段：2.16.5 三方案消融实验（第一小步已完成）
+## 当前阶段：2.16.5 三方案消融实验（第二小步已完成）
 
 本轮先建立Reviewer可重复缺陷数据和确定性指标，不调用真实LLM：
 
@@ -66,6 +66,11 @@
 33. 统一输出事实、规则、风险、问题、场景、断言、耗时、Token和修正次数；
 34. 第一版采用去空白、大小写归一后的严格文本匹配；
 35. Fake测试完成10×3实验矩阵，并能暴露某一组的事实漏检。
+36. 新增`TaskViewExperimentVariant`，只接收Application Service只读结果；
+37. 统一提取事实、规则、风险、问题、测试场景和预期断言；
+38. 从`TaskView.performance_summary`读取节点总耗时和Token；
+39. Token优先使用供应商返回值，不可用时才使用已有估算值；
+40. 评测适配层不读取Repository，也不直接修改`AgentState`。
 
 ## 当前数据流
 
@@ -86,7 +91,7 @@ python -m pytest -q tests/unit/evaluation/test_reviewer_runner.py tests/unit/eva
 8 passed
 
 python -m pytest -q
-463 passed，10 skipped
+465 passed，10 skipped
 ```
 
 默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
@@ -105,14 +110,14 @@ python -m pytest -q
 - 自由文本映射依赖明确关键词，Reviewer换一种表达可能造成漏检
 - Reviser修复正确率和副作用尚未评测
 
-## 下一步：阶段2.16.5 三组生产边界适配
+## 下一步：阶段2.16.5 三组执行策略
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 明确基础LLM只执行需求分析与测试点生成；
-2. RAG组增加相同历史资产上下文；
-3. 完整组再经过Reviewer/Reviser闭环；
-4. 使用适配器复用现有节点，不复制状态机，不立即运行30份真实调用。
+1. 用现有Application Service或受控节点组合实现三组差异；
+2. 固定待确认问题的离线处理策略，保证三组输入一致；
+3. RAG组固定相同历史资产快照；
+4. 先用Fake节点验证执行顺序，再决定真实实验批次。
 
 ## 新电脑恢复方式
 

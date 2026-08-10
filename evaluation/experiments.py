@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Callable, Mapping, Protocol
 
+from application import TaskView
 from .dataset import EvaluationCase, load_evaluation_dataset
 
 
@@ -32,6 +33,49 @@ class ExperimentOutput:
 
 class ExperimentVariant(Protocol):
     def analyze(self, case: EvaluationCase) -> ExperimentOutput: ...
+
+
+class TaskViewExperimentVariant:
+    """Adapt an application use case returning TaskView to the shared output."""
+
+    def __init__(self, execute: Callable[[EvaluationCase], TaskView]):
+        self._execute = execute
+
+    def analyze(self, case: EvaluationCase) -> ExperimentOutput:
+        return experiment_output_from_task_view(self._execute(case))
+
+
+def experiment_output_from_task_view(view: TaskView) -> ExperimentOutput:
+    performance = view.performance_summary
+    token_totals = performance["token_totals_by_source"]
+    provider = token_totals["provider"]
+    estimated = token_totals["estimated"]
+    selected = provider if provider["total"] else estimated
+    questions = tuple(dict.fromkeys(
+        [*view.open_questions, *view.deferred_questions]
+    ))
+    risks = tuple(
+        item["risk"]
+        for item in view.inferred_risks
+        if isinstance(item, dict) and isinstance(item.get("risk"), str)
+    )
+    scenarios = []
+    assertions = []
+    for point in view.test_points:
+        scenarios.extend((point["title"], point["scenario"]))
+        assertions.extend(point["expected_results"])
+    return ExperimentOutput(
+        facts=tuple(view.requirement_facts),
+        business_rules=tuple(view.business_rules),
+        risks=risks,
+        clarification_questions=questions,
+        scenarios=tuple(scenarios),
+        assertions=tuple(assertions),
+        elapsed_seconds=float(performance["task_execution_seconds"]),
+        input_tokens=selected["input"] or None,
+        output_tokens=selected["output"] or None,
+        revision_count=int(view.revision_count),
+    )
 
 
 def run_three_way_experiment(

@@ -3624,3 +3624,19 @@ python -m pytest -q tests/unit/evaluation/test_experiments.py
 python -m pytest -q
 463 passed，10 skipped
 ```
+
+### 第二小步：TaskView生产结果适配
+
+本轮新增`TaskViewExperimentVariant`，把返回只读`TaskView`的应用用例包装为统一实验组。适配器读取需求事实、
+业务规则、推导风险、待确认问题、测试点标题/场景/预期，并复用`performance_summary`中的节点耗时和Token。
+
+Token优先选择模型供应商实际返回值；没有供应商值时才使用现有估算值。适配层不访问Repository、不读取LLM客户端，
+也不获得可修改的`AgentState`。Fake `TaskView`测试验证字段和指标映射，不运行真实模型。
+
+```text
+python -m pytest -q tests/unit/evaluation/test_experiments.py
+5 passed
+
+python -m pytest -q
+465 passed，10 skipped
+```
