@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "reviewer-defects-v1",
+  "description": "完全虚构的Reviewer缺陷注入样本，每个target都是稳定评分标识。",
+  "cases": [
+    {
+      "case_id": "review-omission-001",
+      "title": "遗漏库存不足分支",
+      "requirement_facts": ["库存充足时创建订单", "库存不足时拒绝创建订单"],
+      "test_points": [{"title": "库存充足创建订单", "scenario": "库存充足", "expected": "订单创建成功", "sources": ["库存充足时创建订单"]}],
+      "expected_defects": [{"defect_type": "requirement_omission", "target": "库存不足时拒绝创建订单", "evidence": "现有测试点只覆盖库存充足分支"}]
+    },
+    {
+      "case_id": "review-omission-002",
+      "title": "遗漏角色降级",
+      "requirement_facts": ["角色升级后新权限立即生效", "角色降级后旧权限立即失效"],
+      "test_points": [{"title": "角色升级", "scenario": "查看者升级为编辑者", "expected": "编辑权限立即生效", "sources": ["角色升级后新权限立即生效"]}],
+      "expected_defects": [{"defect_type": "requirement_omission", "target": "角色降级后旧权限立即失效", "evidence": "没有覆盖降级后的旧权限失效"}]
+    },
+    {
+      "case_id": "review-boundary-001",
+      "title": "缺少优惠券门槛边界",
+      "requirement_facts": ["商品金额满200元可使用优惠券"],
+      "test_points": [{"title": "满200元使用优惠券", "scenario": "商品金额200元", "expected": "优惠券可用", "sources": ["商品金额满200元可使用优惠券"]}],
+      "expected_defects": [{"defect_type": "boundary_missing", "target": "优惠券199.99元边界", "evidence": "只覆盖边界值，未覆盖边界前"}]
+    },
+    {
+      "case_id": "review-boundary-002",
+      "title": "缺少上传数量超限",
+      "requirement_facts": ["单次最多上传5个文件"],
+      "test_points": [{"title": "上传5个文件", "scenario": "选择5个合法文件", "expected": "上传成功", "sources": ["单次最多上传5个文件"]}],
+      "expected_defects": [{"defect_type": "boundary_missing", "target": "上传6个文件", "evidence": "未覆盖最大数量之后的失败边界"}]
+    },
+    {
+      "case_id": "review-duplicate-001",
+      "title": "重复库存测试点",
+      "requirement_facts": ["库存充足时创建订单"],
+      "test_points": [{"title": "库存足够创建", "scenario": "库存大于购买数", "expected": "创建成功", "sources": ["库存充足时创建订单"]}, {"title": "库存充足下单", "scenario": "可用库存多于下单数量", "expected": "订单成功", "sources": ["库存充足时创建订单"]}],
+      "expected_defects": [{"defect_type": "duplicate_test_point", "target": "库存足够创建|库存充足下单", "evidence": "两条测试点覆盖同一输入和预期"}]
+    },
+    {
+      "case_id": "review-hallucination-001",
+      "title": "编造固定重试次数",
+      "requirement_facts": ["支付回调失败时记录失败原因"],
+      "test_points": [{"title": "支付回调失败", "scenario": "回调处理失败", "expected": "系统自动重试3次并发送短信", "sources": ["支付回调失败时记录失败原因"]}],
+      "expected_defects": [{"defect_type": "unsupported_assertion", "target": "支付回调失败", "evidence": "需求没有规定重试3次或发送短信"}]
+    },
+    {
+      "case_id": "review-vague-001",
+      "title": "预期结果不可判断",
+      "requirement_facts": ["库存不足时提示订单创建失败"],
+      "test_points": [{"title": "库存不足", "scenario": "库存小于购买数量", "expected": "系统正确处理", "sources": ["库存不足时提示订单创建失败"]}],
+      "expected_defects": [{"defect_type": "vague_expectation", "target": "库存不足", "evidence": "正确处理无法判断是否展示失败提示或是否创建订单"}]
+    },
+    {
+      "case_id": "review-source-001",
+      "title": "测试点缺少来源",
+      "requirement_facts": ["已取消订单收到支付回调时不得恢复订单"],
+      "test_points": [{"title": "取消订单支付回调", "scenario": "订单已取消后收到成功回调", "expected": "订单仍保持取消", "sources": []}],
+      "expected_defects": [{"defect_type": "missing_source", "target": "取消订单支付回调", "evidence": "测试点没有关联需求事实来源"}]
+    },
+    {
+      "case_id": "review-multiple-001",
+      "title": "遗漏并包含无依据断言",
+      "requirement_facts": ["退款累计不得超过实付金额", "退款处理中不得重复提交"],
+      "test_points": [{"title": "退款累计上限", "scenario": "累计退款等于实付金额", "expected": "退款完成后自动发送邮件", "sources": ["退款累计不得超过实付金额"]}],
+      "expected_defects": [{"defect_type": "requirement_omission", "target": "退款处理中不得重复提交", "evidence": "没有处理中重复提交场景"}, {"defect_type": "unsupported_assertion", "target": "退款累计上限", "evidence": "需求没有规定自动发送邮件"}]
+    },
+    {
+      "case_id": "review-multiple-002",
+      "title": "重复且缺少来源",
+      "requirement_facts": ["打开通知后状态变为已读"],
+      "test_points": [{"title": "打开通知", "scenario": "打开未读通知", "expected": "状态变为已读", "sources": []}, {"title": "查看未读通知", "scenario": "用户查看未读消息", "expected": "消息已读", "sources": []}],
+      "expected_defects": [{"defect_type": "duplicate_test_point", "target": "打开通知|查看未读通知", "evidence": "两条测试点语义重复"}, {"defect_type": "missing_source", "target": "打开通知", "evidence": "测试点没有来源引用"}]
+    },
+    {
+      "case_id": "review-clean-001",
+      "title": "完整订单库存场景",
+      "requirement_facts": ["库存充足时创建订单", "库存不足时拒绝创建订单"],
+      "test_points": [{"title": "库存充足", "scenario": "库存等于购买数量", "expected": "创建订单并扣减库存", "sources": ["库存充足时创建订单"]}, {"title": "库存不足", "scenario": "库存小于购买数量", "expected": "拒绝创建且不扣减库存", "sources": ["库存不足时拒绝创建订单"]}],
+      "expected_defects": []
+    },
+    {
+      "case_id": "review-clean-002",
+      "title": "完整登录锁定场景",
+      "requirement_facts": ["第五次密码错误后锁定30分钟"],
+      "test_points": [{"title": "第五次错误", "scenario": "前4次错误后再次输入错误密码", "expected": "账号锁定30分钟", "sources": ["第五次密码错误后锁定30分钟"]}, {"title": "锁定时间边界", "scenario": "锁定达到30分钟", "expected": "不再因本次锁定拒绝登录", "sources": ["第五次密码错误后锁定30分钟"]}],
+      "expected_defects": []
+    }
+  ]
+}

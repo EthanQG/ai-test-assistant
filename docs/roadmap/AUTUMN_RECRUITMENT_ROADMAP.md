@@ -382,6 +382,7 @@ Milvus 是语义检索索引，负责保存：
 
 ### 2.16.4 Reviewer/Reviser 评测
 
+- **第一小步已完成（2026-08-10）**：12份缺陷注入/正确样本，覆盖六类问题及Precision、Recall、误报率
 - 向测试点注入遗漏、重复、幻觉、模糊预期和缺失来源
 - 计算 Reviewer 缺陷检测 Precision、Recall、误报和漏报
 

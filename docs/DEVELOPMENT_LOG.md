@@ -3499,7 +3499,23 @@ python -m pytest -q
 5份样本Recall仍为1.0且禁止命中率降为0。由于每个查询仅有1个相关资产且数据量很小，0.70只记录为候选，
 没有自动修改线上默认配置。完整报告位于`evaluation/results/rag_parameter_sweep_v1.json`。
 
+## 阶段 2.16.4：Reviewer/Reviser专项评测
+
+### 第一小步：缺陷注入数据与确定性评分
+
+本轮新增12份合成Reviewer样本，没有调用真实LLM：
+
+1. 六类缺陷固定为需求遗漏、边界缺失、重复测试点、无依据断言、模糊预期和来源缺失；
+2. 8份单缺陷样本便于定位每类能力；
+3. 2份多缺陷样本验证同一测试点集合中的组合问题；
+4. 2份正确样本用于统计误报，防止“报告问题越多分越高”；
+5. 共12个缺陷，每个缺陷使用`defect_type + target`作为稳定评分键并保留人工证据；
+6. 评分器计算TP、FP、FN、Precision、Recall和正确样本误报率。
+
+第一小步只固定考卷、答案和评分方式，不表示当前Reviewer已经达到任何准确率。下一小步再把现有
+`TestPointReviewResult`结构化字段适配成这些稳定缺陷类型。
+
 ```text
 python -m pytest -q
-444 passed，10 skipped
+448 passed，10 skipped
 ```

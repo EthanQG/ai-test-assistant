@@ -24,77 +24,55 @@
 - 阶段2.16.3第二小步：`1f6537b 阶段2.16.3：接入RAG检索服务评测边界`
 - 阶段2.16.3第三小步：`2533806 阶段2.16.3：完成真实RAG链路评测`
 
-## 当前阶段：2.16.3 RAG专项评测（第四小步已完成）
+## 当前阶段：2.16.4 Reviewer/Reviser专项评测（第一小步已完成）
 
-本轮为真实RAG实验准备可重复资产和显式执行入口：
+本轮先建立Reviewer可重复缺陷数据和确定性指标，不调用真实LLM：
 
-1. 新增5份完全虚构查询，覆盖订单库存、退款、登录锁定、文件上传和角色权限；
-2. 每份查询标注期望召回资产和明确不应召回资产；
-3. `Recall@K`衡量相关资产是否找全；
-4. `Precision@K`衡量前K个位置中相关资产占比；
-5. `MRR`衡量第一个相关资产出现得是否足够靠前；
-6. `forbidden_hit_rate`衡量已知无关资产是否污染结果；
-7. Runner按case输出明细并计算平均指标；
-8. 新增5份与查询金标准一一对应的合成KnowledgeAsset种子；
-9. 种子包含需求、事实、规则、风险、测试点和Reviewer结果，不包含公司数据；
-10. 真实Runner已依次写入MySQL、索引Milvus、调用Retrieval Service并输出独立报告；
-11. 必须显式设置`RUN_RAG_INTEGRATION_EVALUATION=1`和MySQL资产Repository，默认pytest不会访问外部服务。
+1. 新增12份完全虚构Reviewer样本；
+2. 覆盖需求遗漏、边界缺失、重复测试点、无依据断言、模糊预期和来源缺失六类问题；
+3. 8份单缺陷、2份多缺陷，共12个缺陷；
+4. 额外保留2份正确样本，用于检查Reviewer误报；
+5. 每个缺陷包含稳定类型、目标和具体证据；
+6. 指标输出TP、FP、FN、Precision、Recall和正确样本误报率；
+7. pytest只使用确定性Fake预测，不调用真实LLM。
 
 ## 当前数据流
 
 ```text
-虚构查询 + 相关/禁止资产标注
-→ Fake Embedding / Fake VectorSearch
-→ KnowledgeAssetRetrievalService
-→ InMemoryKnowledgeAssetRepository权威回查
-→ candidates转换为排序asset_id
-→ 资产级逐项比较
-→ Recall@K / Precision@K / MRR / forbidden_hit_rate
+虚构需求事实 + 注入缺陷测试点
+→ Reviewer缺陷预测（下一小步接入）
+→ 按case_id + defect_type + target匹配
+→ TP / FP / FN
+→ Precision / Recall / 正确样本误报率
 ```
 
 ## 验证结果
 
 ```text
-python -m pytest -q tests/unit/evaluation/test_rag_evaluation.py tests/unit/evaluation/test_rag_retrieval_service_evaluation.py
-6 passed
+python -m pytest -q tests/unit/evaluation/test_reviewer_evaluation.py
+4 passed
 
 python -m pytest -q
-444 passed，10 skipped
+448 passed，10 skipped
 ```
 
-默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型；真实RAG评测通过独立命令显式运行。
-
-真实RAG结果（5份合成资产，Top-K=3，`nomic-embed-text`）：
-
-- Mean Recall@3：1.0
-- Mean Precision@3：0.3333
-- Mean MRR：1.0
-- Mean forbidden hit rate：0.1
-- 权限查询召回了明确禁止的订单库存资产，因此不能只报告Recall和MRR
-
-参数对比结果：
-
-- Top-K：1、2、3；阈值：0.65、0.70、0.75，共9组；
-- 阈值0.65且Top-K为2或3时，宏平均禁止命中率为0.1；
-- 阈值0.70和0.75的9项组合中，Recall均保持1.0且禁止命中率为0；
-- 当前每个查询只标注1个相关资产，所以Top-K=1的Precision=1不能外推到真实多相关资产场景；
-- 不自动修改线上默认阈值，0.70只作为后续扩大样本后的候选值。
+默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
 
 ## 当前限制
 
-- 5份查询、KnowledgeAsset和向量命中均为合成数据
-- Fake链路只证明服务边界接线、权威回查和指标计算正确，不证明现有Embedding或阈值效果
-- 当前只有5份简单合成资产的真实结果，不能外推到真实PRD和大规模知识库
-- `k=3`是当前评测参数，不代表已经证明最优
+- 当前12份均为小型合成样本，尚未覆盖长测试点集合
+- 第一小步只证明数据契约和评分公式，尚无真实Reviewer效果
+- 模糊预期和来源缺失仍需下一小步定义如何从Reviewer结构化输出确定性映射
+- Reviser修复正确率和副作用尚未评测
 
-## 下一步：阶段2.16.4 Reviewer/Reviser专项评测
+## 下一步：阶段2.16.4 Reviewer真实输出适配
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 构造遗漏、重复、幻觉、模糊预期和缺失来源等可控缺陷；
-2. 评估Reviewer的缺陷检测Precision、Recall、误报和漏报；
-3. 再验证Reviser是否按建议修复且没有破坏已正确测试点；
-4. 默认使用Fake模型输出固定缺陷，不调用真实LLM。
+1. 将现有`TestPointReviewResult`映射为六类稳定缺陷；
+2. 优先使用覆盖事实、重复组、幻觉问题等结构化字段，不依赖另一个LLM评分；
+3. 为模糊预期和来源缺失定义最小确定性适配规则；
+4. 先用Fake Reviewer输出验证适配，再决定是否显式运行真实Reviewer。
 
 ## 新电脑恢复方式
 

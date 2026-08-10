@@ -261,6 +261,7 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 21. 阶段2.16.3：已建立5份虚构RAG查询和资产级指标，并用Fake外部依赖跑通真实Retrieval Service边界；尚无真实Milvus效果结果
 22. 阶段2.16.3真实实验：5份合成KnowledgeAsset已通过MySQL、`nomic-embed-text`和Milvus完成端到端评测；Recall@3=1.0，但禁止资产命中率为0.1，仍需阈值对比
 23. 阶段2.16.3参数对比：9组真实实验中阈值0.70保持Recall=1.0并消除当前样本的禁止命中；样本过少，尚未修改线上默认参数
+24. 阶段2.16.4第一小步：已建立12份Reviewer缺陷注入样本和Precision、Recall、正确样本误报率；尚未运行真实Reviewer
 22. 阶段2.16.4～2.16.6：完成Reviewer和三方案实验
 23. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
