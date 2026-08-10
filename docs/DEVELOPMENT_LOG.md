@@ -3657,3 +3657,20 @@ python -m pytest -q tests/unit/evaluation/test_experiment_execution.py tests/uni
 python -m pytest -q
 468 passed，10 skipped
 ```
+
+### 第四小步：三组Orchestrator依赖装配
+
+本轮没有修改生产`AgentOrchestrator`，而是通过依赖注入装配三组：基础组使用`NoKnowledgeRetriever`和
+`QualityLoopBypassReviewer`，RAG组使用真实Retriever和质量旁路，完整组使用真实Retriever、Reviewer和Reviser。
+
+NoKnowledge会清空本地经验/RAG上下文并标记未命中；QualityBypass生成Finalizer可读取的合法覆盖结构。
+两者都在完成事件中记录`evaluation_bypass=true`和被关闭的能力，避免把旁路的100分误写成真实Reviewer结果。
+Fake依赖测试验证三组只启用策略允许的组件，状态机仍由原Orchestrator控制。
+
+```text
+python -m pytest -q tests/unit/evaluation/test_experiment_orchestrators.py tests/unit/evaluation/test_experiment_execution.py tests/unit/evaluation/test_experiments.py
+11 passed
+
+python -m pytest -q
+471 passed，10 skipped
+```
