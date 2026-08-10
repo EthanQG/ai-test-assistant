@@ -49,6 +49,7 @@ class PromptService:
         requirement: str,
         user_clarifications: list[dict] | None = None,
         deferred_questions: list[str] | None = None,
+        source_label: str | None = None,
     ) -> str:
         cleaned_requirement = requirement.strip()
         if not cleaned_requirement:
@@ -57,6 +58,12 @@ class PromptService:
             "请对以下原始需求进行结构化分析，并严格按照系统要求只返回 JSON。\n\n"
             f"【原始需求】\n{cleaned_requirement}"
         )
+        if source_label:
+            prompt += (
+                "\n\n【当前片段来源】\n"
+                f"{source_label}\n"
+                "inferred_risks.basis和open_questions.evidence应引用本片段的具体内容。"
+            )
         if user_clarifications:
             prompt += (
                 "\n\n【用户补充确认】\n"

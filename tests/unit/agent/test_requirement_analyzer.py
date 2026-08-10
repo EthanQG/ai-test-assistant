@@ -1,6 +1,8 @@
 import json
 import unittest
 
+import pytest
+
 from agent import (
     AgentEventType,
     AgentStatus,
@@ -52,10 +54,12 @@ class FakeLLMService:
         self.last_prompt = ""
         self.last_system_prompt = ""
         self.received_max_tokens = []
+        self.prompts = []
 
     def generate(self, prompt: str, system_prompt: str = "") -> str:
         self.last_prompt = prompt
         self.last_system_prompt = system_prompt
+        self.prompts.append(prompt)
         if self.error:
             raise self.error
         return self.response
@@ -186,6 +190,46 @@ class RequirementAnalyzerTests(unittest.TestCase):
         )
         self.assertIn("只输出一个合法 JSON 对象", llm.last_system_prompt)
         self.assertEqual(llm.received_max_tokens, [8192])
+
+    def test_long_requirement_is_chunked_and_merged_without_duplicates(self):
+        payload = valid_analysis_payload()
+        payload["open_questions"] = [
+            clarification_candidate("支付与关闭并发时哪个状态优先？")
+        ]
+        llm = FakeLLMService(json.dumps(payload, ensure_ascii=False))
+        analyzer = RequirementAnalyzer(llm_service=llm)
+        state = TestAnalysisState(
+            requirement="".join(
+                f"## {index}. 章节{index}\n" + ("订单业务规则。" * 90)
+                for index in range(1, 4)
+            )
+        )
+
+        result = analyzer.analyze(state)
+
+        assert len(llm.received_max_tokens) > 1
+        assert all(value == 8192 for value in llm.received_max_tokens)
+        assert result.requirement_facts == payload["requirement_facts"]
+        assert len(result.inferred_risks) == 1
+        assert result.inferred_risks[0].basis.startswith("[chunk-001｜")
+        assert state.open_questions == ["支付与关闭并发时哪个状态优先？"]
+        assert "【当前片段来源】" in llm.prompts[0]
+        assert state.events[-2].data["requirement_chunked"] is True
+        assert state.events[-2].data["requirement_chunk_count"] > 1
+
+    def test_chunk_failure_identifies_source_and_fails_whole_task(self):
+        analyzer = RequirementAnalyzer(
+            llm_service=FakeLLMService("not-json")
+        )
+        state = TestAnalysisState(
+            requirement="# 第一章\n" + ("库存规则。" * 400)
+        )
+
+        with pytest.raises(RequirementAnalysisError, match="chunk-001"):
+            analyzer.analyze(state)
+
+        assert state.status is AgentStatus.FAILED
+        assert "chunk-001" in state.error_message
 
     def test_open_questions_put_task_in_waiting_state(self):
         payload = valid_analysis_payload()

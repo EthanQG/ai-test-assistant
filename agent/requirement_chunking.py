@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import re
 
 
-DEFAULT_REQUIREMENT_CHUNK_CHARS = 5_000
+DEFAULT_REQUIREMENT_CHUNK_CHARS = 1_800
 
 
 @dataclass(frozen=True)
@@ -158,4 +158,3 @@ class RequirementChunker:
     ) -> int:
         matches = list(pattern.finditer(text, start, end))
         return matches[-1].end() if matches else start
-

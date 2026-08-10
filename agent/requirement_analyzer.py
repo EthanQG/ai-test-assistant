@@ -1,4 +1,5 @@
 from dataclasses import replace
+import re
 
 from services.llm_service import LLMService
 from services.prompt_service import PromptService
@@ -7,6 +8,8 @@ from .events import AgentStep
 from .clarification_policy import ClarificationQuestionPolicy
 from .context_builder import ContextBuilder
 from .models import RequirementAnalysisResult
+from .models import ClarificationCandidate, InferredRisk
+from .requirement_chunking import RequirementChunk, RequirementChunker
 from .state import AgentStatus, TestAnalysisState
 from .structured_output import (
     LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
@@ -27,6 +30,7 @@ class RequirementAnalyzer:
         prompt_service: PromptService | None = None,
         clarification_policy: ClarificationQuestionPolicy | None = None,
         context_builder: ContextBuilder | None = None,
+        chunker: RequirementChunker | None = None,
     ):
         self.llm_service = llm_service or LLMService()
         self.prompt_service = prompt_service or PromptService()
@@ -34,6 +38,7 @@ class RequirementAnalyzer:
             clarification_policy or ClarificationQuestionPolicy()
         )
         self.context_builder = context_builder or ContextBuilder()
+        self.chunker = chunker or RequirementChunker()
 
     def analyze(
         self,
@@ -49,25 +54,21 @@ class RequirementAnalyzer:
                 "requirement_analysis"
             )
             context = self.context_builder.build_requirement_analysis(state)
-            user_prompt = (
-                self.prompt_service.build_requirement_analysis_prompt(
-                    context.values["requirement"],
-                    user_clarifications=context.values[
-                        "user_clarifications"
-                    ],
-                    deferred_questions=context.values[
-                        "deferred_questions"
-                    ],
+            chunks = self.chunker.split(context.values["requirement"])
+            partial_results = [
+                self._analyze_chunk(
+                    chunk,
+                    system_prompt=system_prompt,
+                    user_clarifications=context.values["user_clarifications"],
+                    deferred_questions=context.values["deferred_questions"],
                 )
+                for chunk in chunks
+            ]
+            result = self._merge_results(partial_results)
+            raw_candidate_count = sum(
+                len(item.clarification_candidates)
+                for item in partial_results
             )
-            result = generate_and_parse_json(
-                self.llm_service,
-                user_prompt,
-                system_prompt,
-                RequirementAnalysisResult.from_json,
-                max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
-            )
-            raw_candidate_count = len(result.clarification_candidates)
             selection = self.clarification_policy.select(
                 result.clarification_candidates,
                 deferred_questions=state.deferred_questions,
@@ -94,6 +95,8 @@ class RequirementAnalyzer:
                     "non_blocking_question_count": len(
                         selection.non_blocking_risks
                     ),
+                    "requirement_chunk_count": len(chunks),
+                    "requirement_chunked": len(chunks) > 1,
                     "context_metrics": context.metrics.to_dict(),
                 },
             )
@@ -107,6 +110,108 @@ class RequirementAnalyzer:
             raise RequirementAnalysisError(
                 f"requirement analysis failed: {exc}"
             ) from exc
+
+    def _analyze_chunk(
+        self,
+        chunk: RequirementChunk,
+        *,
+        system_prompt: str,
+        user_clarifications: list[dict],
+        deferred_questions: list[str],
+    ) -> RequirementAnalysisResult:
+        source_label = f"{chunk.chunk_id}｜{chunk.title}"
+        user_prompt = self.prompt_service.build_requirement_analysis_prompt(
+            chunk.content,
+            user_clarifications=user_clarifications,
+            deferred_questions=deferred_questions,
+            source_label=source_label,
+        )
+        try:
+            result = generate_and_parse_json(
+                self.llm_service,
+                user_prompt,
+                system_prompt,
+                RequirementAnalysisResult.from_json,
+                max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
+            )
+        except Exception as exc:
+            raise RequirementAnalysisError(
+                f"{source_label} 分析失败: {exc}"
+            ) from exc
+        return replace(
+            result,
+            inferred_risks=[
+                InferredRisk(
+                    risk=item.risk,
+                    basis=f"[{source_label}] {item.basis}",
+                )
+                for item in result.inferred_risks
+            ],
+            clarification_candidates=[
+                ClarificationCandidate(
+                    question=item.question,
+                    category=item.category,
+                    blocking_reason=item.blocking_reason,
+                    evidence=f"[{source_label}] {item.evidence}",
+                )
+                for item in result.clarification_candidates
+            ],
+        )
+
+    @classmethod
+    def _merge_results(
+        cls,
+        results: list[RequirementAnalysisResult],
+    ) -> RequirementAnalysisResult:
+        if not results:
+            raise RequirementAnalysisError("requirement analysis produced no result")
+        return RequirementAnalysisResult(
+            summary="；".join(cls._unique(item.summary for item in results)),
+            modules=cls._unique(
+                value for item in results for value in item.modules
+            ),
+            requirement_facts=cls._unique(
+                value for item in results for value in item.requirement_facts
+            ),
+            business_rules=cls._unique(
+                value for item in results for value in item.business_rules
+            ),
+            state_transitions=cls._unique(
+                value for item in results for value in item.state_transitions
+            ),
+            inferred_risks=cls._unique_by(
+                (value for item in results for value in item.inferred_risks),
+                lambda value: value.risk,
+            ),
+            clarification_candidates=cls._unique_by(
+                (
+                    value
+                    for item in results
+                    for value in item.clarification_candidates
+                ),
+                lambda value: value.question,
+            ),
+        )
+
+    @classmethod
+    def _unique(cls, values) -> list[str]:
+        return cls._unique_by(values, lambda value: value)
+
+    @classmethod
+    def _unique_by(cls, values, key) -> list:
+        seen: set[str] = set()
+        unique = []
+        for value in values:
+            normalized = re.sub(
+                r"[\s，,。；;：:！？!?]",
+                "",
+                key(value),
+            ).casefold()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            unique.append(value)
+        return unique
 
     def reanalyze_with_clarifications(
         self,
