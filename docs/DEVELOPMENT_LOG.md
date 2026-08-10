@@ -3698,3 +3698,9 @@ python -m compileall -q agent application repositories services utils views test
 git diff --check
 通过
 ```
+
+## 阶段 2.16.6：秋招证据汇总与项目冻结
+
+为了优先满足秋招投递，本阶段没有继续增加Agent节点或运行耗时较高的完整10×3实验，而是把仓库中已经存在的代码、测试和真实评测结果整理为`docs/RESUME_EVIDENCE.md`。文档明确区分“可以描述的工程能力”和“尚不能声称的效果提升”，并提供推荐简历表述、三分钟讲解顺序与10个高频面试问题。
+
+当前秋招版本默认冻结在线功能。完整10×3、语义评分、FastAPI、后台任务和Vue均为后续可选增强，不再阻塞项目学习、演示和投递。
