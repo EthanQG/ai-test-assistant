@@ -51,6 +51,7 @@ class FakeLLMService:
         self.error = error
         self.last_prompt = ""
         self.last_system_prompt = ""
+        self.received_max_tokens = []
 
     def generate(self, prompt: str, system_prompt: str = "") -> str:
         self.last_prompt = prompt
@@ -58,6 +59,15 @@ class FakeLLMService:
         if self.error:
             raise self.error
         return self.response
+
+    def generate_json(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        max_tokens: int | None = None,
+    ) -> str:
+        self.received_max_tokens.append(max_tokens)
+        return self.generate(prompt, system_prompt)
 
 
 class RequirementAnalysisResultTests(unittest.TestCase):
@@ -175,6 +185,7 @@ class RequirementAnalyzerTests(unittest.TestCase):
             llm.last_prompt,
         )
         self.assertIn("只输出一个合法 JSON 对象", llm.last_system_prompt)
+        self.assertEqual(llm.received_max_tokens, [8192])
 
     def test_open_questions_put_task_in_waiting_state(self):
         payload = valid_analysis_payload()

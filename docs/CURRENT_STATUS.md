@@ -29,6 +29,10 @@
 
 ## 当前阶段：2.16.6 秋招证据汇总（已完成）
 
+### V1验收修复：长PRD需求分析输出截断
+
+真实演示发现`RequirementAnalyzer`未显式传入大结构化输出额度，长PRD生成事实、规则、风险和待确认项时使用默认`max_tokens`，导致JSON被截断。现已与Generator、Reviewer和Reviser统一为8192输出Token，并增加参数传递测试。该修复不改变Prompt、AgentState、Orchestrator和页面行为；8192是有界修复，不承诺任意长度文档均可单轮完成。
+
 本轮先建立Reviewer可重复缺陷数据和确定性指标，不调用真实LLM：
 
 1. 新增12份完全虚构Reviewer样本；

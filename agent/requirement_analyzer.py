@@ -8,7 +8,10 @@ from .clarification_policy import ClarificationQuestionPolicy
 from .context_builder import ContextBuilder
 from .models import RequirementAnalysisResult
 from .state import AgentStatus, TestAnalysisState
-from .structured_output import generate_and_parse_json
+from .structured_output import (
+    LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
+    generate_and_parse_json,
+)
 
 
 class RequirementAnalysisError(RuntimeError):
@@ -62,6 +65,7 @@ class RequirementAnalyzer:
                 user_prompt,
                 system_prompt,
                 RequirementAnalysisResult.from_json,
+                max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
             )
             raw_candidate_count = len(result.clarification_candidates)
             selection = self.clarification_policy.select(
