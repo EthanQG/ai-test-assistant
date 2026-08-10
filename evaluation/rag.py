@@ -125,3 +125,34 @@ def run_retrieval_service_evaluation(
     report = run_rag_evaluation(dataset_path, retrieve_asset_ids, k=k)
     report["retrieval_boundary"] = "KnowledgeAssetRetrievalService"
     return report
+
+
+def run_rag_parameter_sweep(
+    dataset_path: Path,
+    service_factory: Callable[[int, float], KnowledgeAssetRetriever],
+    *,
+    top_k_values: Sequence[int],
+    min_score_values: Sequence[float],
+) -> dict:
+    combinations = []
+    for min_score in min_score_values:
+        for top_k in top_k_values:
+            report = run_retrieval_service_evaluation(
+                dataset_path,
+                service_factory(top_k, min_score),
+                k=top_k,
+            )
+            combinations.append(
+                {
+                    "top_k": top_k,
+                    "min_score": min_score,
+                    "summary": report["summary"],
+                    "results": report["results"],
+                }
+            )
+    return {
+        "schema_version": 1,
+        "fixture_set_id": combinations and report["fixture_set_id"],
+        "combination_count": len(combinations),
+        "combinations": combinations,
+    }

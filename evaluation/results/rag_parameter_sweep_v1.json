@@ -1,0 +1,578 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "rag-retrieval-v1",
+  "combination_count": 9,
+  "combinations": [
+    {
+      "top_k": 1,
+      "min_score": 0.65,
+      "summary": {
+        "mean_recall_at_k": 1.0,
+        "mean_precision_at_k": 1.0,
+        "mean_reciprocal_rank": 1.0,
+        "mean_forbidden_hit_rate": 0.0
+      },
+      "results": [
+        {
+          "case_id": "rag-order-001",
+          "retrieved_asset_ids": [
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-refund-001",
+          "retrieved_asset_ids": [
+            "asset-refund-cumulative"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-auth-001",
+          "retrieved_asset_ids": [
+            "asset-login-lock"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-upload-001",
+          "retrieved_asset_ids": [
+            "asset-file-upload"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-permission-001",
+          "retrieved_asset_ids": [
+            "asset-role-permission"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        }
+      ]
+    },
+    {
+      "top_k": 2,
+      "min_score": 0.65,
+      "summary": {
+        "mean_recall_at_k": 1.0,
+        "mean_precision_at_k": 0.5,
+        "mean_reciprocal_rank": 1.0,
+        "mean_forbidden_hit_rate": 0.1
+      },
+      "results": [
+        {
+          "case_id": "rag-order-001",
+          "retrieved_asset_ids": [
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-refund-001",
+          "retrieved_asset_ids": [
+            "asset-refund-cumulative",
+            "asset-file-upload"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-auth-001",
+          "retrieved_asset_ids": [
+            "asset-login-lock",
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-upload-001",
+          "retrieved_asset_ids": [
+            "asset-file-upload",
+            "asset-refund-cumulative"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-permission-001",
+          "retrieved_asset_ids": [
+            "asset-role-permission",
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.5
+        }
+      ]
+    },
+    {
+      "top_k": 3,
+      "min_score": 0.65,
+      "summary": {
+        "mean_recall_at_k": 1.0,
+        "mean_precision_at_k": 0.3333,
+        "mean_reciprocal_rank": 1.0,
+        "mean_forbidden_hit_rate": 0.1
+      },
+      "results": [
+        {
+          "case_id": "rag-order-001",
+          "retrieved_asset_ids": [
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-refund-001",
+          "retrieved_asset_ids": [
+            "asset-refund-cumulative",
+            "asset-file-upload"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-auth-001",
+          "retrieved_asset_ids": [
+            "asset-login-lock",
+            "asset-order-inventory",
+            "asset-role-permission"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-upload-001",
+          "retrieved_asset_ids": [
+            "asset-file-upload",
+            "asset-refund-cumulative"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-permission-001",
+          "retrieved_asset_ids": [
+            "asset-role-permission",
+            "asset-order-inventory",
+            "asset-login-lock"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.5
+        }
+      ]
+    },
+    {
+      "top_k": 1,
+      "min_score": 0.7,
+      "summary": {
+        "mean_recall_at_k": 1.0,
+        "mean_precision_at_k": 1.0,
+        "mean_reciprocal_rank": 1.0,
+        "mean_forbidden_hit_rate": 0.0
+      },
+      "results": [
+        {
+          "case_id": "rag-order-001",
+          "retrieved_asset_ids": [
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-refund-001",
+          "retrieved_asset_ids": [
+            "asset-refund-cumulative"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-auth-001",
+          "retrieved_asset_ids": [
+            "asset-login-lock"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-upload-001",
+          "retrieved_asset_ids": [
+            "asset-file-upload"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-permission-001",
+          "retrieved_asset_ids": [
+            "asset-role-permission"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        }
+      ]
+    },
+    {
+      "top_k": 2,
+      "min_score": 0.7,
+      "summary": {
+        "mean_recall_at_k": 1.0,
+        "mean_precision_at_k": 0.5,
+        "mean_reciprocal_rank": 1.0,
+        "mean_forbidden_hit_rate": 0.0
+      },
+      "results": [
+        {
+          "case_id": "rag-order-001",
+          "retrieved_asset_ids": [
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-refund-001",
+          "retrieved_asset_ids": [
+            "asset-refund-cumulative"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-auth-001",
+          "retrieved_asset_ids": [
+            "asset-login-lock"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-upload-001",
+          "retrieved_asset_ids": [
+            "asset-file-upload"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-permission-001",
+          "retrieved_asset_ids": [
+            "asset-role-permission"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        }
+      ]
+    },
+    {
+      "top_k": 3,
+      "min_score": 0.7,
+      "summary": {
+        "mean_recall_at_k": 1.0,
+        "mean_precision_at_k": 0.3333,
+        "mean_reciprocal_rank": 1.0,
+        "mean_forbidden_hit_rate": 0.0
+      },
+      "results": [
+        {
+          "case_id": "rag-order-001",
+          "retrieved_asset_ids": [
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-refund-001",
+          "retrieved_asset_ids": [
+            "asset-refund-cumulative"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-auth-001",
+          "retrieved_asset_ids": [
+            "asset-login-lock"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-upload-001",
+          "retrieved_asset_ids": [
+            "asset-file-upload"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-permission-001",
+          "retrieved_asset_ids": [
+            "asset-role-permission"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        }
+      ]
+    },
+    {
+      "top_k": 1,
+      "min_score": 0.75,
+      "summary": {
+        "mean_recall_at_k": 1.0,
+        "mean_precision_at_k": 1.0,
+        "mean_reciprocal_rank": 1.0,
+        "mean_forbidden_hit_rate": 0.0
+      },
+      "results": [
+        {
+          "case_id": "rag-order-001",
+          "retrieved_asset_ids": [
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-refund-001",
+          "retrieved_asset_ids": [
+            "asset-refund-cumulative"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-auth-001",
+          "retrieved_asset_ids": [
+            "asset-login-lock"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-upload-001",
+          "retrieved_asset_ids": [
+            "asset-file-upload"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-permission-001",
+          "retrieved_asset_ids": [
+            "asset-role-permission"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        }
+      ]
+    },
+    {
+      "top_k": 2,
+      "min_score": 0.75,
+      "summary": {
+        "mean_recall_at_k": 1.0,
+        "mean_precision_at_k": 0.5,
+        "mean_reciprocal_rank": 1.0,
+        "mean_forbidden_hit_rate": 0.0
+      },
+      "results": [
+        {
+          "case_id": "rag-order-001",
+          "retrieved_asset_ids": [
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-refund-001",
+          "retrieved_asset_ids": [
+            "asset-refund-cumulative"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-auth-001",
+          "retrieved_asset_ids": [
+            "asset-login-lock"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-upload-001",
+          "retrieved_asset_ids": [
+            "asset-file-upload"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-permission-001",
+          "retrieved_asset_ids": [
+            "asset-role-permission"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.5,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        }
+      ]
+    },
+    {
+      "top_k": 3,
+      "min_score": 0.75,
+      "summary": {
+        "mean_recall_at_k": 1.0,
+        "mean_precision_at_k": 0.3333,
+        "mean_reciprocal_rank": 1.0,
+        "mean_forbidden_hit_rate": 0.0
+      },
+      "results": [
+        {
+          "case_id": "rag-order-001",
+          "retrieved_asset_ids": [
+            "asset-order-inventory"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-refund-001",
+          "retrieved_asset_ids": [
+            "asset-refund-cumulative"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-auth-001",
+          "retrieved_asset_ids": [
+            "asset-login-lock"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-upload-001",
+          "retrieved_asset_ids": [
+            "asset-file-upload"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        },
+        {
+          "case_id": "rag-permission-001",
+          "retrieved_asset_ids": [
+            "asset-role-permission"
+          ],
+          "recall_at_k": 1.0,
+          "precision_at_k": 0.3333,
+          "reciprocal_rank": 1.0,
+          "forbidden_hit_rate": 0.0
+        }
+      ]
+    }
+  ],
+  "evidence_scope": "real_embedding_milvus_mysql_snapshot",
+  "embedding_model": "nomic-embed-text",
+  "milvus_collection": "knowledge_assets_v2"
+}
