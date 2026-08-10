@@ -71,6 +71,8 @@ def test_three_way_runner_uses_same_ten_cases_and_shared_metrics():
         assert result["input_tokens"] == 1000
         assert result["output_tokens"] == 500
         assert result["average_revision_count"] == 1.0
+        assert result["failed_case_count"] == 0
+        assert result["errors"] == []
 
 
 def test_metrics_expose_one_variant_with_missing_facts():
@@ -91,6 +93,26 @@ def test_runner_rejects_missing_or_extra_variant():
             {"baseline_llm": GoldFakeVariant()},
             dependency_mode="fake",
         )
+
+
+def test_runner_can_limit_cases_and_record_one_variant_failure():
+    class FailingVariant(GoldFakeVariant):
+        def analyze(self, case):
+            raise RuntimeError("model failed")
+
+    report = run_three_way_experiment(
+        DATASET,
+        _variants(baseline_llm=FailingVariant()),
+        dependency_mode="fake_failure",
+        case_limit=1,
+        continue_on_error=True,
+    )
+
+    baseline = report["variants"]["baseline_llm"]
+    assert baseline["case_count"] == 1
+    assert baseline["failed_case_count"] == 1
+    assert baseline["fact_recall"] == 0.0
+    assert report["variants"]["llm_with_rag"]["case_count"] == 1
 
 
 def _task_view():

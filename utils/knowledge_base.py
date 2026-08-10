@@ -213,7 +213,8 @@ class MilvusRAGManager:
                 output_fields=["prd_content", "test_points"],
             )
 
-            print(f"[RAG] 检索结果: {results}")
+            result_count = len(results[0]) if results and results[0] else 0
+            print(f"[RAG] 检索结果数量: {result_count}")
             
             if not results or not results[0]:
                 print("[RAG] 未检索到任何结果")
@@ -224,8 +225,6 @@ class MilvusRAGManager:
             max_score = 0.0
 
             for i, hit in enumerate(results[0]):
-                print(f"[RAG] 命中 {i+1}: {hit}")
-                
                 entity = hit.get("entity")
                 if isinstance(entity, dict):
                     prd = entity.get("prd_content", "")

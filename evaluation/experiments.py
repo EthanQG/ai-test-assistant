@@ -83,17 +83,32 @@ def run_three_way_experiment(
     variants: Mapping[str, ExperimentVariant],
     *,
     dependency_mode: str,
+    case_limit: int | None = None,
+    continue_on_error: bool = False,
 ) -> dict:
     if set(variants) != set(EXPERIMENT_VARIANTS):
         raise ValueError("three-way experiment variants are incomplete")
     dataset = load_evaluation_dataset(dataset_path)
+    cases = dataset.cases[:case_limit] if case_limit is not None else dataset.cases
     reports = {}
     for name in EXPERIMENT_VARIANTS:
-        case_results = [
-            _score_case(case, variants[name].analyze(case))
-            for case in dataset.cases
-        ]
+        case_results = []
+        errors = []
+        for case in cases:
+            try:
+                case_results.append(_score_case(case, variants[name].analyze(case)))
+            except Exception as exc:
+                if not continue_on_error:
+                    raise
+                case_results.append(_failed_case_result(case.case_id))
+                errors.append({
+                    "case_id": case.case_id,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                })
         reports[name] = _summarize(case_results)
+        reports[name]["failed_case_count"] = len(errors)
+        reports[name]["errors"] = errors
     return {
         "schema_version": 1,
         "dataset_id": dataset.dataset_id,
@@ -133,6 +148,22 @@ def _score_case(case: EvaluationCase, output: ExperimentOutput) -> dict:
         "input_tokens": output.input_tokens,
         "output_tokens": output.output_tokens,
         "revision_count": output.revision_count,
+    }
+
+
+def _failed_case_result(case_id: str) -> dict:
+    return {
+        "case_id": case_id,
+        "fact_recall": 0.0,
+        "business_rule_recall": 0.0,
+        "risk_recall": 0.0,
+        "question_recall": 0.0,
+        "scenario_recall": 0.0,
+        "forbidden_assertion_count": 0,
+        "elapsed_seconds": 0.0,
+        "input_tokens": None,
+        "output_tokens": None,
+        "revision_count": 0,
     }
 
 

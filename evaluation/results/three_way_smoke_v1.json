@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "dataset_id": "seed-v1",
+  "dependency_mode": "real_deepseek_current_rag",
+  "matching_policy": "normalized_exact_text_v1",
+  "variants": {
+    "baseline_llm": {
+      "case_count": 1,
+      "fact_recall": 0.0,
+      "business_rule_recall": 0.0,
+      "risk_recall": 0.0,
+      "question_recall": 0.0,
+      "scenario_recall": 0.0,
+      "forbidden_assertion_count": 0,
+      "total_elapsed_seconds": 146.6,
+      "input_tokens": 3025,
+      "output_tokens": 10046,
+      "average_revision_count": 0.0,
+      "results": [
+        {
+          "case_id": "auth-001",
+          "fact_recall": 0.0,
+          "business_rule_recall": 0.0,
+          "risk_recall": 0.0,
+          "question_recall": 0.0,
+          "scenario_recall": 0.0,
+          "forbidden_assertion_count": 0,
+          "elapsed_seconds": 146.6,
+          "input_tokens": 3025,
+          "output_tokens": 10046,
+          "revision_count": 0
+        }
+      ],
+      "failed_case_count": 0,
+      "errors": []
+    },
+    "llm_with_rag": {
+      "case_count": 1,
+      "fact_recall": 0.0,
+      "business_rule_recall": 0.0,
+      "risk_recall": 0.0,
+      "question_recall": 0.0,
+      "scenario_recall": 0.0,
+      "forbidden_assertion_count": 0,
+      "total_elapsed_seconds": 122.53,
+      "input_tokens": 2815,
+      "output_tokens": 8737,
+      "average_revision_count": 0.0,
+      "results": [
+        {
+          "case_id": "auth-001",
+          "fact_recall": 0.0,
+          "business_rule_recall": 0.0,
+          "risk_recall": 0.0,
+          "question_recall": 0.0,
+          "scenario_recall": 0.0,
+          "forbidden_assertion_count": 0,
+          "elapsed_seconds": 122.53,
+          "input_tokens": 2815,
+          "output_tokens": 8737,
+          "revision_count": 0
+        }
+      ],
+      "failed_case_count": 0,
+      "errors": []
+    },
+    "llm_with_rag_reviewer_reviser": {
+      "case_count": 1,
+      "fact_recall": 0.0,
+      "business_rule_recall": 0.0,
+      "risk_recall": 0.0,
+      "question_recall": 0.0,
+      "scenario_recall": 0.0,
+      "forbidden_assertion_count": 0,
+      "total_elapsed_seconds": 243.42,
+      "input_tokens": 9941,
+      "output_tokens": 16488,
+      "average_revision_count": 1.0,
+      "results": [
+        {
+          "case_id": "auth-001",
+          "fact_recall": 0.0,
+          "business_rule_recall": 0.0,
+          "risk_recall": 0.0,
+          "question_recall": 0.0,
+          "scenario_recall": 0.0,
+          "forbidden_assertion_count": 0,
+          "elapsed_seconds": 243.42,
+          "input_tokens": 9941,
+          "output_tokens": 16488,
+          "revision_count": 1
+        }
+      ],
+      "failed_case_count": 0,
+      "errors": []
+    }
+  },
+  "model": "deepseek-v4-pro",
+  "requested_case_limit": 1
+}

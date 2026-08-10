@@ -3674,3 +3674,27 @@ python -m pytest -q tests/unit/evaluation/test_experiment_orchestrators.py tests
 python -m pytest -q
 471 passed，10 skipped
 ```
+
+### 第五小步：真实三方案烟测与旧RAG日志修复
+
+新增`RUN_THREE_WAY_INTEGRATION_EVALUATION=1`保护的真实入口，默认只运行`seed-v1`第一份需求。首次请求因
+当前网络证书链临时不满足OpenSSL安全策略而失败；未关闭SSL校验，原条件重试后完成三组。
+
+基础、RAG和完整组耗时分别为146.60、122.53和243.42秒，输入/输出Token分别为3025/10046、
+2815/8737和9941/16488，完整组发生1轮修正。严格文本召回均为0，说明机器严格匹配无法识别模型同义表达，
+不能据此比较三组业务质量。
+
+烟测同时发现旧`MilvusRAGManager`把完整命中对象打印到Windows GBK控制台，特殊字符导致`UnicodeEncodeError`，
+使原本成功的Milvus检索被误判为降级。现改为只打印结果数量并删除完整Hit输出；回归测试模拟GBK控制台和特殊字符，
+确认检索上下文仍能正常返回。由于本次RAG结果发生过降级，报告只作为链路、耗时和Token烟测证据，不作为RAG增益数据。
+
+```text
+python -m pytest -q
+474 passed，10 skipped
+
+python -m compileall -q agent application repositories services utils views tests main.py evaluation
+通过
+
+git diff --check
+通过
+```

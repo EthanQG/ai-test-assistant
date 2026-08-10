@@ -27,7 +27,7 @@
 - 阶段2.16.4第一小步：`2cf636a 阶段2.16.4：建立Reviewer缺陷评测基线`
 - 阶段2.16.4第二小步：`ed6be71 阶段2.16.4：适配Reviewer结构化缺陷输出`
 
-## 当前阶段：2.16.5 三方案消融实验（第四小步已完成）
+## 当前阶段：2.16.5 三方案消融实验（真实烟测已完成）
 
 本轮先建立Reviewer可重复缺陷数据和确定性指标，不调用真实LLM：
 
@@ -81,6 +81,13 @@
 48. 两种旁路都在AgentEvent中写入`evaluation_bypass=true`；
 49. RAG组继续使用注入的真实Retriever，完整组继续使用真实Reviewer/Reviser；
 50. 三组复用原`AgentOrchestrator`，未复制或修改状态机。
+51. 新增显式开关保护的真实三方案入口，默认只运行1份需求；
+52. 首次运行遇到临时HTTPS证书校验失败，重试后完成三组；
+53. 基础/RAG/完整组耗时分别为146.60、122.53、243.42秒；
+54. 三组输入/输出Token分别为3025/10046、2815/8737、9941/16488；
+55. 严格文本召回均为0，不作为业务质量优劣结论；
+56. 烟测发现旧RAG打印完整结果时被GBK特殊字符中断并降级；
+57. 已改为只打印结果数量，避免日志编码影响业务并减少内容泄露。
 
 ## 当前数据流
 
@@ -97,14 +104,17 @@
 ## 验证结果
 
 ```text
-python -m pytest -q tests/unit/evaluation/test_reviewer_runner.py tests/unit/evaluation/test_reviewer_adapter.py tests/unit/evaluation/test_reviewer_evaluation.py
-8 passed
-
 python -m pytest -q
-471 passed，10 skipped
+474 passed，10 skipped
+
+python -m compileall -q agent application repositories services utils views tests main.py evaluation
+通过
+
+git diff --check
+通过
 ```
 
-默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
+默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型；真实三方案烟测由独立环境变量显式开启。
 
 ## 当前限制
 
@@ -117,19 +127,21 @@ python -m pytest -q
 - 真实报告没有保存完整模型输出，尚不能人工复核3个改名结果是否语义等价
 - 三方案第一小步只有Fake接线证据，尚无三组真实结果
 - 严格文本匹配会漏掉同义表达，需要在最终报告中同时保留人工复核口径
-- 三组装配已经完成Fake边界验证，尚未运行完整真实三组实验
+- 已完成1份需求真实三组烟测，未运行完整10×3
 - QualityBypass的100分只是Finalizer结构通行值，不能计入真实Reviewer质量
+- 本次RAG烟测受修复前控制台编码降级影响，不能用于证明RAG质量变化
+- 严格文本召回无法识别同义表达，三组全0不代表没有有效输出
 - 自由文本映射依赖明确关键词，Reviewer换一种表达可能造成漏检
 - Reviser修复正确率和副作用尚未评测
 
-## 下一步：阶段2.16.5 真实实验入口与小批试跑
+## 下一步：阶段2.16.6 证据汇总与简历材料
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 组装三个独立Application Service与会话内存Repository；
-2. 增加显式开关保护的真实三方案入口；
-3. 先选少量case试跑并检查暂停、耗时和结构稳定性；
-4. 试跑稳定后再决定是否运行完整10×3，避免一次等待过长。
+1. 汇总架构、持久化、RAG、Reviewer/Reviser和可观测性证据；
+2. 明确哪些结论可以写简历、哪些只能描述为代码能力；
+3. 生成可复盘的评测摘要和面试讲解材料；
+4. 完整10×3作为可选增强，不阻塞秋招版本收尾。
 
 ## 新电脑恢复方式
 
