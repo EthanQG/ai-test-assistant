@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "reviewer-defects-v1",
+  "dependency_mode": "real_deepseek_reviewer",
+  "metrics": {
+    "case_count": 12,
+    "expected_defect_count": 12,
+    "true_positive": 4,
+    "false_positive": 7,
+    "false_negative": 8,
+    "precision": 0.3636,
+    "recall": 0.3333,
+    "clean_case_false_positive_rate": 0.0,
+    "results": [
+      {
+        "case_id": "review-omission-001",
+        "true_positive": 1,
+        "false_positive": 0,
+        "false_negative": 0
+      },
+      {
+        "case_id": "review-omission-002",
+        "true_positive": 1,
+        "false_positive": 0,
+        "false_negative": 0
+      },
+      {
+        "case_id": "review-boundary-001",
+        "true_positive": 0,
+        "false_positive": 1,
+        "false_negative": 1
+      },
+      {
+        "case_id": "review-boundary-002",
+        "true_positive": 0,
+        "false_positive": 3,
+        "false_negative": 1
+      },
+      {
+        "case_id": "review-duplicate-001",
+        "true_positive": 1,
+        "false_positive": 1,
+        "false_negative": 0
+      },
+      {
+        "case_id": "review-hallucination-001",
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 1
+      },
+      {
+        "case_id": "review-vague-001",
+        "true_positive": 0,
+        "false_positive": 2,
+        "false_negative": 1
+      },
+      {
+        "case_id": "review-source-001",
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 1
+      },
+      {
+        "case_id": "review-multiple-001",
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 2
+      },
+      {
+        "case_id": "review-multiple-002",
+        "true_positive": 1,
+        "false_positive": 0,
+        "false_negative": 1
+      },
+      {
+        "case_id": "review-clean-001",
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 0
+      },
+      {
+        "case_id": "review-clean-002",
+        "true_positive": 0,
+        "false_positive": 0,
+        "false_negative": 0
+      }
+    ],
+    "failed_case_count": 3
+  },
+  "errors": [
+    {
+      "case_id": "review-hallucination-001",
+      "error_type": "TestPointReviewError",
+      "error_message": "test point review failed: each hallucination issue must be an object"
+    },
+    {
+      "case_id": "review-multiple-001",
+      "error_type": "TestPointReviewError",
+      "error_message": "test point review failed: each hallucination issue must be an object"
+    },
+    {
+      "case_id": "review-clean-001",
+      "error_type": "TestPointReviewError",
+      "error_message": "test point review failed: revision_suggestions must contain strings"
+    }
+  ],
+  "model": "deepseek-v4-pro"
+}

@@ -3550,3 +3550,21 @@ python -m pytest -q tests/unit/evaluation/test_reviewer_runner.py tests/unit/eva
 python -m pytest -q
 452 passed，10 skipped
 ```
+
+### 第四小步：真实Reviewer基线
+
+新增`RUN_REVIEWER_INTEGRATION_EVALUATION=1`保护的真实入口，默认pytest不访问DeepSeek。首次运行在约175秒后
+因单份样本连续两次输出错误的`hallucination_issues`类型而中止。评测层随后增加“记录单样本失败并继续”能力，
+没有放宽生产Reviewer校验，也没有修改Prompt。
+
+第二次使用`deepseek-v4-pro`完成12份合成样本，命中4个、误报7个、漏检8个，Precision=0.3636、
+Recall=0.3333；3份样本在受控重试后仍不符合结构化契约。2份正确样本没有产生已分类误报，但其中
+`review-clean-001`本身执行失败，因此不能把误报率0解释为Reviewer完全可靠。完整报告保存于
+`evaluation/results/reviewer_real_v1.json`，本次串行运行约439秒。
+
+这组结果同时受模型判断、JSON契约稳定性和保守适配器影响，只作为当前12份样本的基线，不写成泛化结论。
+
+```text
+python -m pytest -q
+454 passed，10 skipped
+```

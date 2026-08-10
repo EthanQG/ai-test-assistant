@@ -106,6 +106,7 @@ def test_runner_uses_injected_reviewer_and_writes_stable_fake_report():
     assert len(reviewer.received_states) == 12
     assert all(isinstance(state, TestAnalysisState) for state in reviewer.received_states)
     assert report["dependency_mode"] == "fake_gold_predictions_only"
+    assert report["errors"] == []
     metrics = report["metrics"]
     assert metrics["case_count"] == 12
     assert metrics["expected_defect_count"] == 12
@@ -115,8 +116,37 @@ def test_runner_uses_injected_reviewer_and_writes_stable_fake_report():
     assert metrics["precision"] == 1.0
     assert metrics["recall"] == 0.9167
     assert metrics["clean_case_false_positive_rate"] == 0.0
+    assert metrics["failed_case_count"] == 0
     assert next(
         item for item in metrics["results"]
         if item["case_id"] == "review-boundary-002"
     )["false_negative"] == 1
     assert json.loads(REPORT.read_text(encoding="utf-8")) == report
+
+
+def test_runner_can_record_one_reviewer_failure_and_continue():
+    reviewer = GoldFakeReviewer()
+    original_review = reviewer.review
+
+    def review_with_one_failure(state):
+        if state.task_id == "review-omission-001":
+            raise ValueError("invalid structured output")
+        return original_review(state)
+
+    reviewer.review = review_with_one_failure
+    report = run_reviewer_evaluation(
+        FIXTURE,
+        reviewer,
+        dependency_mode="fake_with_failure",
+        continue_on_error=True,
+    )
+
+    assert report["metrics"]["failed_case_count"] == 1
+    assert report["metrics"]["false_negative"] == 2
+    assert report["errors"] == [
+        {
+            "case_id": "review-omission-001",
+            "error_type": "ValueError",
+            "error_message": "invalid structured output",
+        }
+    ]

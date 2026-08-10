@@ -50,22 +50,39 @@ def run_reviewer_evaluation(
     reviewer: ReviewerBoundary,
     *,
     dependency_mode: str,
+    continue_on_error: bool = False,
 ) -> dict:
     """Run every case and score the Reviewer's structured output."""
 
     dataset = load_reviewer_dataset(fixture_path)
     predictions = {}
+    errors = []
     for case in dataset.cases:
         state = reviewer_case_to_state(case)
-        review = reviewer.review(state)
+        try:
+            review = reviewer.review(state)
+        except Exception as exc:
+            if not continue_on_error:
+                raise
+            errors.append(
+                {
+                    "case_id": case.case_id,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                }
+            )
+            continue
         predictions[case.case_id] = review_result_to_defects(
             review,
             test_point_titles=[item["title"] for item in state.test_points],
         )
 
+    metrics = score_reviewer_predictions(dataset, predictions)
+    metrics["failed_case_count"] = len(errors)
     return {
         "schema_version": 1,
         "fixture_set_id": dataset.fixture_set_id,
         "dependency_mode": dependency_mode,
-        "metrics": score_reviewer_predictions(dataset, predictions),
+        "metrics": metrics,
+        "errors": errors,
     }

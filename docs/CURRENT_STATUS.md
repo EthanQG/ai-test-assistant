@@ -27,7 +27,7 @@
 - 阶段2.16.4第一小步：`2cf636a 阶段2.16.4：建立Reviewer缺陷评测基线`
 - 阶段2.16.4第二小步：`ed6be71 阶段2.16.4：适配Reviewer结构化缺陷输出`
 
-## 当前阶段：2.16.4 Reviewer/Reviser专项评测（第三小步已完成）
+## 当前阶段：2.16.4 Reviewer/Reviser专项评测（真实Reviewer基线已完成）
 
 本轮先建立Reviewer可重复缺陷数据和确定性指标，不调用真实LLM：
 
@@ -46,6 +46,11 @@
 13. Runner只依赖可注入的`review(state)`边界，可接Fake或现有Reviewer；
 14. Fake报告经过结构化评审结果适配和统一评分器，未绕过生产输入结构；
 15. 当前Fake链路检出11/12个缺陷，保守边界规则漏掉“上传6个文件”。
+16. 新增显式环境开关保护的真实Reviewer入口，默认pytest不会调用LLM；
+17. 单样本两次结构校验仍失败时记录错误并继续，不丢失整批实验；
+18. `deepseek-v4-pro`真实运行12份样本约439秒，3份结构化输出失败；
+19. 真实基线TP=4、FP=7、FN=8，Precision=0.3636、Recall=0.3333；
+20. 2份正确样本未产生已分类误报，但其中1份因结构化输出失败。
 
 ## 当前数据流
 
@@ -66,7 +71,7 @@ python -m pytest -q tests/unit/evaluation/test_reviewer_runner.py tests/unit/eva
 8 passed
 
 python -m pytest -q
-452 passed，10 skipped
+454 passed，10 skipped
 ```
 
 默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
@@ -76,17 +81,19 @@ python -m pytest -q
 - 当前12份均为小型合成样本，尚未覆盖长测试点集合
 - Fake Runner只证明输入转换、调用边界、适配和评分已连通，尚无真实Reviewer效果
 - `review-boundary-002`暴露保守适配漏检，当前Fake Recall为0.9167
+- 真实Reviewer输出存在对象/字符串类型不稳定，3/12样本最终失败
+- 当前指标混合了Reviewer判断能力、输出契约稳定性和保守适配规则影响
 - 自由文本映射依赖明确关键词，Reviewer换一种表达可能造成漏检
 - Reviser修复正确率和副作用尚未评测
 
-## 下一步：阶段2.16.4 真实Reviewer基线
+## 下一步：阶段2.16.4 Reviser修复评测
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 增加显式开关保护的真实Reviewer评测入口；
-2. 复用同一Runner、fixture、适配器和评分器；
-3. 记录模型标识、逐case结果和原始指标，不伪造提升；
-4. 真实DeepSeek调用需要用户显式同意，默认pytest继续隔离外部服务。
+1. 基于Reviewer已识别的问题构造最小Reviser修复样本；
+2. 评价目标缺陷是否消除、已有正确测试点是否被破坏；
+3. 先用Fake验证Runner和副作用指标，不立即重复调用真实LLM；
+4. 保持现有Reviewer/Reviser节点和在线流程不变。
 
 ## 新电脑恢复方式
 

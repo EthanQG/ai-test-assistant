@@ -264,8 +264,9 @@ Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段
 24. 阶段2.16.4第一小步：已建立12份Reviewer缺陷注入样本和Precision、Recall、正确样本误报率；尚未运行真实Reviewer
 25. 阶段2.16.4第二小步：已将现有结构化评审结果保守映射为六类缺陷；无法确定的自由文本不会强行分类
 26. 阶段2.16.4第三小步：已建立`TestAnalysisState → Reviewer → 缺陷适配 → 指标`Runner，并生成Fake接线报告；尚未运行真实Reviewer
-27. 阶段2.16.4～2.16.6：完成Reviewer和三方案实验
-28. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
+27. 阶段2.16.4真实基线：已用`deepseek-v4-pro`运行12份合成样本，Precision=0.3636、Recall=0.3333，3份结构化输出失败；结果只代表当前小样本
+28. 阶段2.16.4～2.16.6：完成Reviser和三方案实验
+29. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
 
 详细范围、验收证据和明确不做的功能见
 [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。
