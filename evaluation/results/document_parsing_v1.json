@@ -1,7 +1,12 @@
 {
   "schema_version": 1,
   "fixture_set_id": "document-parsing-v1",
+  "total_fixture_count": 5,
   "evaluated_fixture_count": 3,
+  "skipped_fixture_ids": [
+    "flow-image-001",
+    "ui-image-001"
+  ],
   "results": [
     {
       "fixture_id": "native-pdf-001",

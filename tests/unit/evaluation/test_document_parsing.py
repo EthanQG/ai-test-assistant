@@ -143,6 +143,10 @@ def test_runner_evaluates_only_supported_targets_without_external_services():
     )
 
     assert report["evaluated_fixture_count"] == 3
+    assert report["skipped_fixture_ids"] == [
+        "flow-image-001",
+        "ui-image-001",
+    ]
     assert [item["evaluation_target"] for item in report["results"]] == [
         "native_text",
         "table_structure",

@@ -11,7 +11,12 @@ from typing import Callable
 
 from dotenv import load_dotenv
 
-from documents import DocumentContent, DocumentOcrElement, DocumentTableElement
+from documents import (
+    DocumentContent,
+    DocumentOcrElement,
+    DocumentTableElement,
+    DocumentVisualAnalysis,
+)
 from services.document_service import DocumentService
 
 
@@ -141,10 +146,101 @@ def score_content(fixture: dict, content: DocumentContent) -> FixtureScore:
     )
 
 
+def _ratio(matched: int, expected: int, actual: int | None = None) -> float:
+    total = expected if actual is None else max(expected, actual)
+    return round(matched / total, 4) if total else 1.0
+
+
+def score_visual_analysis(
+    fixture: dict,
+    analysis: DocumentVisualAnalysis,
+) -> FixtureScore:
+    target = fixture["evaluation_target"]
+    gold = fixture["gold"]
+    missing: list[str] = []
+    metrics: dict[str, float]
+    if target == "flow_semantics":
+        node_labels = {
+            _normalize_text(node.label): node.label for node in analysis.nodes
+        }
+        expected_nodes = gold["nodes"]
+        missing.extend(
+            f"节点：{label}"
+            for label in expected_nodes
+            if _normalize_text(label) not in node_labels
+        )
+        labels_by_id = {
+            node.node_id: _normalize_text(node.label) for node in analysis.nodes
+        }
+        actual_relations = {
+            (
+                labels_by_id[item.source_node_id],
+                labels_by_id[item.target_node_id],
+                _normalize_text(item.condition or ""),
+            )
+            for item in analysis.relations
+        }
+        expected_relations = {
+            (
+                _normalize_text(item["from"]),
+                _normalize_text(item["to"]),
+                _normalize_text(item["condition"]),
+            )
+            for item in gold["relations"]
+        }
+        missing_relations = expected_relations - actual_relations
+        missing.extend(
+            f"关系：{source}->{target}（{condition or '无条件'}）"
+            for source, target, condition in sorted(missing_relations)
+        )
+        metrics = {
+            "flow_node_recall": _ratio(
+                len(expected_nodes) - sum(item.startswith("节点：") for item in missing),
+                len(expected_nodes),
+            ),
+            "flow_relation_accuracy": _ratio(
+                len(expected_relations & actual_relations),
+                len(expected_relations),
+                len(actual_relations),
+            ),
+        }
+    elif target == "ui_semantics":
+        expected_elements = {
+            (_normalize_text(item["type"]), _normalize_text(item["label"]))
+            for item in gold["ui_elements"]
+        }
+        actual_elements = {
+            (_normalize_text(item.element_type), _normalize_text(item.name))
+            for item in analysis.ui_elements
+        }
+        missing_elements = expected_elements - actual_elements
+        missing.extend(
+            f"UI元素：{element_type}/{label}"
+            for element_type, label in sorted(missing_elements)
+        )
+        metrics = {
+            "ui_element_accuracy": _ratio(
+                len(expected_elements & actual_elements),
+                len(expected_elements),
+                len(actual_elements),
+            )
+        }
+    else:
+        raise ValueError(f"unsupported visual target: {target}")
+    return FixtureScore(
+        fixture_id=fixture["fixture_id"],
+        evaluation_target=target,
+        metrics=metrics,
+        missing_items=tuple(missing),
+        warning_codes=(),
+    )
+
+
 def run_document_parsing_evaluation(
     manifest_path: Path,
     *,
     parser: Callable[[object], DocumentContent] | None = None,
+    visual_results: dict[str, DocumentVisualAnalysis] | None = None,
 ) -> dict:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     fixture_dir = manifest_path.parent
@@ -156,14 +252,27 @@ def run_document_parsing_evaluation(
     )
     results = []
     for fixture in manifest["fixtures"]:
-        if fixture["evaluation_target"] not in SUPPORTED_TARGETS:
+        target = fixture["evaluation_target"]
+        if target in {"flow_semantics", "ui_semantics"}:
+            analysis = (visual_results or {}).get(fixture["fixture_id"])
+            if analysis is not None:
+                results.append(score_visual_analysis(fixture, analysis).to_dict())
+            continue
+        if target not in SUPPORTED_TARGETS:
             continue
         content = parse(_UploadedFixture(fixture_dir / fixture["path"]))
         results.append(score_content(fixture, content).to_dict())
     return {
         "schema_version": 1,
         "fixture_set_id": manifest["fixture_set_id"],
+        "total_fixture_count": len(manifest["fixtures"]),
         "evaluated_fixture_count": len(results),
+        "skipped_fixture_ids": [
+            fixture["fixture_id"]
+            for fixture in manifest["fixtures"]
+            if fixture["fixture_id"]
+            not in {result["fixture_id"] for result in results}
+        ],
         "results": results,
     }
 
