@@ -50,9 +50,23 @@ def test_plain_text_uses_bounded_sentence_splits():
     assert all(chunk.content.endswith("。") for chunk in chunks[:-1])
 
 
+def test_numbered_business_sentences_are_not_treated_as_section_headings():
+    text = (
+        "## 1. 用户与权限\n"
+        "1. 用户必须登录后才能提交订单。\n"
+        "2. 用户只能查看自己的订单。\n"
+        "## 2. 库存规则\n库存不足时拒绝下单。"
+    )
+
+    chunks = RequirementChunker(max_chars=500).split(text)
+
+    assert len(chunks) == 1
+    assert chunks[0].title == "1. 用户与权限 / 2. 库存规则"
+    assert "用户必须登录" in chunks[0].content
+
+
 def test_invalid_input_and_too_small_limit_are_rejected():
     with pytest.raises(ValueError, match="at least 500"):
         RequirementChunker(max_chars=100)
     with pytest.raises(ValueError, match="cannot be empty"):
         RequirementChunker().split("  ")
-

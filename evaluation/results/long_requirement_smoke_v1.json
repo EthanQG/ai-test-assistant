@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "fixture": "examples/prd/电商订单履约与优惠结算需求.md",
+  "dependency_mode": "real_deepseek_requirement_analyzer",
+  "model": "deepseek-v4-pro",
+  "requirement_chars": 2735,
+  "chunk_count": 2,
+  "elapsed_seconds": 222.75,
+  "status": "waiting_for_user",
+  "output_truncated": false,
+  "result_counts": {
+    "requirement_facts": 57,
+    "business_rules": 27,
+    "state_transitions": 14,
+    "inferred_risks": 21,
+    "open_questions": 3
+  },
+  "known_limitations": [
+    "片段按顺序调用，真实耗时会随片段数量增长",
+    "候选问题尚未执行跨片段全局语义复核",
+    "本次将原文已明确的30分钟超时规则再次列为待确认问题"
+  ]
+}

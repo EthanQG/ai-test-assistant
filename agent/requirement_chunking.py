@@ -100,7 +100,11 @@ class RequirementChunker:
         return tuple(chunks)
 
     def _section_ranges(self, text: str) -> list[tuple[int, int, str]]:
-        headings = list(self._HEADING.finditer(text))
+        headings = [
+            match
+            for match in self._HEADING.finditer(text)
+            if self._is_section_heading(match.group("heading"))
+        ]
         if not headings:
             return [(0, len(text), "全文")]
 
@@ -117,6 +121,15 @@ class RequirementChunker:
                 )
             )
         return ranges
+
+    @staticmethod
+    def _is_section_heading(raw_heading: str) -> bool:
+        heading = raw_heading.strip()
+        if heading.startswith("#"):
+            return True
+        return len(heading) <= 60 and not heading.endswith(
+            ("。", "！", "？", ";", "；")
+        )
 
     def _split_oversized(
         self,

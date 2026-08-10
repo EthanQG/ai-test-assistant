@@ -3708,3 +3708,20 @@ git diff --check
 ## V1验收修复：长PRD需求分析输出截断
 
 使用长篇订单履约PRD进行首次用户验收时，RequirementAnalyzer返回`finish_reason=length`。检查发现生成、评审和修正节点已使用8192输出Token，而需求分析节点仍使用全局默认值。现仅在RequirementAnalyzer调用统一结构化输出工具时传入`LARGE_STRUCTURED_OUTPUT_MAX_TOKENS`，并通过Fake LLM断言8192已被向下传递。该修复不会改变业务状态机；若未来出现超过8192的合法结构化结果，应另行设计分段分析，不能继续无限抬高上限。
+
+## 阶段 2.16.7：长PRD章节感知Map-Merge分析
+
+提高到8192输出Token后，规则密集型PRD仍可能被服务商以`finish_reason=length`截断。本阶段新增纯Python `RequirementChunker`，优先按Markdown章节和短数字标题分段，超长章节按段落或句子继续拆分；普通编号业务语句不会被当作章节。RequirementAnalyzer对每段调用原结构化Prompt，随后由Python按标准化文本合并去重，不额外要求LLM输出一份超大汇总JSON。
+
+2735字符电商订单演示PRD被拆为2段，真实`deepseek-v4-pro`需求分析耗时222.75秒，得到57条事实、27条规则、14条状态流转、21条风险和3个待确认问题，未再截断。烟测也暴露跨片段问题精度限制：模型再次询问原文已经明确的30分钟超时规则。因此本阶段证明长输入链路能够完成，不声称待确认问题100%准确；全局语义复核与有限并行留作后续优化。
+
+```text
+python -m pytest -q
+482 passed，10 skipped
+
+python -m compileall -q agent application repositories services utils views tests main.py evaluation
+通过
+
+git diff --check
+通过
+```

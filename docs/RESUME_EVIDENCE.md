@@ -15,9 +15,10 @@
 3. 通过Application Service和Repository隔离Streamlit与Agent核心；使用MySQL保存版本化AgentState快照和事件，支持按`task_id`恢复。
 4. 建立MySQL知识资产与Milvus向量索引的关联：MySQL保存完整资产，Milvus保存检索Chunk和资产标识，召回后回查完整内容及来源。
 5. 支持PDF/DOCX正文、表格、扫描页OCR和业务图片的结构化解析，并保留来源、警告和降级信息。
-6. 为LLM节点建立最小上下文和Token预算，记录节点耗时、Token、重试和错误降级信息。
-7. 建立离线评测集和可重复Runner，覆盖文档解析、RAG、Reviewer、Reviser及三方案实验边界。
-8. 使用pytest构建分层测试；当前默认回归为`474 passed，10 skipped`，跳过项均为显式开关保护的真实外部集成测试。
+6. 针对长PRD单轮JSON易截断的问题，实现章节感知Map-Merge分析：片段有界调用、Python确定性合并去重，并保留风险和问题的片段来源。
+7. 为LLM节点建立最小上下文和Token预算，记录节点耗时、Token、重试和错误降级信息。
+8. 建立离线评测集和可重复Runner，覆盖文档解析、RAG、Reviewer、Reviser及三方案实验边界。
+9. 使用pytest构建分层测试；当前默认回归结果以`docs/CURRENT_STATUS.md`为准，跳过项均为显式开关保护的真实外部集成测试。
 
 ## 已有量化证据
 
@@ -29,7 +30,8 @@
 | 真实Reviewer基线 | 12个缺陷样本 | Precision 0.3636，Recall 0.3333，3例结构化输出失败 | 已建立真实基线，并发现契约稳定性和识别能力不足 |
 | 真实Reviser基线 | 6个修正样本 | 严格修复率0.1667，保留率1.0，1例失败 | Reviser不会破坏保留项，但修复能力仍需改进 |
 | 三方案真实烟测 | 1份需求×3组 | 146.60s / 122.53s / 243.42s；完整组修正1次 | 三组真实执行、耗时与Token采集已连通 |
-| 自动化回归 | 默认本地测试 | 474 passed，10 skipped | 核心流程具备稳定回归保护 |
+| 长PRD需求分析 | 2735字符、2片段 | 222.75秒完成，未发生JSON截断 | Map-Merge链路可运行；问题跨片段精度仍需优化 |
+| 自动化回归 | 默认本地测试 | 结果见`CURRENT_STATUS.md` | 核心流程具备稳定回归保护 |
 
 ## 暂时不能写入简历的结论
 
@@ -41,7 +43,7 @@
 
 ## 推荐简历表述
 
-> 设计并实现面向图文PRD的AI测试分析助手，采用受控Agent编排串联需求结构化、RAG历史资产检索、测试点生成及Reviewer/Reviser质量闭环；通过Application Service与Repository隔离页面和领域逻辑，使用MySQL版本化快照与事件实现任务恢复，并以Milvus建立可追溯知识检索。构建文档解析、RAG、评审和修正离线评测及pytest回归体系，当前默认回归474项通过，并基于真实模型实验记录耗时、Token和失败降级证据。
+> 设计并实现面向图文PRD的AI测试分析助手，采用受控Agent编排串联需求结构化、RAG历史资产检索、测试点生成及Reviewer/Reviser质量闭环；针对长PRD单轮JSON易截断问题实现章节感知Map-Merge分析，通过Application Service与Repository隔离页面和领域逻辑，使用MySQL版本化快照与事件实现任务恢复，并以Milvus建立可追溯知识检索。构建文档解析、RAG、评审和修正离线评测及pytest回归体系，并基于真实模型实验记录耗时、Token和失败降级证据。
 
 面试时应主动补充：三方案当前只完成1份真实烟测，质量收益仍需扩大样本验证。
 
@@ -75,4 +77,3 @@
 - 学习与面试复盘：`docs/LEARNING_NOTES.md`
 - 评测结果：`evaluation/results/`
 - 秋招路线图：`docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md`
-
