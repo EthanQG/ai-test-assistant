@@ -3605,3 +3605,22 @@ python -m pytest -q
 python -m pytest -q
 460 passed，10 skipped
 ```
+
+## 阶段 2.16.5：三方案消融实验
+
+### 第一小步：统一实验契约与Fake矩阵
+
+本轮固定三组实验为基础LLM、LLM+RAG、LLM+RAG+Reviewer/Reviser。Runner强制三组使用相同10份
+`seed-v1`需求，统一接收事实、规则、风险、待确认问题、必要场景和断言，并汇总耗时、输入/输出Token与修正次数。
+
+第一版评分采用去除空白、统一大小写后的严格文本匹配，优点是可复现，限制是同义表达不会自动算对。Fake测试验证
+10×3调用矩阵、全量汇总和单组漏事实场景，没有调用真实LLM或RAG。为避免提交大量全为Fake满分的重复JSON，
+本小步以自动化测试作为接线证据，不额外保存冗余结果文件。
+
+```text
+python -m pytest -q tests/unit/evaluation/test_experiments.py
+3 passed
+
+python -m pytest -q
+463 passed，10 skipped
+```
