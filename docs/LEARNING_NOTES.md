@@ -5604,3 +5604,15 @@ RAG不只是担心漏掉知识，也担心错误知识污染测试分析。例�
 - [ ] 能说明为什么RAG评测按资产而不是Chunk统计
 - [ ] 能解释错误召回如何污染测试分析
 - [ ] 能说明Fake指标测试不能代表真实Milvus效果
+
+### 55.6 为什么第二小步还要经过Retrieval Service
+
+第一小步直接向Runner传入asset_id，只能证明指标公式正确。第二小步把Fake放在Embedding和向量搜索边界，
+中间仍然运行真实`KnowledgeAssetRetrievalService`，因此可以验证候选排序、MySQL权威回查以及版本、哈希和状态校验没有被评测绕过。
+
+**问题：第二小步报告Recall@3为1，能否证明Milvus效果好？**
+
+参考答案：不能。Fake向量搜索按照预设顺序返回正确资产，1.0只证明应用链路和评分接线正确。真实效果必须使用真实Embedding、Milvus和固定资产集重新运行。
+
+- [ ] 能画出Fake依赖与真实Retrieval Service的边界
+- [ ] 能解释为什么受控链路报告必须标记`fake_dependencies_only`

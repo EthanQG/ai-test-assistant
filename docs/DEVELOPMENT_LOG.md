@@ -3437,3 +3437,25 @@ python -m pytest tests/unit/evaluation/test_rag_evaluation.py -q
 python -m pytest -q
 438 passed，10 skipped
 ```
+
+### 第二小步：接入真实Retrieval Service边界
+
+本轮没有连接真实Embedding、Milvus或MySQL，而是让离线评测实际经过生产代码中的
+`KnowledgeAssetRetrievalService`：
+
+1. Runner将服务返回的完整候选资产转换为排序后的`asset_id`；
+2. Fake Embedding与Fake VectorSearch只替代外部基础设施；
+3. InMemory Repository保存5份合成`indexed`资产；
+4. 检索服务仍执行阈值过滤、资产聚合、状态/版本/哈希校验和权威回查；
+5. 报告保存为`rag_fake_service_v1.json`并标记`fake_dependencies_only`；
+6. 测试校验报告文件与Runner输出一致，避免手工结果漂移。
+
+该报告证明评测Runner已经接上现有查询边界，不能证明真实向量相似度质量。真实Milvus实验继续保持显式授权和独立集成入口。
+
+```text
+python -m pytest -q tests/unit/evaluation/test_rag_evaluation.py tests/unit/evaluation/test_rag_retrieval_service_evaluation.py
+6 passed
+
+python -m pytest -q
+439 passed，10 skipped
+```

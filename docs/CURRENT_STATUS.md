@@ -20,10 +20,11 @@
 - 阶段2.16.2第一小步：`744228b 阶段2.16.2：建立图文解析评测样本`
 - 阶段2.16.2第二小步：`7395b8d 阶段2.16.2：增加文档解析确定性评分`
 - 阶段2.16.2第三小步：`5a32bc6 阶段2.16.2：增加流程与UI语义评分`
+- 阶段2.16.3第一小步：`2760923 阶段2.16.3：建立RAG资产级评测指标`
 
-## 当前阶段：2.16.3 RAG专项评测（第一小步已完成）
+## 当前阶段：2.16.3 RAG专项评测（第二小步已完成）
 
-本轮先固定RAG查询金标准和资产级指标，不修改在线检索逻辑，也不连接真实Milvus：
+本轮把已有资产级指标接到真实`KnowledgeAssetRetrievalService`边界，但全部外部依赖仍使用Fake：
 
 1. 新增5份完全虚构查询，覆盖订单库存、退款、登录锁定、文件上传和角色权限；
 2. 每份查询标注期望召回资产和明确不应召回资产；
@@ -32,13 +33,18 @@
 5. `MRR`衡量第一个相关资产出现得是否足够靠前；
 6. `forbidden_hit_rate`衡量已知无关资产是否污染结果；
 7. Runner按case输出明细并计算平均指标；
-8. pytest只使用Fake资产ID列表，不调用Embedding、Milvus或MySQL。
+8. Runner把`KnowledgeAssetRetrievalResult.candidates`按原排序转换为asset_id；
+9. 5份查询实际经过查询Embedding、向量搜索、资产聚合和内存Repository权威回查；
+10. 受控报告明确标记`fake_dependencies_only`，不冒充真实Milvus效果。
 
 ## 当前数据流
 
 ```text
 虚构查询 + 相关/禁止资产标注
-→ retrieve(query, k)返回排序后的asset_id
+→ Fake Embedding / Fake VectorSearch
+→ KnowledgeAssetRetrievalService
+→ InMemoryKnowledgeAssetRepository权威回查
+→ candidates转换为排序asset_id
 → 资产级逐项比较
 → Recall@K / Precision@K / MRR / forbidden_hit_rate
 ```
@@ -46,30 +52,30 @@
 ## 验证结果
 
 ```text
-python -m pytest tests/unit/evaluation/test_rag_evaluation.py -q
-5 passed
+python -m pytest -q tests/unit/evaluation/test_rag_evaluation.py tests/unit/evaluation/test_rag_retrieval_service_evaluation.py
+6 passed
 
 python -m pytest -q
-438 passed，10 skipped
+439 passed，10 skipped
 ```
 
 全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
 
 ## 当前限制
 
-- 5份查询和资产ID均为合成数据，还没有对应的真实MySQL/Milvus资产
-- Fake测试只证明指标计算正确，不证明现有Embedding或阈值效果
+- 5份查询、KnowledgeAsset和向量命中均为合成数据
+- Fake链路只证明服务边界接线、权威回查和指标计算正确，不证明现有Embedding或阈值效果
 - 当前没有真实Recall@K、Precision@K或MRR结果
 - `k=3`是当前评测参数，不代表已经证明最优
 
-## 下一步：阶段2.16.3 RAG专项评测（第二小步）
+## 下一步：阶段2.16.3 RAG专项评测（第三小步）
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 将现有`KnowledgeAssetRetrievalResult.candidates`适配为排序asset_id；
-2. 用Fake Embedding、VectorSearch和内存Repository跑通真实Retrieval Service边界；
-3. 输出受控链路报告，不连接外部服务；
-4. 真实Milvus评测仍需用户明确同意。
+1. 准备与5份查询对应的可重复KnowledgeAsset种子数据；
+2. 设计显式开启的真实Embedding/Milvus评测入口，不进入默认pytest；
+3. 用户授权后再运行真实服务并保存独立报告；
+4. 对比不同Top-K和阈值，不能用Fake报告选择线上参数。
 
 ## 新电脑恢复方式
 

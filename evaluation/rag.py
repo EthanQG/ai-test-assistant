@@ -6,7 +6,13 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 from statistics import mean
-from typing import Callable, Sequence
+from typing import Callable, Protocol, Sequence
+
+from knowledge_assets import KnowledgeAssetRetrievalResult
+
+
+class KnowledgeAssetRetriever(Protocol):
+    def retrieve(self, query_text: str) -> KnowledgeAssetRetrievalResult: ...
 
 
 @dataclass(frozen=True)
@@ -99,3 +105,23 @@ def run_rag_evaluation(
         },
         "results": [item.to_dict() for item in scores],
     }
+
+
+def run_retrieval_service_evaluation(
+    dataset_path: Path,
+    retrieval_service: KnowledgeAssetRetriever,
+    *,
+    k: int = 3,
+) -> dict:
+    """Evaluate ranked authoritative assets returned by the service boundary."""
+
+    def retrieve_asset_ids(query: str, limit: int) -> tuple[str, ...]:
+        result = retrieval_service.retrieve(query)
+        return tuple(
+            candidate.asset.asset_id
+            for candidate in result.candidates[:limit]
+        )
+
+    report = run_rag_evaluation(dataset_path, retrieve_asset_ids, k=k)
+    report["retrieval_boundary"] = "KnowledgeAssetRetrievalService"
+    return report
