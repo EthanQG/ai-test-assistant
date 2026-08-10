@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "reviser-fixes-v1",
+  "dependency_mode": "real_deepseek_reviser",
+  "target_fix_rate": 0.1667,
+  "preservation_rate": 1.0,
+  "failed_case_count": 1,
+  "results": [
+    {
+      "case_id": "revise-omission-001",
+      "fixed": false,
+      "preserved": true,
+      "unexpected_titles": [
+        "库存不足拒绝创建订单"
+      ]
+    },
+    {
+      "case_id": "revise-boundary-001",
+      "fixed": false,
+      "preserved": true,
+      "unexpected_titles": []
+    },
+    {
+      "case_id": "revise-duplicate-001",
+      "fixed": true,
+      "preserved": true,
+      "unexpected_titles": []
+    },
+    {
+      "case_id": "revise-hallucination-001",
+      "fixed": false,
+      "preserved": true,
+      "unexpected_titles": [
+        "支付回调失败-记录失败原因"
+      ]
+    },
+    {
+      "case_id": "revise-vague-001",
+      "fixed": false,
+      "preserved": true,
+      "unexpected_titles": [
+        "库存不足时提示订单创建失败"
+      ]
+    },
+    {
+      "case_id": "revise-source-001",
+      "fixed": false,
+      "preserved": true,
+      "unexpected_titles": []
+    }
+  ],
+  "errors": [
+    {
+      "case_id": "revise-source-001",
+      "error_type": "TestPointRevisionError",
+      "error_message": "test point revision failed: sources must be a non-empty list"
+    }
+  ],
+  "model": "deepseek-v4-pro"
+}

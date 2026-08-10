@@ -4,6 +4,7 @@
   "dependency_mode": "fake_gold_reviser_only",
   "target_fix_rate": 1.0,
   "preservation_rate": 1.0,
+  "failed_case_count": 0,
   "results": [
     {"case_id": "revise-omission-001", "fixed": true, "preserved": true, "unexpected_titles": []},
     {"case_id": "revise-boundary-001", "fixed": true, "preserved": true, "unexpected_titles": []},
@@ -11,5 +12,6 @@
     {"case_id": "revise-hallucination-001", "fixed": true, "preserved": true, "unexpected_titles": []},
     {"case_id": "revise-vague-001", "fixed": true, "preserved": true, "unexpected_titles": []},
     {"case_id": "revise-source-001", "fixed": true, "preserved": true, "unexpected_titles": []}
-  ]
+  ],
+  "errors": []
 }

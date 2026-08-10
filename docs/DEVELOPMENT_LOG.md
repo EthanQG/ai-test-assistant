@@ -3589,3 +3589,19 @@ python -m pytest -q tests/unit/evaluation/test_reviser_evaluation.py
 python -m pytest -q
 458 passed，10 skipped
 ```
+
+### 第六小步：真实Reviser严格基线
+
+新增`RUN_REVISER_INTEGRATION_EVALUATION=1`保护的真实入口。评测复用生产`TestPointReviser`，单样本失败会记录错误并继续，
+没有放宽增量操作、来源非空和原子合并校验。
+
+`deepseek-v4-pro`运行6份样本约72秒，严格目标修复率为0.1667，正确测试点保留率为1.0，1份来源缺失样本因
+返回空来源而失败。3份样本产生了不同于金标准的新标题。
+
+当前目标修复率要求标题、场景、预期和来源精确一致，因此会把语义接近但表述不同的结果判为未命中。它是可复现的
+保守结构基线，不能直接解释为模型业务修复能力只有16.67%；当前报告也没有保存完整模型输出，不能补做人工作弊式改分。
+
+```text
+python -m pytest -q
+460 passed，10 skipped
+```

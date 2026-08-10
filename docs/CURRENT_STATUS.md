@@ -27,7 +27,7 @@
 - 阶段2.16.4第一小步：`2cf636a 阶段2.16.4：建立Reviewer缺陷评测基线`
 - 阶段2.16.4第二小步：`ed6be71 阶段2.16.4：适配Reviewer结构化缺陷输出`
 
-## 当前阶段：2.16.4 Reviewer/Reviser专项评测（Reviser第一小步已完成）
+## 当前阶段：2.16.4 Reviewer/Reviser专项评测（真实Reviser基线已完成）
 
 本轮先建立Reviewer可重复缺陷数据和确定性指标，不调用真实LLM：
 
@@ -56,6 +56,11 @@
 23. 指标分别计算目标修复率和正确测试点保留率；
 24. Fake报告两项均为1.0，只证明评测接线和评分公式；
 25. 错误Fake可同时暴露未修复目标和误改保护测试点。
+26. 新增显式开关保护的真实Reviser入口，默认pytest不访问LLM；
+27. `deepseek-v4-pro`运行6份样本约72秒，严格目标修复率0.1667；
+28. 正确测试点保留率1.0，说明当前样本中未破坏保护测试点；
+29. 1份来源缺失样本因模型仍返回空`source`而被生产校验拒绝；
+30. 3份样本生成不同标题，严格全字段匹配会将语义接近结果判为未命中。
 
 ## 当前数据流
 
@@ -76,7 +81,7 @@ python -m pytest -q tests/unit/evaluation/test_reviewer_runner.py tests/unit/eva
 8 passed
 
 python -m pytest -q
-458 passed，10 skipped
+460 passed，10 skipped
 ```
 
 默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
@@ -88,19 +93,19 @@ python -m pytest -q
 - `review-boundary-002`暴露保守适配漏检，当前Fake Recall为0.9167
 - 真实Reviewer输出存在对象/字符串类型不稳定，3/12样本最终失败
 - 当前指标混合了Reviewer判断能力、输出契约稳定性和保守适配规则影响
-- Reviser当前只有Fake接线报告，尚未运行真实模型
-- 当前修复金标准使用精确结构比较，后续真实结果可能需要确定性语义归一化
+- 当前Reviser修复率是严格结构匹配，不等同于人工语义正确率
+- 真实报告没有保存完整模型输出，尚不能人工复核3个改名结果是否语义等价
 - 自由文本映射依赖明确关键词，Reviewer换一种表达可能造成漏检
 - Reviser修复正确率和副作用尚未评测
 
-## 下一步：阶段2.16.4 真实Reviser基线
+## 下一步：阶段2.16.5 三方案实验设计
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 增加显式开关保护的真实Reviser入口；
-2. 复用6份fixture、现有`TestPointReviser`和相同指标；
-3. 单样本结构化失败需记录并继续；
-4. 真实调用需要用户显式同意，默认pytest保持隔离。
+1. 固定基础LLM、LLM+RAG、LLM+RAG+Reviewer/Reviser三组边界；
+2. 复用2.16.1金标准和已有确定性指标；
+3. 先建立统一Runner与Fake结果，不立即批量调用真实模型；
+4. 明确每组输入、输出、耗时和Token统计口径。
 
 ## 新电脑恢复方式
 

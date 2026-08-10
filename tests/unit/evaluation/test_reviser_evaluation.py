@@ -57,6 +57,7 @@ def test_fake_reviser_fixes_targets_without_changing_protected_points():
     assert len(reviser.received_states) == 6
     assert report["target_fix_rate"] == 1.0
     assert report["preservation_rate"] == 1.0
+    assert report["failed_case_count"] == 0
     assert all(item["fixed"] and item["preserved"] for item in report["results"])
     assert all(not item["unexpected_titles"] for item in report["results"])
     assert json.loads(REPORT.read_text(encoding="utf-8")) == report
@@ -76,3 +77,26 @@ def test_reviser_metrics_expose_unfixed_target_and_collateral_change():
 
     assert report["target_fix_rate"] < 1.0
     assert report["preservation_rate"] < 1.0
+
+
+def test_reviser_runner_records_one_failure_and_continues():
+    class FailingReviser(GoldFakeReviser):
+        def revise(self, state):
+            if state.task_id == "revise-omission-001":
+                raise ValueError("invalid revision plan")
+            super().revise(state)
+
+    report = run_reviser_evaluation(
+        FIXTURE,
+        FailingReviser(),
+        dependency_mode="fake_with_failure",
+        continue_on_error=True,
+    )
+
+    assert report["failed_case_count"] == 1
+    assert report["target_fix_rate"] < 1.0
+    assert report["errors"] == [{
+        "case_id": "revise-omission-001",
+        "error_type": "ValueError",
+        "error_message": "invalid revision plan",
+    }]

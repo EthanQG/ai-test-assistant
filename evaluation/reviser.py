@@ -65,13 +65,24 @@ def run_reviser_evaluation(
     reviser: ReviserBoundary,
     *,
     dependency_mode: str,
+    continue_on_error: bool = False,
 ) -> dict:
     fixture_set_id, cases = load_reviser_cases(path)
     results = []
+    errors = []
     fixed = preserved = fixed_total = preserved_total = 0
     for case in cases:
         state = reviser_case_to_state(case)
-        reviser.revise(state)
+        try:
+            reviser.revise(state)
+        except Exception as exc:
+            if not continue_on_error:
+                raise
+            errors.append({
+                "case_id": case.case_id,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
         actual = {_compact(item)["title"]: _compact(item) for item in state.test_points}
         expected = {item["title"]: item for item in case.expected_test_points}
         before_titles = {item["title"] for item in case.before_test_points}
@@ -95,7 +106,9 @@ def run_reviser_evaluation(
         "dependency_mode": dependency_mode,
         "target_fix_rate": round(fixed / fixed_total, 4),
         "preservation_rate": round(preserved / preserved_total, 4),
+        "failed_case_count": len(errors),
         "results": results,
+        "errors": errors,
     }
 
 
