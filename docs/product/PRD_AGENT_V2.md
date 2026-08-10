@@ -649,6 +649,7 @@ FastAPI、后台任务和Vue，安排在后端边界、知识闭环、上下文�
 - [x] 5份合成KnowledgeAsset的真实MySQL、Embedding、Milvus端到端评测（阶段2.16.3第三小步；Recall@3=1.0，禁止资产命中率=0.1）
 - [x] Top-K与阈值9组真实对比（阶段2.16.3第四小步；0.70为候选阈值，未修改线上默认值）
 - [x] 12份Reviewer缺陷注入样本与确定性评分契约（阶段2.16.4第一小步；尚无真实Reviewer结果）
+- [x] `TestPointReviewResult`六类缺陷确定性适配（阶段2.16.4第二小步；自由文本采用保守规则）
 - [ ] RAG和Reviewer/Reviser专项评测（阶段2.16）
 - [ ] 三组消融实验和真实指标报告（阶段2.16）
 

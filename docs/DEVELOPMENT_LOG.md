@@ -3515,7 +3515,20 @@ python -m pytest -q
 第一小步只固定考卷、答案和评分方式，不表示当前Reviewer已经达到任何准确率。下一小步再把现有
 `TestPointReviewResult`结构化字段适配成这些稳定缺陷类型。
 
+### 第二小步：Reviewer结构化输出适配
+
+本轮新增从现有`TestPointReviewResult`到六类评测缺陷的确定性适配，没有修改Reviewer节点和Prompt：
+
+1. `requirement_coverage`中的partial/missing映射为需求遗漏；
+2. `duplicate_groups`映射为重复测试点；
+3. `hallucination_issues`映射为无依据断言；
+4. `missing_scenarios`只有包含边界、上限、下限、最大、最小等明确词时才映射为边界缺失；
+5. `revision_suggestions`必须同时提到具体测试点标题和来源/预期关键词，才映射为来源缺失或预期模糊；
+6. 无法确定的自由文本保持未分类，避免通过宽泛关键词制造假阳性。
+
+pytest使用Fake结构化评审一次覆盖六类映射，并验证普通优化建议不会误分类；未调用真实LLM。
+
 ```text
 python -m pytest -q
-448 passed，10 skipped
+450 passed，10 skipped
 ```

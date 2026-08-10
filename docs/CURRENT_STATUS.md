@@ -23,8 +23,10 @@
 - 阶段2.16.3第一小步：`2760923 阶段2.16.3：建立RAG资产级评测指标`
 - 阶段2.16.3第二小步：`1f6537b 阶段2.16.3：接入RAG检索服务评测边界`
 - 阶段2.16.3第三小步：`2533806 阶段2.16.3：完成真实RAG链路评测`
+- 阶段2.16.3第四小步：`28b6942 阶段2.16.3：完成RAG参数对比评测`
+- 阶段2.16.4第一小步：`2cf636a 阶段2.16.4：建立Reviewer缺陷评测基线`
 
-## 当前阶段：2.16.4 Reviewer/Reviser专项评测（第一小步已完成）
+## 当前阶段：2.16.4 Reviewer/Reviser专项评测（第二小步已完成）
 
 本轮先建立Reviewer可重复缺陷数据和确定性指标，不调用真实LLM：
 
@@ -35,6 +37,10 @@
 5. 每个缺陷包含稳定类型、目标和具体证据；
 6. 指标输出TP、FP、FN、Precision、Recall和正确样本误报率；
 7. pytest只使用确定性Fake预测，不调用真实LLM。
+8. 新增`TestPointReviewResult`到六类稳定缺陷的适配器；
+9. 覆盖状态、重复组和幻觉问题直接读取结构化字段；
+10. 边界、模糊预期和来源缺失只在出现明确关键词时分类；
+11. 无法确定的自由文本建议保持未分类，不强行制造命中。
 
 ## 当前数据流
 
@@ -53,7 +59,7 @@ python -m pytest -q tests/unit/evaluation/test_reviewer_evaluation.py
 4 passed
 
 python -m pytest -q
-448 passed，10 skipped
+450 passed，10 skipped
 ```
 
 默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
@@ -62,17 +68,17 @@ python -m pytest -q
 
 - 当前12份均为小型合成样本，尚未覆盖长测试点集合
 - 第一小步只证明数据契约和评分公式，尚无真实Reviewer效果
-- 模糊预期和来源缺失仍需下一小步定义如何从Reviewer结构化输出确定性映射
+- 自由文本映射依赖明确关键词，Reviewer换一种表达可能造成漏检
 - Reviser修复正确率和副作用尚未评测
 
-## 下一步：阶段2.16.4 Reviewer真实输出适配
+## 下一步：阶段2.16.4 Reviewer评测Runner
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 将现有`TestPointReviewResult`映射为六类稳定缺陷；
-2. 优先使用覆盖事实、重复组、幻觉问题等结构化字段，不依赖另一个LLM评分；
-3. 为模糊预期和来源缺失定义最小确定性适配规则；
-4. 先用Fake Reviewer输出验证适配，再决定是否显式运行真实Reviewer。
+1. 将12份fixture转换为Reviewer需要的结构化输入；
+2. 通过可注入Reviewer callable逐case运行并接入现有适配器；
+3. 先用Fake结果生成完整基线报告；
+4. 再决定是否显式调用真实DeepSeek，默认pytest继续隔离外部服务。
 
 ## 新电脑恢复方式
 

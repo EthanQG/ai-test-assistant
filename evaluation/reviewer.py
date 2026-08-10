@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from agent import TestPointReviewResult
+
 
 DEFECT_TYPES = {
     "requirement_omission",
@@ -111,6 +113,89 @@ def score_reviewer_predictions(
         else 0.0,
         "results": case_results,
     }
+
+
+def review_result_to_defects(
+    review: TestPointReviewResult,
+    *,
+    test_point_titles: Sequence[str] = (),
+) -> tuple[ReviewerDefect, ...]:
+    """Translate existing structured Reviewer signals into stable labels."""
+
+    defects = []
+    for coverage in review.requirement_coverage:
+        if coverage.status != "covered":
+            defects.append(
+                ReviewerDefect(
+                    defect_type="requirement_omission",
+                    target=coverage.requirement_fact,
+                    evidence=coverage.gap or coverage.status,
+                )
+            )
+    for group in review.duplicate_groups:
+        defects.append(
+            ReviewerDefect(
+                defect_type="duplicate_test_point",
+                target="|".join(group),
+                evidence="Reviewer duplicate group",
+            )
+        )
+    for issue in review.hallucination_issues:
+        defects.append(
+            ReviewerDefect(
+                defect_type="unsupported_assertion",
+                target=issue.test_point_title,
+                evidence=issue.unsupported_claim,
+            )
+        )
+    for scenario in review.missing_scenarios:
+        if _contains_any(
+            scenario,
+            ("边界", "上限", "下限", "最大", "最小", "临界", "超限"),
+        ):
+            defects.append(
+                ReviewerDefect(
+                    defect_type="boundary_missing",
+                    target=scenario,
+                    evidence=scenario,
+                )
+            )
+    for suggestion in review.revision_suggestions:
+        target = _mentioned_title(suggestion, test_point_titles)
+        if target and _contains_any(
+            suggestion,
+            ("来源", "引用", "依据", "追溯"),
+        ):
+            defects.append(
+                ReviewerDefect(
+                    defect_type="missing_source",
+                    target=target,
+                    evidence=suggestion,
+                )
+            )
+        elif target and _contains_any(
+            suggestion,
+            ("预期模糊", "明确预期", "具体结果", "可验证", "正确处理"),
+        ):
+            defects.append(
+                ReviewerDefect(
+                    defect_type="vague_expectation",
+                    target=target,
+                    evidence=suggestion,
+                )
+            )
+    unique = {}
+    for item in defects:
+        unique.setdefault(item.key, item)
+    return tuple(unique.values())
+
+
+def _contains_any(text: str, keywords: Sequence[str]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
+def _mentioned_title(text: str, titles: Sequence[str]) -> str | None:
+    return next((title for title in titles if title and title in text), None)
 
 
 def _load_case(item: dict) -> ReviewerEvaluationCase:
