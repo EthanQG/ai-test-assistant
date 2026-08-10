@@ -19,56 +19,57 @@
 - 阶段2.16.1：`143b2a0 阶段2.16.1：完成十份评测金标准复核`
 - 阶段2.16.2第一小步：`744228b 阶段2.16.2：建立图文解析评测样本`
 - 阶段2.16.2第二小步：`7395b8d 阶段2.16.2：增加文档解析确定性评分`
+- 阶段2.16.2第三小步：`5a32bc6 阶段2.16.2：增加流程与UI语义评分`
 
-## 当前阶段：2.16.2 图文解析评测（第三小步已完成）
+## 当前阶段：2.16.3 RAG专项评测（第一小步已完成）
 
-本轮补齐流程图和UI图的确定性评分，不修改Agent主流程，也不调用真实视觉模型：
+本轮先固定RAG查询金标准和资产级指标，不修改在线检索逻辑，也不连接真实Milvus：
 
-1. 流程节点按节点文字计算召回率；
-2. 流程关系按起点、终点和分支条件共同匹配；
-3. UI元素按控件类型和显示名称共同匹配；
-4. 关系和UI准确率使用实际项与预期项的较大数量作分母，额外编造内容也会扣分；
-5. 缺失节点和关系进入`missing_items`，便于定位具体错误；
-6. Runner可注入结构化视觉结果，但不会自行调用视觉模型；
-7. 无视觉结果时，报告明确记录2份跳过样本；
-8. 新增pytest覆盖完整命中、缺失分支、额外UI控件和Runner注入。
+1. 新增5份完全虚构查询，覆盖订单库存、退款、登录锁定、文件上传和角色权限；
+2. 每份查询标注期望召回资产和明确不应召回资产；
+3. `Recall@K`衡量相关资产是否找全；
+4. `Precision@K`衡量前K个位置中相关资产占比；
+5. `MRR`衡量第一个相关资产出现得是否足够靠前；
+6. `forbidden_hit_rate`衡量已知无关资产是否污染结果；
+7. Runner按case输出明细并计算平均指标；
+8. pytest只使用Fake资产ID列表，不调用Embedding、Milvus或MySQL。
 
 ## 当前数据流
 
 ```text
-结构化视觉结果（Fake或未来真实模型）
-→ 节点/关系/UI元素集合
-→ 与gold_v1.json逐项比较
-→ 分项指标与缺失内容
+虚构查询 + 相关/禁止资产标注
+→ retrieve(query, k)返回排序后的asset_id
+→ 资产级逐项比较
+→ Recall@K / Precision@K / MRR / forbidden_hit_rate
 ```
 
 ## 验证结果
 
 ```text
-python -m pytest tests/unit/evaluation/test_visual_parsing.py tests/unit/evaluation/test_document_parsing.py -q
-8 passed
+python -m pytest tests/unit/evaluation/test_rag_evaluation.py -q
+5 passed
 
 python -m pytest -q
-433 passed，10 skipped
+438 passed，10 skipped
 ```
 
 全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
 
 ## 当前限制
 
-- 视觉评分代码已完成，但当前没有真实视觉模型输出
-- 本机JSON基线只评测3份正文/表格/OCR样本，并明确跳过流程图和UI图
-- 流程和UI测试使用Fake结构化结果，只证明评分规则正确
-- 当前没有复杂脱敏样本或消融实验结果
+- 5份查询和资产ID均为合成数据，还没有对应的真实MySQL/Milvus资产
+- Fake测试只证明指标计算正确，不证明现有Embedding或阈值效果
+- 当前没有真实Recall@K、Precision@K或MRR结果
+- `k=3`是当前评测参数，不代表已经证明最优
 
-## 下一步：阶段2.16.3 RAG专项评测
+## 下一步：阶段2.16.3 RAG专项评测（第二小步）
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 准备少量查询与期望KnowledgeAsset对应关系；
-2. 计算Recall@K、Precision@K和无关资产召回；
-3. 单元测试继续使用Fake检索结果；
-4. 真实Milvus评测必须获得用户明确同意后单独运行。
+1. 将现有`KnowledgeAssetRetrievalResult.candidates`适配为排序asset_id；
+2. 用Fake Embedding、VectorSearch和内存Repository跑通真实Retrieval Service边界；
+3. 输出受控链路报告，不连接外部服务；
+4. 真实Milvus评测仍需用户明确同意。
 
 ## 新电脑恢复方式
 

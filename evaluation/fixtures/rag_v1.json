@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "rag-retrieval-v1",
+  "description": "用于验证资产级RAG排序指标的完全虚构查询和相关资产标注。",
+  "cases": [
+    {
+      "case_id": "rag-order-001",
+      "query": "创建订单时校验库存，并防止相同request_id重复扣减库存",
+      "relevant_asset_ids": ["asset-order-inventory"],
+      "forbidden_asset_ids": ["asset-coupon-threshold", "asset-role-permission"]
+    },
+    {
+      "case_id": "rag-refund-001",
+      "query": "多次部分退款时累计金额不能超过订单实付金额",
+      "relevant_asset_ids": ["asset-refund-cumulative"],
+      "forbidden_asset_ids": ["asset-order-inventory", "asset-login-lock"]
+    },
+    {
+      "case_id": "rag-auth-001",
+      "query": "连续输错密码后的账号锁定和管理员提前解锁",
+      "relevant_asset_ids": ["asset-login-lock"],
+      "forbidden_asset_ids": ["asset-refund-cumulative", "asset-file-upload"]
+    },
+    {
+      "case_id": "rag-upload-001",
+      "query": "批量上传文件的格式、大小、数量限制和部分成功结果",
+      "relevant_asset_ids": ["asset-file-upload"],
+      "forbidden_asset_ids": ["asset-login-lock", "asset-role-permission"]
+    },
+    {
+      "case_id": "rag-permission-001",
+      "query": "管理员编辑者查看者的授权、越权和角色变更立即生效",
+      "relevant_asset_ids": ["asset-role-permission"],
+      "forbidden_asset_ids": ["asset-order-inventory", "asset-refund-cumulative"]
+    }
+  ]
+}

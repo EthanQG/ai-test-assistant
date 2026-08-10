@@ -74,6 +74,7 @@
 | 阶段 2.15 | 已完成 | 图文PRD理解、关键问题限流、ContextBuilder、Token预算和分层可观测性 | - |
 | 阶段 2.16.1 | 已完成 | schema v1契约、标注指南和10份单人复核的虚构评测需求 | `abdb0cb`, `143b2a0` |
 | 阶段 2.16.2 | 第三小步已完成 | 合成附件及正文、表格、OCR、流程和UI确定性评分 | `744228b`, `7395b8d`，本次提交 |
+| 阶段 2.16.3 | 第一小步已完成 | 5份虚构RAG查询、资产级排序指标和Fake测试 | 本次提交 |
 | 阶段 2.16 | 进行中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
@@ -3412,3 +3413,27 @@ python -m pytest -q
 ```
 
 阶段2.16.2的确定性评分代码到此收尾。真实视觉运行作为外部集成证据保留，下一阶段进入2.16.3 RAG专项评测。
+
+## 阶段 2.16.3：RAG专项评测
+
+### 第一小步：查询金标准与资产级指标
+
+本轮先建立约100行的纯指标模块，不连接真实Embedding、Milvus或MySQL：
+
+1. 新增5份完全虚构查询；
+2. 每份查询标注相关KnowledgeAsset ID和明确禁止召回的资产ID；
+3. 实现Recall@K、Precision@K、MRR和禁止资产命中率；
+4. 对重复asset_id先按排序去重，保持资产级检索口径；
+5. 输出逐case结果和宏平均，不制造综合加权总分；
+6. pytest验证相关资产排名、错误召回、缺失召回和Fake Runner汇总。
+
+这里的Fake全命中结果只验证公式和数据流，不能写成真实RAG效果。下一小步再复用现有
+`KnowledgeAssetRetrievalService`边界；真实Milvus实验仍需要显式授权。
+
+```text
+python -m pytest tests/unit/evaluation/test_rag_evaluation.py -q
+5 passed
+
+python -m pytest -q
+438 passed，10 skipped
+```
