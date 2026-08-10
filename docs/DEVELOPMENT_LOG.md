@@ -3532,3 +3532,21 @@ pytest使用Fake结构化评审一次覆盖六类映射，并验证普通优化�
 python -m pytest -q
 450 passed，10 skipped
 ```
+
+### 第三小步：Reviewer评测Runner
+
+本轮把12份fixture转换为当前Reviewer实际使用的`TestAnalysisState`，并新增只依赖
+`review(state)`协议的评测Runner。Runner统一执行结构化输出适配和TP/FP/FN评分，既可注入Fake，
+后续也可复用现有`TestPointReviewer`，没有修改Reviewer节点、Prompt或状态机。
+
+Fake接线报告明确标记`fake_gold_predictions_only`。报告命中11/12个缺陷：上传6个文件虽然是数值
+超限场景，但文本未包含当前适配器要求的边界关键词，因此被保守规则忽略。这里保留漏检证据，
+没有为了满分放宽映射并引入潜在误报。
+
+```text
+python -m pytest -q tests/unit/evaluation/test_reviewer_runner.py tests/unit/evaluation/test_reviewer_adapter.py tests/unit/evaluation/test_reviewer_evaluation.py
+8 passed
+
+python -m pytest -q
+452 passed，10 skipped
+```

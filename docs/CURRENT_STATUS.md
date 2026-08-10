@@ -25,8 +25,9 @@
 - 阶段2.16.3第三小步：`2533806 阶段2.16.3：完成真实RAG链路评测`
 - 阶段2.16.3第四小步：`28b6942 阶段2.16.3：完成RAG参数对比评测`
 - 阶段2.16.4第一小步：`2cf636a 阶段2.16.4：建立Reviewer缺陷评测基线`
+- 阶段2.16.4第二小步：`ed6be71 阶段2.16.4：适配Reviewer结构化缺陷输出`
 
-## 当前阶段：2.16.4 Reviewer/Reviser专项评测（第二小步已完成）
+## 当前阶段：2.16.4 Reviewer/Reviser专项评测（第三小步已完成）
 
 本轮先建立Reviewer可重复缺陷数据和确定性指标，不调用真实LLM：
 
@@ -41,12 +42,18 @@
 9. 覆盖状态、重复组和幻觉问题直接读取结构化字段；
 10. 边界、模糊预期和来源缺失只在出现明确关键词时分类；
 11. 无法确定的自由文本建议保持未分类，不强行制造命中。
+12. 新增Reviewer Runner，将fixture转换为真实`TestAnalysisState`；
+13. Runner只依赖可注入的`review(state)`边界，可接Fake或现有Reviewer；
+14. Fake报告经过结构化评审结果适配和统一评分器，未绕过生产输入结构；
+15. 当前Fake链路检出11/12个缺陷，保守边界规则漏掉“上传6个文件”。
 
 ## 当前数据流
 
 ```text
 虚构需求事实 + 注入缺陷测试点
-→ Reviewer缺陷预测（下一小步接入）
+→ TestAnalysisState
+→ 可注入Reviewer.review(state)
+→ TestPointReviewResult缺陷适配
 → 按case_id + defect_type + target匹配
 → TP / FP / FN
 → Precision / Recall / 正确样本误报率
@@ -55,11 +62,11 @@
 ## 验证结果
 
 ```text
-python -m pytest -q tests/unit/evaluation/test_reviewer_evaluation.py
-4 passed
+python -m pytest -q tests/unit/evaluation/test_reviewer_runner.py tests/unit/evaluation/test_reviewer_adapter.py tests/unit/evaluation/test_reviewer_evaluation.py
+8 passed
 
 python -m pytest -q
-450 passed，10 skipped
+452 passed，10 skipped
 ```
 
 默认全量回归未调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。
@@ -67,18 +74,19 @@ python -m pytest -q
 ## 当前限制
 
 - 当前12份均为小型合成样本，尚未覆盖长测试点集合
-- 第一小步只证明数据契约和评分公式，尚无真实Reviewer效果
+- Fake Runner只证明输入转换、调用边界、适配和评分已连通，尚无真实Reviewer效果
+- `review-boundary-002`暴露保守适配漏检，当前Fake Recall为0.9167
 - 自由文本映射依赖明确关键词，Reviewer换一种表达可能造成漏检
 - Reviser修复正确率和副作用尚未评测
 
-## 下一步：阶段2.16.4 Reviewer评测Runner
+## 下一步：阶段2.16.4 真实Reviewer基线
 
 下一阶段不再继续扩张在线功能，开始建立可对比的质量证据：
 
-1. 将12份fixture转换为Reviewer需要的结构化输入；
-2. 通过可注入Reviewer callable逐case运行并接入现有适配器；
-3. 先用Fake结果生成完整基线报告；
-4. 再决定是否显式调用真实DeepSeek，默认pytest继续隔离外部服务。
+1. 增加显式开关保护的真实Reviewer评测入口；
+2. 复用同一Runner、fixture、适配器和评分器；
+3. 记录模型标识、逐case结果和原始指标，不伪造提升；
+4. 真实DeepSeek调用需要用户显式同意，默认pytest继续隔离外部服务。
 
 ## 新电脑恢复方式
 
