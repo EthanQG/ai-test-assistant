@@ -11,7 +11,11 @@
 - 阶段2.16.9第二小步：`b7583a1 阶段2.16.9：接入紧凑ID需求分析`
 - 本地提交尚未推送，由用户手动执行`git push`
 
-## 当前阶段：2.16.11 Reviewer结构化字段稳定性（已完成）
+## 当前阶段：2.16.12 Embedding直连配置修复（已完成）
+
+真实验收中的Embedding请求超时目标为`127.0.0.1:7890`，说明旧RAG客户端继承了启动进程的环境代理，没有直连`.env`配置的Ollama。旧`MilvusRAGManager`现读取`OLLAMA_BASE_URL`、`EMBEDDING_MODEL`和`EMBEDDING_TIMEOUT`，并使用不继承环境代理的独立Session。对配置端点执行只读健康检查耗时0.09秒，确认`nomic-embed-text:latest`可用。
+
+## 上一阶段：2.16.11 Reviewer结构化字段稳定性（已完成）
 
 真实长PRD第二轮评审先后出现`missing_scenarios`对象项和`hallucination_issues`字符串项。Reviewer契约现在进一步明确两类字段格式，并只兼容可安全解释的常见漂移：缺失场景对象仅提取明确文本字段；字符串幻觉问题转换为保守的领域问题，仍会阻止评审通过。未知对象结构继续拒绝，不放宽分数、覆盖率和必填字段校验。
 
@@ -82,7 +86,7 @@ git diff --check
 
 ## 下一步建议
 
-下一小步处理Embedding请求误走环境代理的问题，然后执行长PRD完整验收。
+下一步执行长PRD完整功能验收，不再增加新功能。
 
 ## 新电脑恢复方式
 

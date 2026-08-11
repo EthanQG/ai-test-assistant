@@ -81,12 +81,31 @@ class KnowledgeBaseManager:
 
 
 class MilvusRAGManager:
-    def __init__(self, milvus_host="117.72.168.188", milvus_port=19530, ollama_host="117.72.168.188", ollama_port=11434):
+    def __init__(
+        self,
+        milvus_host="117.72.168.188",
+        milvus_port=19530,
+        ollama_host=None,
+        ollama_port=None,
+        *,
+        session=None,
+    ):
         self.milvus_host = milvus_host
         self.milvus_port = milvus_port
-        self.ollama_host = ollama_host
-        self.ollama_port = ollama_port
-        self.ollama_url = f"http://{ollama_host}:{ollama_port}/api/embeddings"
+        base_url = os.getenv("OLLAMA_BASE_URL", "").strip().rstrip("/")
+        if not base_url:
+            host = ollama_host or "117.72.168.188"
+            port = ollama_port or 11434
+            base_url = f"http://{host}:{port}"
+        self.ollama_url = f"{base_url}/api/embeddings"
+        self.embedding_model = os.getenv(
+            "EMBEDDING_MODEL",
+            "nomic-embed-text",
+        ).strip()
+        self.embedding_timeout = int(os.getenv("EMBEDDING_TIMEOUT", "60"))
+        self._session = session or requests.Session()
+        if session is None:
+            self._session.trust_env = False
         self.collection_name = "ai_test_cases"
         self.dim = 768
         self.client = None
@@ -131,10 +150,10 @@ class MilvusRAGManager:
 
     def _get_embedding(self, text: str) -> list:
         try:
-            response = requests.post(
+            response = self._session.post(
                 self.ollama_url,
-                json={"model": "nomic-embed-text", "prompt": text},
-                timeout=30
+                json={"model": self.embedding_model, "prompt": text},
+                timeout=self.embedding_timeout,
             )
             response.raise_for_status()
             data = response.json()
