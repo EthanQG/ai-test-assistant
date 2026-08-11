@@ -6,9 +6,11 @@ from .context_builder import ContextBuilder
 from .review_models import TestPointReviewResult
 from .state import TestAnalysisState
 from .structured_output import (
-    LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
     generate_and_parse_json,
 )
+
+
+REVIEW_STRUCTURED_OUTPUT_MAX_TOKENS = 16_384
 
 
 class TestPointReviewError(RuntimeError):
@@ -53,7 +55,7 @@ class TestPointReviewer:
                 user_prompt,
                 system_prompt,
                 TestPointReviewResult.from_json,
-                max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
+                max_tokens=REVIEW_STRUCTURED_OUTPUT_MAX_TOKENS,
             )
             self._validate_coverage(state, result)
             passed = self._is_passing(result)

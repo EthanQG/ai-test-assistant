@@ -203,7 +203,7 @@ class TestPointReviewerTests(unittest.TestCase):
         self.assertIn("提交订单时扣减库存", llm.calls[0][0])
         self.assertIn("库存充足时提交订单", llm.calls[0][0])
         self.assertTrue(llm.calls[0][1])
-        self.assertEqual(llm.received_max_tokens, [8192])
+        self.assertEqual(llm.received_max_tokens, [16384])
         self.assertEqual(
             state.events[-1].event_type,
             AgentEventType.STEP_COMPLETED,
