@@ -1,7 +1,37 @@
-from agent import AgentStep, AgentStatus, TestAnalysisState
+from agent import (
+    AgentStep,
+    AgentStatus,
+    OrchestratorAction,
+    OrchestratorDecision,
+    TestAnalysisState,
+)
 from application.background_runner import BackgroundRunStatus
 from application.models import TaskRecord, TaskView
 from api.progress import build_task_progress
+
+
+def test_progress_presents_revision_limit_as_waiting_for_human_feedback():
+    state = TestAnalysisState("smart lock requirement")
+    state.status = AgentStatus.RUNNING
+    state.current_step = AgentStep.REVIEW_TEST_POINTS
+    record = TaskRecord(
+        state=state,
+        next_action="revision_limit_reached",
+        decisions=[OrchestratorDecision(
+            OrchestratorAction.REVISION_LIMIT_REACHED,
+            "automatic revision limit reached",
+        )],
+    )
+
+    progress = build_task_progress(
+        TaskView.from_record(record),
+        BackgroundRunStatus(state.task_id, "stopped", False),
+    )
+
+    assert progress["status"] == "running"
+    assert progress["status_label"] == "等待人工反馈"
+    assert progress["stage_label"] == "人工反馈"
+    assert progress["revision_limit_reached"] is True
 
 
 def test_progress_uses_domain_state_and_limits_recent_events():

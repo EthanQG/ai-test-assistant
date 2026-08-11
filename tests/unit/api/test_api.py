@@ -140,6 +140,13 @@ def test_frontend_keeps_polling_while_resumed_task_is_queued_or_running():
     assert waiting_guard is not None
 
 
+def test_frontend_stops_polling_when_revision_limit_is_reached():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "if (progress.revision_limit_reached)" in script
+    assert 'showResultTab("feedback")' in script
+
+
 def test_frontend_javascript_element_ids_exist_in_page():
     page = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")

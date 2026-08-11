@@ -378,6 +378,11 @@ async function pollProgress() {
       await loadWaitingAction();
       return;
     }
+    if (progress.revision_limit_reached) {
+      setBusy(false);
+      showResultTab("feedback");
+      return;
+    }
     if (["completed", "failed"].includes(progress.status)) {
       setBusy(false);
       return;
@@ -393,7 +398,9 @@ async function renderProgress(progress) {
   currentTaskStatus = progress.status;
   const running = ["queued", "running"].includes(progress.execution_status);
   elements.status.textContent = progress.status_label;
-  elements.status.className = `status ${statusClass(progress.status)}`;
+  elements.status.className = `status ${
+    progress.revision_limit_reached ? "waiting" : statusClass(progress.status)
+  }`;
   elements.activity.hidden = !running;
   elements.stage.textContent = progress.stage_label;
   elements.description.textContent = progress.error || stageDescription(progress);
@@ -415,6 +422,9 @@ async function renderProgress(progress) {
     showNotice("补充信息已提交，任务等待重新启动。");
   } else if (progress.status === "waiting_for_user") {
     showNotice("Agent已暂停，请在左侧完成需求补充或业务规则确认。");
+  } else if (progress.revision_limit_reached) {
+    showNotice("自动修正已达到上限，请进入“人工反馈”补充修改建议后继续。");
+    showResultTab("feedback");
   } else if (progress.status === "completed") {
     showNotice("分析已完成，可以查看测试点、质量评审、人工反馈和最终报告。");
     loadHistory();
