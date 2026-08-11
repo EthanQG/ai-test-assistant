@@ -21,6 +21,7 @@ from .task_repository import (
     TaskSummaryPage,
     TaskVersionConflictError,
     VersionedTaskRecord,
+    _validate_task_name,
 )
 
 if TYPE_CHECKING:
@@ -739,6 +740,34 @@ class MySQLTaskRepository(TaskRepository):
         except Exception as exc:
             connection.rollback()
             raise TaskRepositoryError("failed to delete MySQL task") from exc
+        finally:
+            cursor.close()
+            connection.close()
+
+    def rename(self, task_id: str, task_name: str) -> None:
+        cleaned = _validate_task_name(task_name)
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """
+                UPDATE agent_tasks
+                SET task_name = %s,
+                    version = version + 1,
+                    updated_at = UTC_TIMESTAMP(6)
+                WHERE task_id = %s
+                """,
+                (cleaned, task_id),
+            )
+            if cursor.rowcount == 0:
+                raise TaskNotFoundError(task_id)
+            connection.commit()
+        except TaskNotFoundError:
+            connection.rollback()
+            raise
+        except Exception as exc:
+            connection.rollback()
+            raise TaskRepositoryError("failed to rename MySQL task") from exc
         finally:
             cursor.close()
             connection.close()

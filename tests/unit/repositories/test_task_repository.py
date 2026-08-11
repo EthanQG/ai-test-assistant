@@ -71,6 +71,27 @@ class InMemoryTaskRepositoryTests(unittest.TestCase):
         self.assertEqual(page.items[0].task_name, "优惠券需求")
         self.assertEqual(page.items[0].requirement_summary, "优惠券核销")
 
+    def test_rename_updates_display_name_and_version(self):
+        repository = InMemoryTaskRepository()
+        state = TestAnalysisState("order requirement")
+        repository.create(TaskRecord(state=state))
+
+        repository.rename(state.task_id, "  订单回归分析  ")
+
+        page = repository.list_summaries(query="回归", offset=0, limit=20)
+        self.assertEqual(page.items[0].task_name, "订单回归分析")
+        self.assertEqual(repository.get_versioned(state.task_id).version, 2)
+
+    def test_rename_rejects_invalid_name(self):
+        repository = InMemoryTaskRepository()
+        state = TestAnalysisState("order requirement")
+        repository.create(TaskRecord(state=state))
+
+        with self.assertRaises(ValueError):
+            repository.rename(state.task_id, "   ")
+        with self.assertRaises(ValueError):
+            repository.rename(state.task_id, "x" * 49)
+
     def test_duplicate_create_and_unknown_save_are_rejected(self):
         repository = InMemoryTaskRepository()
         state = TestAnalysisState("用户可以提交订单")

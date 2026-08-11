@@ -171,6 +171,10 @@ class TaskRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def rename(self, task_id: str, task_name: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def delete(self, task_id: str) -> None:
         raise NotImplementedError
 
@@ -186,6 +190,7 @@ class InMemoryTaskRepository(TaskRepository):
         self._records: dict[str, TaskRecord] = {}
         self._versions: dict[str, int] = {}
         self._executions: dict[str, _InMemoryExecution] = {}
+        self._task_names: dict[str, str] = {}
         self._lock = RLock()
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
@@ -196,6 +201,10 @@ class InMemoryTaskRepository(TaskRepository):
                 raise TaskAlreadyExistsError(task_id)
             self._records[task_id] = deepcopy(record)
             self._versions[task_id] = 1
+            self._task_names[task_id] = derive_task_name(
+                record.state.requirement,
+                record.state.requirement_summary,
+            )
 
     def get(self, task_id: str) -> TaskRecord:
         return self.get_versioned(task_id).record
@@ -326,10 +335,7 @@ class InMemoryTaskRepository(TaskRepository):
             items = [
                 TaskSummary(
                     task_id=record.state.task_id,
-                    task_name=derive_task_name(
-                        record.state.requirement,
-                        record.state.requirement_summary,
-                    ),
+                    task_name=self._task_names[record.state.task_id],
                     status=record.state.status.value,
                     current_step=record.state.current_step.value,
                     requirement_summary=record.state.requirement_summary,
@@ -339,11 +345,12 @@ class InMemoryTaskRepository(TaskRepository):
                     updated_at=record.state.updated_at,
                 )
                 for record in self._records.values()
-                if not normalized or normalized in (
-                    record.state.requirement_summary
-                    or record.state.requirement
-                    or record.state.task_id
-                ).casefold()
+                if not normalized or normalized in " ".join((
+                    self._task_names[record.state.task_id],
+                    record.state.requirement_summary,
+                    record.state.requirement,
+                    record.state.task_id,
+                )).casefold()
             ]
         items.sort(key=lambda item: (item.updated_at, item.task_id), reverse=True)
         return TaskSummaryPage(
@@ -353,11 +360,19 @@ class InMemoryTaskRepository(TaskRepository):
             limit=limit,
         )
 
+    def rename(self, task_id: str, task_name: str) -> None:
+        cleaned = _validate_task_name(task_name)
+        with self._lock:
+            self._require_task(task_id)
+            self._task_names[task_id] = cleaned
+            self._versions[task_id] += 1
+
     def delete(self, task_id: str) -> None:
         with self._lock:
             self._require_task(task_id)
             self._records.pop(task_id)
             self._versions.pop(task_id)
+            self._task_names.pop(task_id)
             self._executions = {
                 execution_id: execution
                 for execution_id, execution in self._executions.items()
@@ -393,3 +408,12 @@ def _validate_summary_page(offset: int, limit: int) -> None:
         raise ValueError("offset cannot be negative")
     if not 1 <= limit <= 100:
         raise ValueError("limit must be between 1 and 100")
+
+
+def _validate_task_name(task_name: str) -> str:
+    cleaned = " ".join(task_name.split())
+    if not cleaned:
+        raise ValueError("task name cannot be empty")
+    if len(cleaned) > 48:
+        raise ValueError("task name cannot exceed 48 characters")
+    return cleaned

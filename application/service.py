@@ -313,6 +313,12 @@ class TestAnalysisApplicationService:
     def delete_task(self, task_id: str) -> None:
         self._repository.delete(task_id)
 
+    def rename_task(self, task_id: str, task_name: str) -> None:
+        record = self._repository.get(task_id)
+        if record.in_progress or record.state.status is AgentStatus.RUNNING:
+            raise ValueError("running task cannot be renamed")
+        self._repository.rename(task_id, task_name)
+
     def _resume_with_clarifications(self, record: TaskRecord) -> None:
         answers = record.pending_clarifications
         if answers is None:

@@ -529,6 +529,24 @@ class TestAnalysisApplicationServiceTests(unittest.TestCase):
         with self.assertRaises(TaskNotFoundError):
             service.get_task(first.task_id)
 
+    def test_rename_task_updates_history_name(self):
+        service, _ = _create_service()
+        task = service.create_task(CreateTaskCommand(requirement="订单需求"))
+
+        service.rename_task(task.task_id, "订单回归分析")
+
+        summaries = service.list_task_summaries(query="回归")
+        self.assertEqual(summaries.items[0].task_name, "订单回归分析")
+
+    def test_running_task_cannot_be_renamed(self):
+        service, repository = _create_service()
+        state = TestAnalysisState("正在执行的需求")
+        state.status = AgentStatus.RUNNING
+        repository.create(TaskRecord(state=state, in_progress=True))
+
+        with self.assertRaises(ValueError):
+            service.rename_task(state.task_id, "新名称")
+
     def test_complete_fake_flow_runs_all_nodes_through_orchestrator(self):
         calls = []
 

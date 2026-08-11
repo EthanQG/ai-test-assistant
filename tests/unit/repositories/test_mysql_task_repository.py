@@ -368,6 +368,25 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
         self.assertTrue(all("snapshot_json" not in sql for sql in statements))
         self.assertIn("ORDER BY updated_at DESC", statements[-1])
 
+    def test_rename_updates_name_and_version(self):
+        connection = _FakeConnection()
+
+        _repository(connection).rename("task-1", "订单回归分析")
+
+        sql, params = connection.cursor_instance.executed[-1]
+        self.assertIn("SET task_name = %s, version = version + 1", sql)
+        self.assertEqual(params, ("订单回归分析", "task-1"))
+        self.assertEqual(connection.commits, 1)
+
+    def test_rename_unknown_task_rolls_back(self):
+        connection = _FakeConnection()
+        connection.cursor_instance.rowcount = 0
+
+        with self.assertRaises(TaskNotFoundError):
+            _repository(connection).rename("missing", "新名称")
+
+        self.assertEqual(connection.rollbacks, 1)
+
     def test_delete_commits_and_unknown_task_rolls_back(self):
         connection = _FakeConnection()
         repository = _repository(connection)

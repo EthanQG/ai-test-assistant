@@ -86,6 +86,9 @@ class FakeApplicationService:
     def delete_task(self, task_id):
         self.calls.append(("delete", task_id))
 
+    def rename_task(self, task_id, task_name):
+        self.calls.append(("rename", task_id, task_name))
+
 
 def _client():
     service = FakeApplicationService()
@@ -168,6 +171,19 @@ def test_create_get_list_and_delete_task():
     assert isinstance(service.calls[0][1], CreateTaskCommand)
 
 
+def test_rename_task():
+    client, service = _client()
+    task_id = service.view.task_id
+
+    response = client.patch(
+        f"/api/v1/tasks/{task_id}/name",
+        json={"task_name": "订单回归分析"},
+    )
+
+    assert response.status_code == 204
+    assert ("rename", task_id, "订单回归分析") in service.calls
+
+
 def test_list_task_summaries_supports_search_and_pagination():
     client, service = _client()
 
@@ -188,6 +204,8 @@ def test_native_frontend_exposes_history_and_restore_entry():
 
     assert 'class="panel history-sidebar"' in page
     assert 'id="history-list"' in page
+    assert 'id="new-task-button"' in page
+    assert "renameHistoryTask" in script
     assert "/api/v1/task-summaries" in script
     assert "restoreTask" in script
     assert "deleteHistoryTask" in script

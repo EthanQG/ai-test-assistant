@@ -136,18 +136,20 @@ textarea:focus, .file-picker:focus-within { outline: 2px solid #bfdbfe; border-c
 .detail-content ol { margin: 0; padding-left: 22px; color: #475467; line-height: 1.7; font-size: 13px; }
 .history-sidebar { min-height: 0; padding: 14px 10px; display: flex; flex-direction: column; overflow: hidden; }
 .history-sidebar-heading { margin-bottom: 14px; }
+.new-task-button { margin: 0 0 8px; }
 .history-search { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin: 14px 0 10px; }
 .history-search input { min-width: 0; padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
 .history-search .button { min-height: 34px; padding-inline: 9px; font-size: 12px; }
 .history-list { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; }
-.history-item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 28px; gap: 4px; padding: 3px 0; }
+.history-item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 26px 26px; gap: 2px; padding: 3px 0; }
 .history-open { width: 100%; padding: 9px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
 .history-open:hover, .history-open.active { background: #eef4ff; }
 .history-title { display: block; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .history-status { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
-.history-delete { align-self: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; color: #98a2b3; background: transparent; cursor: pointer; opacity: 0; }
-.history-item:hover .history-delete, .history-delete:focus { opacity: 1; }
+.history-action { align-self: center; width: 26px; height: 28px; padding: 0; border: 0; border-radius: 6px; color: #98a2b3; background: transparent; cursor: pointer; opacity: 0; }
+.history-item:hover .history-action, .history-action:focus { opacity: 1; }
 .history-delete:hover { color: var(--danger); background: #fef3f2; }
+.history-rename:hover { color: var(--blue); background: var(--blue-soft); }
 .history-delete-confirmation {
   position: fixed; z-index: 1000;
   width: 176px; padding: 10px; border: 1px solid var(--border);
@@ -157,6 +159,8 @@ textarea:focus, .file-picker:focus-within { outline: 2px solid #bfdbfe; border-c
 .history-delete-confirmation div { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .history-delete-confirmation .button { min-height: 30px; padding: 0 7px; font-size: 11px; }
 .button.danger { color: white; background: var(--danger); }
+.history-rename-confirmation { width: 210px; }
+.history-rename-confirmation input { width: 100%; margin-bottom: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
 .history-pagination { align-items: center; justify-content: space-between; }
 .history-pagination .button { min-height: 32px; padding-inline: 8px; font-size: 11px; }
 .history-pagination span { color: var(--muted); font-size: 11px; white-space: nowrap; }

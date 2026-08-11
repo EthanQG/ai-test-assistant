@@ -36,6 +36,7 @@ from .schemas import (
     TaskProgressResponse,
     TaskResponse,
     TaskSummaryPageResponse,
+    RenameTaskRequest,
     KnowledgeAssetConfirmationRequest,
     KnowledgeAssetPublicationResponse,
 )
@@ -222,6 +223,14 @@ def create_app(
     @app.get("/api/v1/tasks/{task_id}", response_model=TaskResponse)
     def get_task(task_id: str) -> TaskResponse:
         return _response(get_service().get_task(task_id))
+
+    @app.patch(
+        "/api/v1/tasks/{task_id}/name",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def rename_task(task_id: str, payload: RenameTaskRequest) -> Response:
+        get_service().rename_task(task_id, payload.task_name)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post(
         "/api/v1/tasks/{task_id}/advance",

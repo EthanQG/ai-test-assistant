@@ -65,6 +65,7 @@ const elements = {
   previousHistoryPage: document.querySelector("#previous-history-page"),
   nextHistoryPage: document.querySelector("#next-history-page"),
   historyPageLabel: document.querySelector("#history-page-label"),
+  newTask: document.querySelector("#new-task-button"),
 };
 
 let currentTaskId = null;
@@ -110,6 +111,7 @@ elements.historyQuery.addEventListener("keydown", (event) => {
 elements.previousHistoryPage.addEventListener("click", () => changeHistoryPage(-1));
 elements.nextHistoryPage.addEventListener("click", () => changeHistoryPage(1));
 elements.historyList.addEventListener("scroll", closeDeleteConfirmation);
+elements.newTask.addEventListener("click", resetWorkspace);
 
 async function loadHistory() {
   closeDeleteConfirmation();
@@ -153,7 +155,7 @@ function historyItem(summary) {
   open.append(title, status);
   open.addEventListener("click", () => restoreTask(summary.task_id, summary.task_name));
   const remove = document.createElement("button");
-  remove.className = "history-delete";
+  remove.className = "history-action history-delete";
   remove.type = "button";
   remove.textContent = "×";
   remove.title = "删除任务";
@@ -161,13 +163,70 @@ function historyItem(summary) {
   remove.addEventListener("click", () => {
     showDeleteConfirmation(summary, remove);
   });
-  item.append(open, remove);
+  const rename = document.createElement("button");
+  rename.className = "history-action history-rename";
+  rename.type = "button";
+  rename.textContent = "✎";
+  rename.title = "重命名任务";
+  rename.setAttribute("aria-label", `重命名任务：${title.textContent}`);
+  rename.addEventListener("click", () => showRenameTask(summary, rename));
+  item.append(open, rename, remove);
   return item;
+}
+
+function showRenameTask(summary, anchor) {
+  closeDeleteConfirmation();
+  const popover = document.createElement("div");
+  popover.className = "history-delete-confirmation history-rename-confirmation";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 48;
+  input.value = summary.task_name;
+  input.setAttribute("aria-label", "新的任务名称");
+  const actions = document.createElement("div");
+  const cancel = document.createElement("button");
+  cancel.className = "button secondary";
+  cancel.type = "button";
+  cancel.textContent = "取消";
+  cancel.addEventListener("click", closeDeleteConfirmation);
+  const save = document.createElement("button");
+  save.className = "button primary";
+  save.type = "button";
+  save.textContent = "保存";
+  save.addEventListener("click", () => renameHistoryTask(summary, input, save));
+  actions.append(cancel, save);
+  popover.append(input, actions);
+  placeTaskPopover(popover, anchor);
+  input.focus();
+  input.select();
+}
+
+async function renameHistoryTask(summary, input, saveButton) {
+  const taskName = input.value.trim();
+  if (!taskName) { input.focus(); return; }
+  saveButton.disabled = true;
+  try {
+    await request(`/api/v1/tasks/${summary.task_id}/name`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_name: taskName }),
+    });
+    if (summary.task_id === currentTaskId) setCurrentTaskName(taskName);
+    closeDeleteConfirmation();
+    await loadHistory();
+  } catch (error) {
+    saveButton.disabled = false;
+    showError(error.message);
+  }
 }
 
 function showDeleteConfirmation(summary, anchor) {
   closeDeleteConfirmation();
   const popover = deleteConfirmation(summary);
+  placeTaskPopover(popover, anchor);
+}
+
+function placeTaskPopover(popover, anchor) {
   document.body.append(popover);
   activeDeleteConfirmation = popover;
   const anchorRect = anchor.getBoundingClientRect();

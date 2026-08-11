@@ -91,6 +91,10 @@ class TaskSummaryPageResponse(BaseModel):
     limit: int
 
 
+class RenameTaskRequest(BaseModel):
+    task_name: str = Field(min_length=1, max_length=48)
+
+
 class KnowledgeAssetConfirmationRequest(BaseModel):
     user_confirmed: bool
     data_safety_confirmed: bool
