@@ -15,6 +15,8 @@ from .task_repository import (
     TaskNotFoundError,
     TaskRepository,
     TaskRepositoryError,
+    TaskSummary,
+    TaskSummaryPage,
     TaskVersionConflictError,
     VersionedTaskRecord,
 )
@@ -635,19 +637,55 @@ class MySQLTaskRepository(TaskRepository):
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
-            cursor.execute(
-                """
-                SELECT snapshot_json
-                FROM agent_tasks
-                ORDER BY updated_at DESC, task_id ASC
-                """
-            )
+            # Legacy full-list API keeps compatibility without asking MySQL to
+            # sort large JSON snapshots. New UIs should use list_summaries().
+            cursor.execute("SELECT snapshot_json FROM agent_tasks")
             return [
                 self._record_from_snapshot(row["snapshot_json"])
                 for row in cursor.fetchall()
             ]
         except Exception as exc:
             raise TaskRepositoryError("failed to list MySQL tasks") from exc
+        finally:
+            cursor.close()
+            connection.close()
+
+    def list_summaries(
+        self,
+        *,
+        query: str = "",
+        offset: int = 0,
+        limit: int = 20,
+    ) -> TaskSummaryPage:
+        if offset < 0 or not 1 <= limit <= 100:
+            raise ValueError("invalid task summary page")
+        normalized = query.strip()
+        where = ""
+        params: list[Any] = []
+        if normalized:
+            where = "WHERE requirement_summary LIKE %s OR task_id LIKE %s"
+            pattern = f"%{normalized}%"
+            params.extend((pattern, pattern))
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(f"SELECT COUNT(*) AS total FROM agent_tasks {where}", params)
+            total = int(cursor.fetchone()["total"])
+            cursor.execute(
+                f"""
+                SELECT task_id, status, current_step, requirement_summary,
+                       event_count, version, created_at, updated_at
+                FROM agent_tasks
+                {where}
+                ORDER BY updated_at DESC, task_id ASC
+                LIMIT %s OFFSET %s
+                """,
+                [*params, limit, offset],
+            )
+            items = tuple(TaskSummary(**row) for row in cursor.fetchall())
+            return TaskSummaryPage(items, total, offset, limit)
+        except Exception as exc:
+            raise TaskRepositoryError("failed to list MySQL task summaries") from exc
         finally:
             cursor.close()
             connection.close()

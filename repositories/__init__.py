@@ -8,6 +8,8 @@ from .task_repository import (
     TaskNotFoundError,
     TaskRepository,
     TaskRepositoryError,
+    TaskSummary,
+    TaskSummaryPage,
     TaskVersionConflictError,
     VersionedTaskRecord,
 )
@@ -55,6 +57,8 @@ __all__ = [
     "TaskNotFoundError",
     "TaskRepository",
     "TaskRepositoryError",
+    "TaskSummary",
+    "TaskSummaryPage",
     "TaskVersionConflictError",
     "VersionedTaskRecord",
     "build_mysql_connection_factory",

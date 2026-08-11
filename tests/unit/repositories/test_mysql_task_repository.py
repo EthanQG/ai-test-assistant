@@ -338,6 +338,32 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
             [second.state.task_id, first.state.task_id],
         )
 
+    def test_list_summaries_queries_small_columns_and_returns_page(self):
+        connection = _FakeConnection()
+        cursor = connection.cursor_instance
+        now = datetime(2026, 8, 11, tzinfo=timezone.utc)
+        cursor.fetchone_results = [{"total": 1}]
+        cursor.fetchall_result = [{
+            "task_id": "task-1",
+            "status": "completed",
+            "current_step": "finalize",
+            "requirement_summary": "订单分析",
+            "event_count": 9,
+            "version": 2,
+            "created_at": now,
+            "updated_at": now,
+        }]
+
+        page = _repository(connection).list_summaries(
+            query="订单", offset=0, limit=10,
+        )
+
+        self.assertEqual(page.total, 1)
+        self.assertEqual(page.items[0].task_id, "task-1")
+        statements = [sql for sql, _ in cursor.executed]
+        self.assertTrue(all("snapshot_json" not in sql for sql in statements))
+        self.assertIn("ORDER BY updated_at DESC", statements[-1])
+
     def test_delete_commits_and_unknown_task_rolls_back(self):
         connection = _FakeConnection()
         repository = _repository(connection)

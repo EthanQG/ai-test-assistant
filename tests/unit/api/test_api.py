@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
@@ -16,6 +17,7 @@ from application.models import TaskRecord, TaskView
 from application.service import TestAnalysisApplicationService
 from api.main import create_app
 from repositories import InMemoryTaskRepository, TaskNotFoundError
+from repositories import TaskSummary, TaskSummaryPage
 
 
 def _view(requirement: str = "订单需求") -> TaskView:
@@ -38,6 +40,20 @@ class FakeApplicationService:
     def list_tasks(self):
         self.calls.append(("list", None))
         return (self.view,)
+
+    def list_task_summaries(self, *, query="", offset=0, limit=20):
+        self.calls.append(("summaries", query, offset, limit))
+        summary = TaskSummary(
+            task_id=self.view.task_id,
+            status="completed",
+            current_step="finalize",
+            requirement_summary="订单测试分析",
+            event_count=8,
+            version=3,
+            created_at=datetime(2026, 8, 11, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 8, 11, tzinfo=timezone.utc),
+        )
+        return TaskSummaryPage((summary,), 1, offset, limit)
 
     def get_task(self, task_id):
         self.calls.append(("get", task_id))
@@ -148,6 +164,30 @@ def test_create_get_list_and_delete_task():
     assert len(listed.json()) == 1
     assert deleted.status_code == 204
     assert isinstance(service.calls[0][1], CreateTaskCommand)
+
+
+def test_list_task_summaries_supports_search_and_pagination():
+    client, service = _client()
+
+    response = client.get(
+        "/api/v1/task-summaries",
+        params={"query": "订单", "offset": 10, "limit": 5},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["requirement_summary"] == "订单测试分析"
+    assert response.json()["total"] == 1
+    assert ("summaries", "订单", 10, 5) in service.calls
+
+
+def test_native_frontend_exposes_history_and_restore_entry():
+    page = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="history-button"' in page
+    assert 'id="history-dialog"' in page
+    assert "/api/v1/task-summaries" in script
+    assert "restoreTask" in script
 
 
 def test_blank_requirement_is_rejected_before_application_service():

@@ -54,6 +54,22 @@ class InMemoryTaskRepositoryTests(unittest.TestCase):
         with self.assertRaises(TaskNotFoundError):
             second_repository.get(state.task_id)
 
+    def test_summary_listing_filters_sorts_and_paginates_without_snapshots(self):
+        repository = InMemoryTaskRepository()
+        first = TestAnalysisState("订单库存需求")
+        first.requirement_summary = "订单库存校验"
+        second = TestAnalysisState("优惠券需求")
+        second.requirement_summary = "优惠券核销"
+        repository.create(TaskRecord(state=first))
+        repository.create(TaskRecord(state=second))
+
+        page = repository.list_summaries(query="优惠券", offset=0, limit=1)
+
+        self.assertEqual(page.total, 1)
+        self.assertEqual(len(page.items), 1)
+        self.assertEqual(page.items[0].task_id, second.task_id)
+        self.assertEqual(page.items[0].requirement_summary, "优惠券核销")
+
     def test_duplicate_create_and_unknown_save_are_rejected(self):
         repository = InMemoryTaskRepository()
         state = TestAnalysisState("用户可以提交订单")

@@ -54,6 +54,15 @@ const elements = {
   feedbackReason: document.querySelector("#feedback-reason"),
   feedbackMessage: document.querySelector("#feedback-message"),
   feedbackHistory: document.querySelector("#feedback-history"),
+  historyButton: document.querySelector("#history-button"),
+  historyDialog: document.querySelector("#history-dialog"),
+  closeHistoryDialog: document.querySelector("#close-history-dialog"),
+  historyQuery: document.querySelector("#history-query"),
+  searchHistory: document.querySelector("#search-history"),
+  historyList: document.querySelector("#history-list"),
+  previousHistoryPage: document.querySelector("#previous-history-page"),
+  nextHistoryPage: document.querySelector("#next-history-page"),
+  historyPageLabel: document.querySelector("#history-page-label"),
 };
 
 let currentTaskId = null;
@@ -67,6 +76,8 @@ let businessRules = [];
 let humanFeedback = [];
 let pendingBusinessFeedback = null;
 const pageSize = 5;
+const historyPageSize = 10;
+let historyOffset = 0;
 
 elements.document.addEventListener("change", () => {
   elements.fileName.textContent = elements.document.files[0]?.name || "尚未选择文件";
@@ -86,6 +97,112 @@ elements.feedbackAction.addEventListener("change", renderFeedbackTarget);
 elements.feedbackForm.addEventListener("submit", submitFeedback);
 elements.confirmBusinessRule.addEventListener("click", () => confirmBusinessRule(true));
 elements.rejectBusinessRule.addEventListener("click", () => confirmBusinessRule(false));
+elements.historyButton.addEventListener("click", openHistory);
+elements.closeHistoryDialog.addEventListener("click", () => elements.historyDialog.close());
+elements.searchHistory.addEventListener("click", () => { historyOffset = 0; loadHistory(); });
+elements.historyQuery.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { historyOffset = 0; loadHistory(); }
+});
+elements.previousHistoryPage.addEventListener("click", () => changeHistoryPage(-1));
+elements.nextHistoryPage.addEventListener("click", () => changeHistoryPage(1));
+
+async function openHistory() {
+  historyOffset = 0;
+  elements.historyDialog.showModal();
+  await loadHistory();
+}
+
+async function loadHistory() {
+  const query = encodeURIComponent(elements.historyQuery.value.trim());
+  try {
+    const page = await request(
+      `/api/v1/task-summaries?query=${query}&offset=${historyOffset}&limit=${historyPageSize}`,
+    );
+    renderHistory(page);
+  } catch (error) {
+    elements.historyList.replaceChildren();
+    appendEmpty(elements.historyList, error.message);
+  }
+}
+
+function renderHistory(page) {
+  elements.historyList.replaceChildren();
+  if (!page.items.length) appendEmpty(elements.historyList, "没有找到历史任务。");
+  page.items.forEach((summary) => elements.historyList.append(historyItem(summary)));
+  const current = Math.floor(page.offset / page.limit) + 1;
+  const totalPages = Math.max(1, Math.ceil(page.total / page.limit));
+  elements.historyPageLabel.textContent = `第 ${current} / ${totalPages} 页`;
+  elements.previousHistoryPage.disabled = page.offset === 0;
+  elements.nextHistoryPage.disabled = page.offset + page.items.length >= page.total;
+}
+
+function historyItem(summary) {
+  const item = document.createElement("article");
+  item.className = "history-item";
+  const header = document.createElement("header");
+  const title = document.createElement("h3");
+  title.textContent = summary.requirement_summary || "未命名需求";
+  const status = document.createElement("span");
+  status.className = `status ${statusClass(summary.status)}`;
+  status.textContent = statusLabel(summary.status);
+  const meta = document.createElement("div");
+  meta.className = "history-meta";
+  meta.textContent = `更新：${new Date(summary.updated_at).toLocaleString()} · 事件 ${summary.event_count}`;
+  const id = document.createElement("p");
+  id.textContent = `任务ID：${summary.task_id}`;
+  const button = document.createElement("button");
+  button.className = "button secondary";
+  button.type = "button";
+  button.textContent = "恢复任务";
+  button.addEventListener("click", () => restoreTask(summary.task_id));
+  header.append(title, status);
+  item.append(header, meta, id, button);
+  return item;
+}
+
+function changeHistoryPage(direction) {
+  historyOffset = Math.max(0, historyOffset + direction * historyPageSize);
+  loadHistory();
+}
+
+async function restoreTask(taskId) {
+  clearMessages();
+  if (pollTimer) window.clearTimeout(pollTimer);
+  pollTimer = null;
+  try {
+    const task = await request(`/api/v1/tasks/${taskId}`);
+    currentTaskId = taskId;
+    elements.requirement.value = task.state.requirement || "";
+    elements.taskId.textContent = `任务ID：${taskId}`;
+    lockTaskInput(true);
+    testPointVersion = "";
+    await loadResults();
+    const progress = await request(`/api/v1/tasks/${taskId}/progress`);
+    await renderProgress(progress);
+    elements.historyDialog.close();
+    if (progress.status === "waiting_for_user") {
+      setBusy(false);
+      lockTaskInput(true);
+      elements.start.disabled = true;
+      await loadWaitingAction();
+    } else if (["queued", "running"].includes(progress.execution_status)) {
+      setBusy(true);
+      await pollProgress();
+    } else {
+      setBusy(false);
+      lockTaskInput(true);
+    }
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+function statusLabel(status) {
+  return {
+    running: "执行中", waiting_for_user: "等待用户",
+    completed: "已完成", failed: "执行失败",
+  }[status] || "等待开始";
+}
 
 async function startAnalysis() {
   clearMessages();

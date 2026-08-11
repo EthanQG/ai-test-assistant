@@ -69,6 +69,26 @@ class VersionedTaskRecord:
 
 
 @dataclass(frozen=True)
+class TaskSummary:
+    task_id: str
+    status: str
+    current_step: str
+    requirement_summary: str
+    event_count: int
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class TaskSummaryPage:
+    items: tuple[TaskSummary, ...]
+    total: int
+    offset: int
+    limit: int
+
+
+@dataclass(frozen=True)
 class TaskExecutionLease:
     task_id: str
     execution_id: str
@@ -135,6 +155,16 @@ class TaskRepository(ABC):
 
     @abstractmethod
     def list(self) -> list[TaskRecord]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_summaries(
+        self,
+        *,
+        query: str = "",
+        offset: int = 0,
+        limit: int = 20,
+    ) -> TaskSummaryPage:
         raise NotImplementedError
 
     @abstractmethod
@@ -280,6 +310,42 @@ class InMemoryTaskRepository(TaskRepository):
         with self._lock:
             return [deepcopy(record) for record in self._records.values()]
 
+    def list_summaries(
+        self,
+        *,
+        query: str = "",
+        offset: int = 0,
+        limit: int = 20,
+    ) -> TaskSummaryPage:
+        _validate_summary_page(offset, limit)
+        normalized = query.strip().casefold()
+        with self._lock:
+            items = [
+                TaskSummary(
+                    task_id=record.state.task_id,
+                    status=record.state.status.value,
+                    current_step=record.state.current_step.value,
+                    requirement_summary=record.state.requirement_summary,
+                    event_count=len(record.state.events),
+                    version=self._versions[record.state.task_id],
+                    created_at=record.state.created_at,
+                    updated_at=record.state.updated_at,
+                )
+                for record in self._records.values()
+                if not normalized or normalized in (
+                    record.state.requirement_summary
+                    or record.state.requirement
+                    or record.state.task_id
+                ).casefold()
+            ]
+        items.sort(key=lambda item: (item.updated_at, item.task_id), reverse=True)
+        return TaskSummaryPage(
+            items=tuple(items[offset:offset + limit]),
+            total=len(items),
+            offset=offset,
+            limit=limit,
+        )
+
     def delete(self, task_id: str) -> None:
         with self._lock:
             self._require_task(task_id)
@@ -313,3 +379,10 @@ class InMemoryTaskRepository(TaskRepository):
         if now.tzinfo is None or now.utcoffset() is None:
             raise TaskRepositoryError("repository clock must include timezone")
         return now.astimezone(timezone.utc)
+
+
+def _validate_summary_page(offset: int, limit: int) -> None:
+    if offset < 0:
+        raise ValueError("offset cannot be negative")
+    if not 1 <= limit <= 100:
+        raise ValueError("limit must be between 1 and 100")

@@ -129,7 +129,7 @@ python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 
 启动后访问`http://127.0.0.1:8000/docs`查看Swagger。当前API复用同一个Application Service，支持文本创建和`POST /api/v1/tasks/from-document`上传TXT、Markdown、PDF、DOCX需求文档，API文件上限为20MB。创建任务后可调用`POST /api/v1/tasks/{task_id}/run`提交后台执行，再通过`GET /api/v1/tasks/{task_id}/progress`轮询当前阶段、执行状态、关键计数和最近3条事件；需要完整结果时再调用任务详情接口。
 
-原生Web前端由FastAPI同源托管，启动后访问`http://127.0.0.1:8000/app/`。当前支持文本/文件创建、后台启动、进度轮询、待确认问题回答、结构化测试点分页和详情、Reviewer质量结果、人工反馈与业务规则二次确认，以及最终Markdown报告预览和下载。
+原生Web前端由FastAPI同源托管，启动后访问`http://127.0.0.1:8000/app/`。当前支持文本/文件创建、后台启动、进度轮询、待确认问题回答、结构化测试点分页和详情、Reviewer质量结果、人工反馈与业务规则二次确认、最终Markdown报告预览和下载，以及MySQL历史任务搜索与恢复。历史列表只读取轻量摘要，选中任务后才加载完整状态快照。
 
 补充信息提交后，页面会在后台任务处于`queued/running`期间继续轮询，不会因旧的`waiting_for_user`业务状态提前停止。长任务Reviewer使用紧凑JSON和事实ID返回覆盖映射，并仅在明确的输出截断时受控重试一次；ID会在Python校验前恢复为原事实文本。
 

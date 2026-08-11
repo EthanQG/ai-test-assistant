@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -69,3 +70,21 @@ class TaskProgressResponse(BaseModel):
     human_revision_count: int
     recent_events: list[dict[str, Any]]
     error: str | None
+
+
+class TaskSummaryResponse(BaseModel):
+    task_id: str
+    status: str
+    current_step: str
+    requirement_summary: str
+    event_count: int
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class TaskSummaryPageResponse(BaseModel):
+    items: list[TaskSummaryResponse]
+    total: int
+    offset: int
+    limit: int

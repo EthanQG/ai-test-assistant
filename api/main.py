@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Response, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +27,7 @@ from .schemas import (
     BackgroundRunResponse,
     TaskProgressResponse,
     TaskResponse,
+    TaskSummaryPageResponse,
 )
 from .progress import build_task_progress
 
@@ -118,6 +119,27 @@ def create_app(
     @app.get("/api/v1/tasks", response_model=list[TaskResponse])
     def list_tasks() -> list[TaskResponse]:
         return [_response(view) for view in get_service().list_tasks()]
+
+    @app.get(
+        "/api/v1/task-summaries",
+        response_model=TaskSummaryPageResponse,
+    )
+    def list_task_summaries(
+        query: str = Query(default="", max_length=100),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=10, ge=1, le=100),
+    ) -> TaskSummaryPageResponse:
+        page = get_service().list_task_summaries(
+            query=query,
+            offset=offset,
+            limit=limit,
+        )
+        return TaskSummaryPageResponse.model_validate(jsonable_encoder({
+            "items": [vars(item) for item in page.items],
+            "total": page.total,
+            "offset": page.offset,
+            "limit": page.limit,
+        }))
 
     @app.get("/api/v1/tasks/{task_id}", response_model=TaskResponse)
     def get_task(task_id: str) -> TaskResponse:

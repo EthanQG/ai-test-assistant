@@ -94,6 +94,19 @@ class TestAnalysisApplicationService:
             for record in self._repository.list()
         )
 
+    def list_task_summaries(
+        self,
+        *,
+        query: str = "",
+        offset: int = 0,
+        limit: int = 20,
+    ):
+        return self._repository.list_summaries(
+            query=query,
+            offset=offset,
+            limit=limit,
+        )
+
     def advance_task(
         self,
         task_id: str,
