@@ -48,9 +48,19 @@ def _optional_issue_list(
         )
     cleaned = []
     for item in value:
+        if isinstance(item, dict):
+            item = next(
+                (
+                    item[key]
+                    for key in ("scenario", "description", "issue")
+                    if isinstance(item.get(key), str)
+                    and item[key].strip()
+                ),
+                None,
+            )
         if not isinstance(item, str):
             raise TestPointReviewValidationError(
-                f"{field_name} must contain strings"
+                f"{field_name} must contain strings or a supported text object"
             )
         if item.strip():
             cleaned.append(item.strip())
@@ -175,6 +185,13 @@ class HallucinationIssue:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "HallucinationIssue":
+        if isinstance(payload, str) and payload.strip():
+            issue = payload.strip()
+            return cls(
+                test_point_title="未指定测试点",
+                issue=issue,
+                unsupported_claim=issue,
+            )
         if not isinstance(payload, dict):
             raise TestPointReviewValidationError(
                 "each hallucination issue must be an object"

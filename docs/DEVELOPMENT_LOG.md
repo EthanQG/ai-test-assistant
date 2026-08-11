@@ -77,6 +77,7 @@
 | 阶段 2.16.3 | 第一小步已完成 | 5份虚构RAG查询、资产级排序指标和Fake测试 | 本次提交 |
 | 阶段 2.16.9 | 已完成 | 稳定陈述ID、紧凑分类、全局问题审核和非思考结构化调用 | `f65f08f`, `b7583a1`, 本次提交 |
 | 阶段 2.16.10 | 已完成 | 长PRD知识检索分区预算、关键条目保留和裁剪指标 | 本次提交 |
+| 阶段 2.16.11 | 已完成 | Reviewer常见字段漂移保守归一化 | 本次提交 |
 | 阶段 2.16 | 进行中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
@@ -2609,6 +2610,7 @@ git diff --check
 通过
 ```
 
+
 默认测试没有访问真实DeepSeek、Embedding、Milvus或MySQL。本阶段没有修改Streamlit、AgentState、Orchestrator、节点顺序和提示词。
 
 ### 当前限制与下一步
@@ -3771,3 +3773,9 @@ python -m compileall -q agent application repositories services utils views test
 git diff --check
 通过
 ```
+
+## 阶段 2.16.11：Reviewer结构化字段稳定性
+
+真实长PRD第二轮Reviewer在两次受控生成中分别返回`missing_scenarios`对象项和`hallucination_issues`字符串项。Prompt现明确前者必须为字符串数组、后者必须为三字段对象数组；解析边界只兼容包含`scenario`、`description`或`issue`文本的缺失场景对象，以及非空的字符串幻觉问题。字符串幻觉问题采用保守占位标题恢复，仍会阻止评审通过；未知对象、错误分数和缺失覆盖仍严格拒绝。
+
+定向测试共33项通过，覆盖兼容形式、未知对象拒绝以及字符串幻觉问题不得误判通过。

@@ -139,6 +139,51 @@ class TestPointReviewResultTests(unittest.TestCase):
             ["补充边界场景"],
         )
 
+    def test_supported_missing_scenario_object_is_normalized(self):
+        payload = review_payload()
+        payload["missing_scenarios"] = [
+            {"scenario": "补充库存并发扣减场景"}
+        ]
+
+        result = TestPointReviewResult.from_json(
+            json.dumps(payload, ensure_ascii=False)
+        )
+
+        self.assertEqual(
+            result.missing_scenarios,
+            ["补充库存并发扣减场景"],
+        )
+
+    def test_string_hallucination_is_conservatively_normalized(self):
+        payload = review_payload()
+        payload["hallucination_issues"] = ["测试点断言固定重试三次"]
+
+        result = TestPointReviewResult.from_json(
+            json.dumps(payload, ensure_ascii=False)
+        )
+
+        self.assertEqual(len(result.hallucination_issues), 1)
+        self.assertEqual(
+            result.hallucination_issues[0].test_point_title,
+            "未指定测试点",
+        )
+        self.assertEqual(
+            result.hallucination_issues[0].unsupported_claim,
+            "测试点断言固定重试三次",
+        )
+
+    def test_unsupported_optional_issue_object_is_rejected(self):
+        payload = review_payload()
+        payload["missing_scenarios"] = [{"unknown": "场景"}]
+
+        with self.assertRaisesRegex(
+            TestPointReviewValidationError,
+            "supported text object",
+        ):
+            TestPointReviewResult.from_json(
+                json.dumps(payload, ensure_ascii=False)
+            )
+
 
 class TestPointReviewerTests(unittest.TestCase):
     def test_passing_review_updates_state_and_event(self):
@@ -201,6 +246,18 @@ class TestPointReviewerTests(unittest.TestCase):
         state = ready_state()
 
         TestPointReviewer(llm_service=llm).review(state)
+
+        self.assertFalse(state.review_passed)
+
+    def test_string_hallucination_issue_does_not_pass(self):
+        payload = review_payload(
+            hallucinations=["测试点包含没有依据的固定重试次数"]
+        )
+        state = ready_state()
+
+        TestPointReviewer(
+            llm_service=FakeLLMService(json.dumps(payload))
+        ).review(state)
 
         self.assertFalse(state.review_passed)
 
