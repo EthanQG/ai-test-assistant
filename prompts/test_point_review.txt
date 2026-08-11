@@ -15,6 +15,7 @@
 - 没有问题时，对应问题数组必须返回真正的空数组 []，不得返回 [""]、["无"] 或占位文字。
 - missing_scenarios 和 revision_suggestions 的每一项必须是字符串，不能返回对象。
 - hallucination_issues 的每一项必须是包含 test_point_title、issue、unsupported_claim 的对象，不能只返回字符串。
+- hallucination_issues即使需要补充定位信息，也不能省略上述三个核心字段；Python只保存这三个业务字段。
 - 输出应保持紧凑，不复述输入中的需求、步骤或预期结果。
 - missing_scenarios、hallucination_issues 和 revision_suggestions 分别最多返回 8 项，只保留会影响修正决策的主要问题。
 - 问题、差距和建议使用短句，每项不超过 80 个汉字；不要为了凑长度重复同一问题。

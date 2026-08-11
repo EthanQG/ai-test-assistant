@@ -201,9 +201,11 @@ class HallucinationIssue:
             "issue",
             "unsupported_claim",
         }
-        if set(payload) != expected_fields:
+        missing_fields = expected_fields - set(payload)
+        if missing_fields:
             raise TestPointReviewValidationError(
-                "hallucination issue fields are invalid"
+                "hallucination issue is missing required fields: "
+                + ", ".join(sorted(missing_fields))
             )
         return cls(
             test_point_title=_required_text(

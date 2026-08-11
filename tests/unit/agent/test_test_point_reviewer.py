@@ -307,6 +307,47 @@ class TestPointReviewerTests(unittest.TestCase):
 
         self.assertFalse(state.review_passed)
 
+    def test_hallucination_issue_ignores_non_semantic_extra_fields(self):
+        payload = review_payload(
+            hallucinations=[
+                {
+                    "test_point_title": "库存不足时提交订单",
+                    "issue": "包含需求未定义的自动重试",
+                    "unsupported_claim": "失败后自动重试三次",
+                    "source_ref": "模型附带的额外定位信息",
+                }
+            ]
+        )
+
+        result = TestPointReviewResult.from_json(
+            json.dumps(payload, ensure_ascii=False)
+        )
+
+        self.assertEqual(len(result.hallucination_issues), 1)
+        self.assertEqual(
+            result.hallucination_issues[0].unsupported_claim,
+            "失败后自动重试三次",
+        )
+
+    def test_hallucination_issue_still_requires_core_fields(self):
+        payload = review_payload(
+            hallucinations=[
+                {
+                    "test_point_title": "库存不足时提交订单",
+                    "issue": "包含需求未定义的自动重试",
+                    "source_ref": "额外定位信息不能替代核心字段",
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(
+            TestPointReviewValidationError,
+            "unsupported_claim",
+        ):
+            TestPointReviewResult.from_json(
+                json.dumps(payload, ensure_ascii=False)
+            )
+
     def test_missing_coverage_fact_fails_task(self):
         payload = review_payload()
         payload["requirement_coverage"] = []
