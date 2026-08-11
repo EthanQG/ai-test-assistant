@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import TYPE_CHECKING, Callable
 
+from utils.task_naming import derive_task_name
+
 if TYPE_CHECKING:
     from application.models import TaskRecord
 
@@ -71,6 +73,7 @@ class VersionedTaskRecord:
 @dataclass(frozen=True)
 class TaskSummary:
     task_id: str
+    task_name: str
     status: str
     current_step: str
     requirement_summary: str
@@ -323,6 +326,10 @@ class InMemoryTaskRepository(TaskRepository):
             items = [
                 TaskSummary(
                     task_id=record.state.task_id,
+                    task_name=derive_task_name(
+                        record.state.requirement,
+                        record.state.requirement_summary,
+                    ),
                     status=record.state.status.value,
                     current_step=record.state.current_step.value,
                     requirement_summary=record.state.requirement_summary,

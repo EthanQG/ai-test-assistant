@@ -98,6 +98,8 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
             "CREATE TABLE IF NOT EXISTS agent_task_executions",
             statements[2],
         )
+        self.assertIn("SHOW COLUMNS FROM agent_tasks", statements[3])
+        self.assertIn("ADD COLUMN task_name", statements[4])
         self.assertEqual(connection.commits, 1)
         self.assertEqual(connection.rollbacks, 0)
         self.assertTrue(connection.closed)
@@ -113,7 +115,7 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
         event_inserts = [
             item for item in executed if "agent_task_events" in item[0]
         ]
-        snapshot = json.loads(task_insert[1][5])
+        snapshot = json.loads(task_insert[1][6])
         self.assertEqual(snapshot["schema_version"], 1)
         self.assertEqual(snapshot["task_id"], record.state.task_id)
         self.assertEqual(len(event_inserts), len(record.state.events))
@@ -345,6 +347,7 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
         cursor.fetchone_results = [{"total": 1}]
         cursor.fetchall_result = [{
             "task_id": "task-1",
+            "task_name": "订单履约需求",
             "status": "completed",
             "current_step": "finalize",
             "requirement_summary": "订单分析",
@@ -360,6 +363,7 @@ class MySQLTaskRepositoryTests(unittest.TestCase):
 
         self.assertEqual(page.total, 1)
         self.assertEqual(page.items[0].task_id, "task-1")
+        self.assertEqual(page.items[0].task_name, "订单履约需求")
         statements = [sql for sql, _ in cursor.executed]
         self.assertTrue(all("snapshot_json" not in sql for sql in statements))
         self.assertIn("ORDER BY updated_at DESC", statements[-1])

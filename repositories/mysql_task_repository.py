@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Callable, Protocol
 
+from utils.task_naming import derive_task_name
+
 from .task_repository import (
     TaskExecutionAlreadyFinishedError,
     TaskExecutionBusyError,
@@ -42,6 +44,7 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
     schema_version SMALLINT UNSIGNED NOT NULL,
     status VARCHAR(32) NOT NULL,
     current_step VARCHAR(64) NOT NULL,
+    task_name VARCHAR(160) NOT NULL DEFAULT '',
     requirement_summary VARCHAR(512) NOT NULL DEFAULT '',
     snapshot_json JSON NOT NULL,
     event_count INT UNSIGNED NOT NULL DEFAULT 0,
@@ -91,6 +94,13 @@ CREATE TABLE IF NOT EXISTS agent_task_executions (
         FOREIGN KEY (task_id) REFERENCES agent_tasks(task_id)
         ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+""".strip()
+
+
+ADD_TASK_NAME_COLUMN_SQL = """
+ALTER TABLE agent_tasks
+ADD COLUMN task_name VARCHAR(160) NOT NULL DEFAULT ''
+AFTER current_step
 """.strip()
 
 
@@ -175,6 +185,13 @@ class MySQLTaskRepository(TaskRepository):
             cursor.execute(CREATE_TASKS_TABLE_SQL)
             cursor.execute(CREATE_EVENTS_TABLE_SQL)
             cursor.execute(CREATE_EXECUTIONS_TABLE_SQL)
+            cursor.execute("SHOW COLUMNS FROM agent_tasks LIKE 'task_name'")
+            if cursor.fetchone() is None:
+                cursor.execute(ADD_TASK_NAME_COLUMN_SQL)
+            cursor.execute(
+                "UPDATE agent_tasks SET task_name = "
+                "LEFT(requirement_summary, 160) WHERE task_name = ''"
+            )
             connection.commit()
         except Exception as exc:
             connection.rollback()
@@ -195,9 +212,9 @@ class MySQLTaskRepository(TaskRepository):
                 """
                 INSERT INTO agent_tasks (
                     task_id, schema_version, status, current_step,
-                    requirement_summary, snapshot_json, event_count,
-                    version, created_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
+                    task_name, requirement_summary, snapshot_json,
+                    event_count, version, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1, %s, %s)
                 """,
                 self._task_values(record, snapshot),
             )
@@ -663,9 +680,12 @@ class MySQLTaskRepository(TaskRepository):
         where = ""
         params: list[Any] = []
         if normalized:
-            where = "WHERE requirement_summary LIKE %s OR task_id LIKE %s"
+            where = (
+                "WHERE task_name LIKE %s OR requirement_summary LIKE %s "
+                "OR task_id LIKE %s"
+            )
             pattern = f"%{normalized}%"
-            params.extend((pattern, pattern))
+            params.extend((pattern, pattern, pattern))
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
@@ -673,7 +693,8 @@ class MySQLTaskRepository(TaskRepository):
             total = int(cursor.fetchone()["total"])
             cursor.execute(
                 f"""
-                SELECT task_id, status, current_step, requirement_summary,
+                SELECT task_id, task_name, status, current_step,
+                       requirement_summary,
                        event_count, version, created_at, updated_at
                 FROM agent_tasks
                 {where}
@@ -682,7 +703,18 @@ class MySQLTaskRepository(TaskRepository):
                 """,
                 [*params, limit, offset],
             )
-            items = tuple(TaskSummary(**row) for row in cursor.fetchall())
+            items = tuple(
+                TaskSummary(
+                    **{
+                        **row,
+                        "task_name": derive_task_name(
+                            str(row.get("task_name") or ""),
+                            str(row.get("requirement_summary") or ""),
+                        ),
+                    }
+                )
+                for row in cursor.fetchall()
+            )
             return TaskSummaryPage(items, total, offset, limit)
         except Exception as exc:
             raise TaskRepositoryError("failed to list MySQL task summaries") from exc
@@ -721,6 +753,11 @@ class MySQLTaskRepository(TaskRepository):
             int(snapshot["schema_version"]),
             record.state.status.value,
             record.state.current_step.value,
+            derive_task_name(
+                record.state.requirement,
+                record.state.requirement_summary,
+                max_length=160,
+            ),
             record.state.requirement_summary[:512],
             _json_text(snapshot),
             len(snapshot["state"]["events"]),

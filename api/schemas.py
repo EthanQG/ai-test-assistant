@@ -74,6 +74,7 @@ class TaskProgressResponse(BaseModel):
 
 class TaskSummaryResponse(BaseModel):
     task_id: str
+    task_name: str
     status: str
     current_step: str
     requirement_summary: str

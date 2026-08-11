@@ -46,6 +46,7 @@ class FakeApplicationService:
         self.calls.append(("summaries", query, offset, limit))
         summary = TaskSummary(
             task_id=self.view.task_id,
+            task_name="订单履约需求",
             status="completed",
             current_step="finalize",
             requirement_summary="订单测试分析",
@@ -185,10 +186,12 @@ def test_native_frontend_exposes_history_and_restore_entry():
     page = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
 
-    assert 'id="history-button"' in page
-    assert 'id="history-dialog"' in page
+    assert 'class="panel history-sidebar"' in page
+    assert 'id="history-list"' in page
     assert "/api/v1/task-summaries" in script
     assert "restoreTask" in script
+    assert "deleteHistoryTask" in script
+    assert 'method: "DELETE"' in script
 
 
 def test_completed_result_can_be_confirmed_and_indexed_as_knowledge():

@@ -68,6 +68,7 @@ class InMemoryTaskRepositoryTests(unittest.TestCase):
         self.assertEqual(page.total, 1)
         self.assertEqual(len(page.items), 1)
         self.assertEqual(page.items[0].task_id, second.task_id)
+        self.assertEqual(page.items[0].task_name, "优惠券需求")
         self.assertEqual(page.items[0].requirement_summary, "优惠券核销")
 
     def test_duplicate_create_and_unknown_save_are_rejected(self):

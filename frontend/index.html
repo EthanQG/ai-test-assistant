@@ -13,15 +13,32 @@
       <h1>Test Analysis Agent</h1>
       <p>上传需求，自动完成结构化测试分析</p>
     </div>
-    <button id="history-button" class="button secondary header-action" type="button">历史任务</button>
   </header>
 
   <main class="workspace">
+    <aside class="panel history-sidebar" aria-labelledby="history-title">
+      <div class="history-sidebar-heading">
+        <p class="eyebrow">任务记录</p>
+        <h2 id="history-title">历史任务</h2>
+      </div>
+      <div class="history-search">
+        <input id="history-query" type="search" placeholder="搜索任务名称">
+        <button id="search-history" class="button secondary" type="button">搜索</button>
+      </div>
+      <div id="history-list" class="history-list"></div>
+      <div class="pagination history-pagination">
+        <button id="previous-history-page" class="button secondary" type="button">上一页</button>
+        <span id="history-page-label">第 1 / 1 页</span>
+        <button id="next-history-page" class="button secondary" type="button">下一页</button>
+      </div>
+    </aside>
+
     <section class="panel input-panel" aria-labelledby="input-title">
       <div class="panel-heading">
         <div>
           <p class="eyebrow">需求输入</p>
           <h2 id="input-title">创建测试分析任务</h2>
+          <p id="current-task-name" class="current-task-name"></p>
         </div>
         <button id="reset-button" class="button secondary" type="button">清空</button>
       </div>
@@ -208,22 +225,6 @@
     <p class="eyebrow">测试点详情</p>
     <h2 id="detail-title"></h2>
     <div id="detail-content" class="detail-content"></div>
-  </dialog>
-
-  <dialog id="history-dialog" class="detail-dialog history-dialog">
-    <button id="close-history-dialog" class="dialog-close" type="button" aria-label="关闭">×</button>
-    <p class="eyebrow">任务记录</p>
-    <h2>历史任务</h2>
-    <div class="history-search">
-      <input id="history-query" type="search" placeholder="搜索任务ID或需求摘要">
-      <button id="search-history" class="button secondary" type="button">搜索</button>
-    </div>
-    <div id="history-list" class="history-list"></div>
-    <div class="pagination">
-      <button id="previous-history-page" class="button secondary" type="button">上一页</button>
-      <span id="history-page-label">第 1 / 1 页</span>
-      <button id="next-history-page" class="button secondary" type="button">下一页</button>
-    </div>
   </dialog>
 
   <script src="./app.js" defer></script>

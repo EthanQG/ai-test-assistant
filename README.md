@@ -44,9 +44,9 @@
 - 页面只持有当前task_id和纯UI状态，通过只读TaskView渲染Agent结果
 - Application Service记录每次节点执行的开始、结束、耗时、成功/失败和错误类型，并汇总单任务执行耗时
 - MySQL Repository已经通过真实CRUD和跨Application Service实例恢复验证，可按同一`task_id`恢复等待补充、完成和失败任务
-- 后端已建立KnowledgeAsset准入、版本化JSON、MySQL权威存储、Milvus V2索引写入与可信候选回查边界；尚未接入页面按钮或当前Agent节点
+- 后端已建立KnowledgeAsset准入、版本化JSON、MySQL权威存储、Milvus V2索引写入与可信候选回查边界，并已接入完成报告的显式确认入口
 
-当前 Agent 页面只接入了 Milvus 历史资产检索，尚未接入“用户确认后沉淀知识资产”的入口。
+当前原生Web支持用户确认后沉淀知识资产；Streamlit兼容页面仍不提供该入口。
 阶段2.14.3已经完成有界语义Chunk、一次批量Embedding和Milvus V2 upsert；阶段2.14.4已经完成
 一次查询Embedding、Milvus阈值召回、按资产聚合和MySQL批量回查；阶段2.14.5增加了显式失败重试、
 `request_id`幂等审计和资产停用后的向量清理。页面和当前KnowledgeRetriever尚未触发这些用例，
@@ -129,7 +129,7 @@ python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 
 启动后访问`http://127.0.0.1:8000/docs`查看Swagger。当前API复用同一个Application Service，支持文本创建和`POST /api/v1/tasks/from-document`上传TXT、Markdown、PDF、DOCX需求文档，API文件上限为20MB。创建任务后可调用`POST /api/v1/tasks/{task_id}/run`提交后台执行，再通过`GET /api/v1/tasks/{task_id}/progress`轮询当前阶段、执行状态、关键计数和最近3条事件；需要完整结果时再调用任务详情接口。
 
-原生Web前端由FastAPI同源托管，启动后访问`http://127.0.0.1:8000/app/`。当前支持文本/文件创建、后台启动、进度轮询、待确认问题回答、结构化测试点分页和详情、Reviewer质量结果、人工反馈与业务规则二次确认、最终Markdown报告预览和下载，以及MySQL历史任务搜索与恢复。完成且通过Reviewer的结果可在用户确认脱敏后保存到知识库：MySQL保存完整资产，Milvus保存有关联标识的检索片段。
+原生Web前端由FastAPI同源托管，启动后访问`http://127.0.0.1:8000/app/`。当前支持文本/文件创建、后台启动、进度轮询、待确认问题回答、结构化测试点分页和详情、Reviewer质量结果、人工反馈与业务规则二次确认、最终Markdown报告预览和下载，以及左侧MySQL历史任务搜索、恢复与确认删除。历史列表只展示任务标题和状态；任务按需求标题自动命名，报告下载使用相同名称。完成且通过Reviewer的结果可在用户确认脱敏后保存到知识库：MySQL保存完整资产，Milvus保存有关联标识的检索片段。
 
 补充信息提交后，页面会在后台任务处于`queued/running`期间继续轮询，不会因旧的`waiting_for_user`业务状态提前停止。长任务Reviewer使用紧凑JSON和事实ID返回覆盖映射，并仅在明确的输出截断时受控重试一次；ID会在Python校验前恢复为原事实文本。
 
@@ -208,7 +208,7 @@ KnowledgeAsset存储使用独立开关。需要让资产Repository使用同一My
 KNOWLEDGE_ASSET_REPOSITORY_BACKEND=mysql
 ```
 
-资产Repository初始化时会创建`knowledge_assets`表。当前Streamlit尚未接入“保存到知识库”按钮，因此启动页面不会自动发布资产；
+资产Repository初始化时会创建`knowledge_assets`表。原生Web已接入“保存到知识库”按钮，Streamlit兼容页仍不提供；任何页面启动都不会自动发布资产；
 本阶段提供的是可由后续页面或FastAPI复用的MySQL存储边界。
 
 KnowledgeAsset V2索引使用独立配置：

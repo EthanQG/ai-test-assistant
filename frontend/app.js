@@ -54,13 +54,11 @@ const elements = {
   feedbackReason: document.querySelector("#feedback-reason"),
   feedbackMessage: document.querySelector("#feedback-message"),
   feedbackHistory: document.querySelector("#feedback-history"),
+  currentTaskName: document.querySelector("#current-task-name"),
   knowledgePublish: document.querySelector("#knowledge-publish"),
   dataSafetyConfirmed: document.querySelector("#data-safety-confirmed"),
   publishKnowledge: document.querySelector("#publish-knowledge"),
   knowledgeMessage: document.querySelector("#knowledge-message"),
-  historyButton: document.querySelector("#history-button"),
-  historyDialog: document.querySelector("#history-dialog"),
-  closeHistoryDialog: document.querySelector("#close-history-dialog"),
   historyQuery: document.querySelector("#history-query"),
   searchHistory: document.querySelector("#search-history"),
   historyList: document.querySelector("#history-list"),
@@ -80,6 +78,7 @@ let businessRules = [];
 let humanFeedback = [];
 let pendingBusinessFeedback = null;
 let currentTaskStatus = null;
+let currentTaskName = "";
 const pageSize = 5;
 const historyPageSize = 10;
 let historyOffset = 0;
@@ -103,20 +102,12 @@ elements.feedbackForm.addEventListener("submit", submitFeedback);
 elements.confirmBusinessRule.addEventListener("click", () => confirmBusinessRule(true));
 elements.rejectBusinessRule.addEventListener("click", () => confirmBusinessRule(false));
 elements.publishKnowledge.addEventListener("click", publishKnowledgeAsset);
-elements.historyButton.addEventListener("click", openHistory);
-elements.closeHistoryDialog.addEventListener("click", () => elements.historyDialog.close());
 elements.searchHistory.addEventListener("click", () => { historyOffset = 0; loadHistory(); });
 elements.historyQuery.addEventListener("keydown", (event) => {
   if (event.key === "Enter") { historyOffset = 0; loadHistory(); }
 });
 elements.previousHistoryPage.addEventListener("click", () => changeHistoryPage(-1));
 elements.nextHistoryPage.addEventListener("click", () => changeHistoryPage(1));
-
-async function openHistory() {
-  historyOffset = 0;
-  elements.historyDialog.showModal();
-  await loadHistory();
-}
 
 async function loadHistory() {
   const query = encodeURIComponent(elements.historyQuery.value.trim());
@@ -145,25 +136,39 @@ function renderHistory(page) {
 function historyItem(summary) {
   const item = document.createElement("article");
   item.className = "history-item";
-  const header = document.createElement("header");
-  const title = document.createElement("h3");
-  title.textContent = summary.requirement_summary || "未命名需求";
+  const open = document.createElement("button");
+  open.className = "history-open";
+  open.type = "button";
+  if (summary.task_id === currentTaskId) open.classList.add("active");
+  const title = document.createElement("span");
+  title.className = "history-title";
+  title.textContent = summary.task_name || "未命名需求";
+  title.title = title.textContent;
   const status = document.createElement("span");
-  status.className = `status ${statusClass(summary.status)}`;
+  status.className = "history-status";
   status.textContent = statusLabel(summary.status);
-  const meta = document.createElement("div");
-  meta.className = "history-meta";
-  meta.textContent = `更新：${new Date(summary.updated_at).toLocaleString()} · 事件 ${summary.event_count}`;
-  const id = document.createElement("p");
-  id.textContent = `任务ID：${summary.task_id}`;
-  const button = document.createElement("button");
-  button.className = "button secondary";
-  button.type = "button";
-  button.textContent = "恢复任务";
-  button.addEventListener("click", () => restoreTask(summary.task_id));
-  header.append(title, status);
-  item.append(header, meta, id, button);
+  open.append(title, status);
+  open.addEventListener("click", () => restoreTask(summary.task_id, summary.task_name));
+  const remove = document.createElement("button");
+  remove.className = "history-delete";
+  remove.type = "button";
+  remove.textContent = "×";
+  remove.title = "删除任务";
+  remove.setAttribute("aria-label", `删除任务：${title.textContent}`);
+  remove.addEventListener("click", () => deleteHistoryTask(summary));
+  item.append(open, remove);
   return item;
+}
+
+async function deleteHistoryTask(summary) {
+  if (!window.confirm(`确定删除“${summary.task_name}”吗？删除后无法恢复。`)) return;
+  try {
+    await request(`/api/v1/tasks/${summary.task_id}`, { method: "DELETE" });
+    if (summary.task_id === currentTaskId) resetWorkspace();
+    await loadHistory();
+  } catch (error) {
+    showError(error.message);
+  }
 }
 
 function changeHistoryPage(direction) {
@@ -171,13 +176,14 @@ function changeHistoryPage(direction) {
   loadHistory();
 }
 
-async function restoreTask(taskId) {
+async function restoreTask(taskId, taskName) {
   clearMessages();
   if (pollTimer) window.clearTimeout(pollTimer);
   pollTimer = null;
   try {
     const task = await request(`/api/v1/tasks/${taskId}`);
     currentTaskId = taskId;
+    setCurrentTaskName(taskName || deriveTaskName(task.state.requirement));
     elements.requirement.value = task.state.requirement || "";
     elements.taskId.textContent = `任务ID：${taskId}`;
     lockTaskInput(true);
@@ -185,7 +191,6 @@ async function restoreTask(taskId) {
     await loadResults();
     const progress = await request(`/api/v1/tasks/${taskId}/progress`);
     await renderProgress(progress);
-    elements.historyDialog.close();
     if (progress.status === "waiting_for_user") {
       setBusy(false);
       lockTaskInput(true);
@@ -223,7 +228,9 @@ async function startAnalysis() {
   try {
     const task = file ? await createFromFile(file) : await createFromText(requirement);
     currentTaskId = task.state.task_id;
+    setCurrentTaskName(deriveTaskName(task.state.requirement));
     elements.taskId.textContent = `任务ID：${currentTaskId}`;
+    loadHistory();
     await request(`/api/v1/tasks/${currentTaskId}/run`, { method: "POST" });
     await pollProgress();
   } catch (error) {
@@ -301,6 +308,7 @@ async function renderProgress(progress) {
     showNotice("Agent已暂停，请在左侧完成需求补充或业务规则确认。");
   } else if (progress.status === "completed") {
     showNotice("分析已完成，可以查看测试点、质量评审、人工反馈和最终报告。");
+    loadHistory();
   } else if (progress.status === "failed") {
     showNotice("任务执行失败，请查看上方错误信息后重新创建任务。");
   }
@@ -616,9 +624,28 @@ function downloadReport() {
   const url = URL.createObjectURL(new Blob([reportMarkdown], { type: "text/markdown;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = `测试分析报告-${currentTaskId || "task"}.md`;
+  link.download = `${safeFilename(currentTaskName || "测试分析")}-测试分析报告.md`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function deriveTaskName(requirement) {
+  const line = String(requirement || "").split(/\r?\n/).find((item) => item.trim());
+  if (!line) return "未命名测试分析";
+  const candidate = line.trim()
+    .replace(/^#{1,6}\s*/, "")
+    .replace(/^(需求名称|项目名称|功能名称|标题)\s*[:：]\s*/i, "");
+  const short = candidate.length > 30 ? candidate.split(/[，,。；;]/, 1)[0] : candidate;
+  return (short.length >= 6 ? short : candidate).slice(0, 48) || "未命名测试分析";
+}
+
+function safeFilename(name) {
+  return String(name).replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/[ ._]+$/g, "").slice(0, 80);
+}
+
+function setCurrentTaskName(name) {
+  currentTaskName = name || "未命名测试分析";
+  elements.currentTaskName.textContent = `当前任务：${currentTaskName}`;
 }
 
 function renderTestPoints() {
@@ -826,11 +853,13 @@ function resetWorkspace() {
   if (pollTimer) window.clearTimeout(pollTimer);
   currentTaskId = null;
   currentTaskStatus = null;
+  currentTaskName = "";
   pollTimer = null;
   elements.requirement.value = "";
   elements.document.value = "";
   elements.fileName.textContent = "尚未选择文件";
   elements.taskId.textContent = "";
+  elements.currentTaskName.textContent = "";
   elements.status.textContent = "等待开始";
   elements.status.className = "status neutral";
   elements.activity.hidden = true;
@@ -870,3 +899,5 @@ function resetWorkspace() {
   setBusy(false);
   clearMessages();
 }
+
+loadHistory();
