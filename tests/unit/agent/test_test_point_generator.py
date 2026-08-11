@@ -7,6 +7,7 @@ from agent.models import (
     TestPointGenerationResult,
     TestPointPriority,
     TestPointRevisionPlan,
+    TestPointSource,
     TestPointValidationError,
 )
 from agent.state import AgentStatus, KnowledgeRetrievalStatus, TestAnalysisState
@@ -97,6 +98,38 @@ class TestPointGenerationResultTests(unittest.TestCase):
         with self.assertRaisesRegex(
             TestPointValidationError,
             "unexpected test point fields",
+        ):
+            TestPointGenerationResult.from_json(json.dumps(payload))
+
+    def test_source_provenance_aliases_are_normalized_and_deduplicated(self):
+        payload = json.loads(valid_response())
+        payload["test_points"][0]["sources"] = [
+            "requirement_fact",
+            "inferred_risk",
+            "rag",
+            "local_bug_knowledge",
+            "user_clarification",
+        ]
+
+        result = TestPointGenerationResult.from_json(json.dumps(payload))
+
+        self.assertEqual(
+            result.test_points[0].sources,
+            [
+                TestPointSource.REQUIREMENT,
+                TestPointSource.HISTORICAL_ASSET,
+                TestPointSource.TEST_EXPERIENCE,
+                TestPointSource.USER_FEEDBACK,
+            ],
+        )
+
+    def test_unknown_source_is_rejected_with_its_value(self):
+        payload = json.loads(valid_response())
+        payload["test_points"][0]["sources"] = ["internet_guess"]
+
+        with self.assertRaisesRegex(
+            TestPointValidationError,
+            "internet_guess",
         ):
             TestPointGenerationResult.from_json(json.dumps(payload))
 

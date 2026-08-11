@@ -7,10 +7,16 @@
 ## Git基线
 
 - 分支：`main`
-- 上一提交：`a8a130a 修复：恢复轮询并压缩评审输出`
+- 上一提交：`d33f648 修复：兼容评审结果附加字段`
 - 本地提交尚未推送，由用户手动执行`git push`
 
-## 当前阶段：2.18.8 Reviewer附加字段兼容（开发完成，待真实复验）
+## 当前阶段：2.18.9 测试点来源枚举归一化（开发完成，待真实复验）
+
+最新真实任务已完成需求分析和知识检索，但TestPointGenerator连续两次返回契约外`sources`值，导致生成阶段失败。当前四种领域来源保持不变：`requirement`、`historical_asset`、`test_experience`、`user_feedback`。
+
+Prompt现在明确规定：当前需求事实、业务规则、状态流转和推导风险都归为`requirement`，RAG归为`historical_asset`，本地缺陷经验归为`test_experience`，用户补充归为`user_feedback`。解析层只将这些来源的明确同义标签归一化，并去重；未知来源仍拒绝且错误会包含非法值。
+
+## 上一阶段：2.18.8 Reviewer附加字段兼容（已完成）
 
 2.18.7后的真实任务已证明Reviewer不再截断：79条事实、34个测试点的两次响应均为`finish_reason=stop`，单次输出约3830 tokens。任务失败的新原因是模型在`hallucination_issues`对象中返回了契约外附加字段，旧校验要求字段集合完全相等。
 

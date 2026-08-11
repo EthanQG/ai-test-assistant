@@ -280,6 +280,27 @@ class TestPointSource(str, Enum):
     USER_FEEDBACK = "user_feedback"
 
 
+_TEST_POINT_SOURCE_ALIASES = {
+    "requirement_fact": TestPointSource.REQUIREMENT.value,
+    "requirement_analysis": TestPointSource.REQUIREMENT.value,
+    "business_rule": TestPointSource.REQUIREMENT.value,
+    "state_transition": TestPointSource.REQUIREMENT.value,
+    "inferred_risk": TestPointSource.REQUIREMENT.value,
+    "risk": TestPointSource.REQUIREMENT.value,
+    "rag": TestPointSource.HISTORICAL_ASSET.value,
+    "knowledge_asset": TestPointSource.HISTORICAL_ASSET.value,
+    "historical_test_asset": TestPointSource.HISTORICAL_ASSET.value,
+    "historical_assets": TestPointSource.HISTORICAL_ASSET.value,
+    "historical_knowledge": TestPointSource.HISTORICAL_ASSET.value,
+    "local_bug_knowledge": TestPointSource.TEST_EXPERIENCE.value,
+    "local_bug": TestPointSource.TEST_EXPERIENCE.value,
+    "test_knowledge": TestPointSource.TEST_EXPERIENCE.value,
+    "testing_experience": TestPointSource.TEST_EXPERIENCE.value,
+    "user_clarification": TestPointSource.USER_FEEDBACK.value,
+    "clarification": TestPointSource.USER_FEEDBACK.value,
+}
+
+
 @dataclass(frozen=True)
 class TestPoint:
     title: str
@@ -338,10 +359,23 @@ class TestPoint:
 
         raw_sources = _test_point_string_list(payload, "sources")
         try:
-            sources = [TestPointSource(item) for item in raw_sources]
+            sources = list(dict.fromkeys(
+                TestPointSource(
+                    _TEST_POINT_SOURCE_ALIASES.get(item.casefold(), item)
+                )
+                for item in raw_sources
+            ))
         except ValueError as exc:
+            invalid_sources = sorted({
+                item for item in raw_sources
+                if _TEST_POINT_SOURCE_ALIASES.get(
+                    item.casefold(),
+                    item,
+                ) not in {source.value for source in TestPointSource}
+            })
             raise TestPointValidationError(
-                "sources contain an unsupported value"
+                "sources contain unsupported values: "
+                + ", ".join(invalid_sources)
             ) from exc
 
         return cls(

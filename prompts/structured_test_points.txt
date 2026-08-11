@@ -28,6 +28,7 @@
 - category 只能是 functional、boundary、exception、non_functional。
 - priority 只能是 P0、P1、P2。
 - sources 只能使用 requirement、historical_asset、test_experience、user_feedback。
+- 当前需求事实、业务规则、状态流转和inferred_risks统一标记为requirement；RAG召回内容标记为historical_asset；本地缺陷经验标记为test_experience；用户补充信息标记为user_feedback。不得返回risk、rag、knowledge_asset等自定义来源值。
 - title、scenario 必须是非空字符串。
 - preconditions、steps、expected_results、sources、source_refs 必须是非空数组，数组元素必须是非空字符串。
 - 需求明确规定的核心主流程和阻断性规则优先使用 P0。
