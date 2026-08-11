@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "fixture": "examples\\prd\\电商订单履约与优惠结算需求.md",
+  "model": "deepseek-v4-flash",
+  "requirement_chars": 2735,
+  "completed": true,
+  "elapsed_seconds": 13.38,
+  "status": "waiting_for_user",
+  "compact_contract": true,
+  "initial_chunk_count": 2,
+  "statement_count": 81,
+  "attempt_count": 3,
+  "adaptive_split_count": 0,
+  "result_counts": {
+    "requirement_facts": 79,
+    "business_rules": 61,
+    "state_transitions": 17,
+    "inferred_risks": 18,
+    "open_questions": 2
+  }
+}

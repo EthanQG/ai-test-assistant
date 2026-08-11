@@ -55,6 +55,7 @@ class DeepSeekClientTests(unittest.TestCase):
             payload["response_format"],
             {"type": "json_object"},
         )
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
         self.assertEqual(payload["temperature"], 0.0)
         self.assertEqual(post.call_args.kwargs["timeout"], 30)
 
@@ -76,6 +77,7 @@ class DeepSeekClientTests(unittest.TestCase):
 
         payload = post.call_args.kwargs["json"]
         self.assertEqual(payload["temperature"], 0.1)
+        self.assertNotIn("thinking", payload)
 
     @patch("utils.ai_client.requests.post")
     def test_call_can_override_max_tokens_for_large_json(self, post):

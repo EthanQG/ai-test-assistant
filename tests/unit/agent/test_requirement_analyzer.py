@@ -307,7 +307,7 @@ class RequirementAnalyzerTests(unittest.TestCase):
         result = analyzer.analyze(state)
 
         assert len(llm.received_max_tokens) > 1
-        assert set(llm.received_max_tokens) == {4096, 2048}
+        assert set(llm.received_max_tokens) == {4096}
         assert result.requirement_facts
         assert len(result.inferred_risks) == 1
         assert result.inferred_risks[0].basis.startswith("[S001｜")

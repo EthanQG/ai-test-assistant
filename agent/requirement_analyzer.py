@@ -35,7 +35,7 @@ class RequirementAnalyzer:
     MAX_ADAPTIVE_SPLIT_DEPTH = 3
     MIN_ADAPTIVE_CHUNK_CHARS = 250
     COMPACT_OUTPUT_MAX_TOKENS = 4_096
-    GLOBAL_QUESTION_MAX_TOKENS = 2_048
+    GLOBAL_QUESTION_MAX_TOKENS = 4_096
 
     def __init__(
         self,

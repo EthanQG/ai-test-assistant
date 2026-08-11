@@ -58,6 +58,10 @@ class DeepSeekClient:
         }
         if response_format is not None:
             payload["response_format"] = response_format
+            # Structured extraction values bounded, valid JSON over hidden
+            # chain-of-thought. DeepSeek V4 enables thinking by default and
+            # counts that reasoning against max_tokens.
+            payload["thinking"] = {"type": "disabled"}
 
         try:
             response = requests.post(
