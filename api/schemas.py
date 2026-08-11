@@ -88,3 +88,19 @@ class TaskSummaryPageResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class KnowledgeAssetConfirmationRequest(BaseModel):
+    user_confirmed: bool
+    data_safety_confirmed: bool
+
+
+class KnowledgeAssetPublicationResponse(BaseModel):
+    asset_id: str
+    source_task_id: str
+    asset_version: int
+    status: str
+    test_point_count: int
+    reviewer_score: int
+    chunk_count: int
+    omitted_chunk_count: int

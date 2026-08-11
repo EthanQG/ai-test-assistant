@@ -123,6 +123,10 @@ textarea:focus, .file-picker:focus-within { outline: 2px solid #bfdbfe; border-c
 .quality-findings h4 { margin: 0 0 7px; }
 .quality-findings ul { margin: 0; padding-left: 20px; color: #475467; line-height: 1.65; font-size: 13px; }
 .report-preview { max-height: 410px; margin: 16px 0 0; padding: 16px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; color: #344054; background: #f8fafc; white-space: pre-wrap; word-break: break-word; font: 12px/1.65 ui-monospace, monospace; }
+.knowledge-publish { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: #fbfcfe; }
+.knowledge-confirmation { display: flex; align-items: center; gap: 8px; color: #475467; font-size: 12px; font-weight: 500; }
+.knowledge-publish .button { margin-top: 10px; }
+.knowledge-publish .message { margin-top: 10px; }
 .detail-dialog { width: min(680px, calc(100% - 32px)); max-height: 78vh; padding: 26px; border: 0; border-radius: 14px; color: var(--text); }
 .detail-dialog::backdrop { background: rgba(15, 23, 42, .48); backdrop-filter: blur(2px); }
 .dialog-close { position: absolute; top: 14px; right: 16px; border: 0; background: none; cursor: pointer; font-size: 24px; }

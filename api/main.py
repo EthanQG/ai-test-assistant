@@ -7,17 +7,25 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from application.bootstrap import build_session_application_service
+from application.bootstrap import (
+    build_application_services,
+)
 from application.background_runner import TaskBackgroundRunner
 from application.commands import (
     ConfirmBusinessRulesCommand,
+    ConfirmKnowledgeAssetCommand,
     CreateTaskCommand,
     SubmitClarificationsCommand,
     SubmitFeedbackCommand,
     UploadedDocument,
 )
 from application.service import TestAnalysisApplicationService
-from repositories import TaskNotFoundError
+from application.knowledge_asset_indexing_service import (
+    KnowledgeAssetIndexingError,
+    KnowledgeAssetIndexingService,
+)
+from application.knowledge_asset_service import KnowledgeAssetApplicationService
+from repositories import KnowledgeAssetAlreadyExistsError, TaskNotFoundError
 
 from .schemas import (
     BusinessRuleConfirmationRequest,
@@ -28,6 +36,8 @@ from .schemas import (
     TaskProgressResponse,
     TaskResponse,
     TaskSummaryPageResponse,
+    KnowledgeAssetConfirmationRequest,
+    KnowledgeAssetPublicationResponse,
 )
 from .progress import build_task_progress
 
@@ -43,6 +53,8 @@ def _response(view) -> TaskResponse:
 def create_app(
     service: TestAnalysisApplicationService | None = None,
     background_runner: TaskBackgroundRunner | None = None,
+    knowledge_asset_service: KnowledgeAssetApplicationService | None = None,
+    knowledge_indexing_service: KnowledgeAssetIndexingService | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Test Analysis Agent API",
@@ -51,13 +63,35 @@ def create_app(
     )
     app.state.application_service = service
     app.state.background_runner = background_runner
+    app.state.knowledge_asset_service = knowledge_asset_service
+    app.state.knowledge_indexing_service = knowledge_indexing_service
+
+    def ensure_services() -> None:
+        if app.state.application_service is not None:
+            return
+        services = build_application_services()
+        app.state.application_service = services.task_service
+        app.state.knowledge_asset_service = services.knowledge_asset_service
+        app.state.knowledge_indexing_service = services.knowledge_indexing_service
 
     def get_service() -> TestAnalysisApplicationService:
         current = app.state.application_service
         if current is None:
-            current = build_session_application_service()
-            app.state.application_service = current
+            ensure_services()
+            current = app.state.application_service
         return current
+
+    def get_knowledge_services():
+        if app.state.knowledge_asset_service is None:
+            if app.state.application_service is not None:
+                raise RuntimeError(
+                    "knowledge services must be injected with a custom task service"
+                )
+            ensure_services()
+        return (
+            app.state.knowledge_asset_service,
+            app.state.knowledge_indexing_service,
+        )
 
     def get_background_runner() -> TaskBackgroundRunner:
         current = app.state.background_runner
@@ -70,6 +104,12 @@ def create_app(
     async def task_not_found_handler(_, exc: TaskNotFoundError):
         return _error_response(status.HTTP_404_NOT_FOUND, str(exc))
 
+    @app.exception_handler(KnowledgeAssetAlreadyExistsError)
+    async def knowledge_asset_exists_handler(
+        _, exc: KnowledgeAssetAlreadyExistsError
+    ):
+        return _error_response(status.HTTP_409_CONFLICT, str(exc))
+
     @app.exception_handler(ValueError)
     async def invalid_action_handler(_, exc: ValueError):
         return _error_response(status.HTTP_409_CONFLICT, str(exc))
@@ -77,6 +117,44 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.post(
+        "/api/v1/tasks/{task_id}/knowledge-assets",
+        response_model=KnowledgeAssetPublicationResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def publish_knowledge_asset(
+        task_id: str,
+        payload: KnowledgeAssetConfirmationRequest,
+    ) -> KnowledgeAssetPublicationResponse:
+        asset_service, indexing_service = get_knowledge_services()
+        asset = asset_service.confirm_task_result(
+            task_id,
+            ConfirmKnowledgeAssetCommand(
+                user_confirmed=payload.user_confirmed,
+                data_safety_confirmed=payload.data_safety_confirmed,
+            ),
+        )
+        try:
+            indexed = indexing_service.index_asset(asset.asset_id)
+        except KnowledgeAssetIndexingError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "知识资产已保存到MySQL，但向量索引失败；"
+                    "可稍后通过索引重试功能恢复。"
+                ),
+            ) from exc
+        return KnowledgeAssetPublicationResponse(
+            asset_id=asset.asset_id,
+            source_task_id=asset.source_task_id,
+            asset_version=asset.asset_version,
+            status=indexed.status.value,
+            test_point_count=asset.test_point_count,
+            reviewer_score=asset.reviewer_score,
+            chunk_count=indexed.chunk_count,
+            omitted_chunk_count=indexed.omitted_chunk_count,
+        )
 
     @app.get("/", include_in_schema=False)
     def frontend_home() -> RedirectResponse:

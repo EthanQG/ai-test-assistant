@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
@@ -28,6 +29,30 @@ from .knowledge_asset_retrieval_service import KnowledgeAssetRetrievalService
 from .knowledge_asset_service import KnowledgeAssetApplicationService
 from .service import TestAnalysisApplicationService
 from .snapshots import TaskSnapshotSerializer
+
+
+@dataclass(frozen=True)
+class ApplicationServices:
+    task_service: TestAnalysisApplicationService
+    knowledge_asset_service: KnowledgeAssetApplicationService
+    knowledge_indexing_service: KnowledgeAssetIndexingService
+
+
+def build_application_services() -> ApplicationServices:
+    """Build API services with shared task and knowledge repositories."""
+
+    task_repository = build_task_repository()
+    asset_repository = build_knowledge_asset_repository()
+    return ApplicationServices(
+        task_service=TestAnalysisApplicationService(task_repository),
+        knowledge_asset_service=KnowledgeAssetApplicationService(
+            task_repository,
+            asset_repository,
+        ),
+        knowledge_indexing_service=build_knowledge_asset_indexing_service(
+            asset_repository
+        ),
+    )
 
 
 def build_session_application_service() -> TestAnalysisApplicationService:

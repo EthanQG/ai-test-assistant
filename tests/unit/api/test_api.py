@@ -1,5 +1,6 @@
 import re
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -188,6 +189,65 @@ def test_native_frontend_exposes_history_and_restore_entry():
     assert 'id="history-dialog"' in page
     assert "/api/v1/task-summaries" in script
     assert "restoreTask" in script
+
+
+def test_completed_result_can_be_confirmed_and_indexed_as_knowledge():
+    task_service = FakeApplicationService()
+
+    class AssetService:
+        def __init__(self):
+            self.calls = []
+
+        def confirm_task_result(self, task_id, command):
+            self.calls.append((task_id, command))
+            return SimpleNamespace(
+                asset_id="asset-1",
+                source_task_id=task_id,
+                asset_version=1,
+                test_point_count=12,
+                reviewer_score=90,
+            )
+
+    class IndexingService:
+        def __init__(self):
+            self.calls = []
+
+        def index_asset(self, asset_id):
+            self.calls.append(asset_id)
+            return SimpleNamespace(
+                status=SimpleNamespace(value="indexed"),
+                chunk_count=18,
+                omitted_chunk_count=0,
+            )
+
+    asset_service = AssetService()
+    indexing_service = IndexingService()
+    client = TestClient(create_app(
+        task_service,
+        knowledge_asset_service=asset_service,
+        knowledge_indexing_service=indexing_service,
+    ))
+
+    response = client.post(
+        f"/api/v1/tasks/{task_service.view.task_id}/knowledge-assets",
+        json={"user_confirmed": True, "data_safety_confirmed": True},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "indexed"
+    assert response.json()["chunk_count"] == 18
+    assert asset_service.calls[0][0] == task_service.view.task_id
+    assert indexing_service.calls == ["asset-1"]
+
+
+def test_native_frontend_requires_explicit_knowledge_safety_confirmation():
+    page = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="publish-knowledge"' in page
+    assert 'id="data-safety-confirmed"' in page
+    assert "/knowledge-assets" in script
+    assert "dataSafetyConfirmed.checked" in script
 
 
 def test_blank_requirement_is_rejected_before_application_service():

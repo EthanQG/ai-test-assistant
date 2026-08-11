@@ -54,6 +54,10 @@ const elements = {
   feedbackReason: document.querySelector("#feedback-reason"),
   feedbackMessage: document.querySelector("#feedback-message"),
   feedbackHistory: document.querySelector("#feedback-history"),
+  knowledgePublish: document.querySelector("#knowledge-publish"),
+  dataSafetyConfirmed: document.querySelector("#data-safety-confirmed"),
+  publishKnowledge: document.querySelector("#publish-knowledge"),
+  knowledgeMessage: document.querySelector("#knowledge-message"),
   historyButton: document.querySelector("#history-button"),
   historyDialog: document.querySelector("#history-dialog"),
   closeHistoryDialog: document.querySelector("#close-history-dialog"),
@@ -75,6 +79,7 @@ let reportMarkdown = "";
 let businessRules = [];
 let humanFeedback = [];
 let pendingBusinessFeedback = null;
+let currentTaskStatus = null;
 const pageSize = 5;
 const historyPageSize = 10;
 let historyOffset = 0;
@@ -97,6 +102,7 @@ elements.feedbackAction.addEventListener("change", renderFeedbackTarget);
 elements.feedbackForm.addEventListener("submit", submitFeedback);
 elements.confirmBusinessRule.addEventListener("click", () => confirmBusinessRule(true));
 elements.rejectBusinessRule.addEventListener("click", () => confirmBusinessRule(false));
+elements.publishKnowledge.addEventListener("click", publishKnowledgeAsset);
 elements.historyButton.addEventListener("click", openHistory);
 elements.closeHistoryDialog.addEventListener("click", () => elements.historyDialog.close());
 elements.searchHistory.addEventListener("click", () => { historyOffset = 0; loadHistory(); });
@@ -268,6 +274,7 @@ async function pollProgress() {
 }
 
 async function renderProgress(progress) {
+  currentTaskStatus = progress.status;
   const running = ["queued", "running"].includes(progress.execution_status);
   elements.status.textContent = progress.status_label;
   elements.status.className = `status ${statusClass(progress.status)}`;
@@ -297,6 +304,7 @@ async function renderProgress(progress) {
   } else if (progress.status === "failed") {
     showNotice("任务执行失败，请查看上方错误信息后重新创建任务。");
   }
+  renderKnowledgePublish();
 }
 
 async function loadResults() {
@@ -560,6 +568,47 @@ function appendEmpty(target, message) {
 function renderReport() {
   elements.reportPreview.textContent = reportMarkdown || "任务完成后将在这里生成 Markdown 报告。";
   elements.downloadReport.disabled = !reportMarkdown;
+  renderKnowledgePublish();
+}
+
+function renderKnowledgePublish() {
+  elements.knowledgePublish.hidden = !(
+    currentTaskStatus === "completed" && reportMarkdown
+  );
+}
+
+async function publishKnowledgeAsset() {
+  if (!currentTaskId || currentTaskStatus !== "completed") return;
+  if (!elements.dataSafetyConfirmed.checked) {
+    elements.knowledgeMessage.textContent = "请先确认内容已脱敏且允许沉淀。";
+    elements.knowledgeMessage.hidden = false;
+    return;
+  }
+  elements.publishKnowledge.disabled = true;
+  elements.publishKnowledge.textContent = "正在保存并建立索引…";
+  elements.knowledgeMessage.hidden = true;
+  try {
+    const result = await request(
+      `/api/v1/tasks/${currentTaskId}/knowledge-assets`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_confirmed: true,
+          data_safety_confirmed: true,
+        }),
+      },
+    );
+    elements.knowledgeMessage.textContent =
+      `已保存到知识库，共建立 ${result.chunk_count} 个检索片段。`;
+    elements.knowledgeMessage.hidden = false;
+    elements.publishKnowledge.textContent = "已保存到知识库";
+  } catch (error) {
+    elements.knowledgeMessage.textContent = error.message;
+    elements.knowledgeMessage.hidden = false;
+    elements.publishKnowledge.disabled = false;
+    elements.publishKnowledge.textContent = "保存到知识库";
+  }
 }
 
 function downloadReport() {
@@ -776,6 +825,7 @@ function clearMessages() {
 function resetWorkspace() {
   if (pollTimer) window.clearTimeout(pollTimer);
   currentTaskId = null;
+  currentTaskStatus = null;
   pollTimer = null;
   elements.requirement.value = "";
   elements.document.value = "";
@@ -809,6 +859,11 @@ function resetWorkspace() {
   elements.feedbackSection.hidden = true;
   elements.reportSection.hidden = true;
   elements.feedbackMessage.hidden = true;
+  elements.knowledgePublish.hidden = true;
+  elements.dataSafetyConfirmed.checked = false;
+  elements.knowledgeMessage.hidden = true;
+  elements.publishKnowledge.disabled = false;
+  elements.publishKnowledge.textContent = "保存到知识库";
   elements.feedbackHistory.replaceChildren();
   elements.testPointList.replaceChildren();
   if (elements.detailDialog.open) elements.detailDialog.close();
