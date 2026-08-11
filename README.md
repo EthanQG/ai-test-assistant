@@ -131,6 +131,18 @@ python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 
 阶段2.17.2使用进程内`ThreadPoolExecutor`避免HTTP请求等待完整Agent链路，并防止同一进程重复启动同一任务。它适合当前单实例演示，不等同于Celery/Redis等分布式任务队列；API多进程、高可用调度和SSE仍未实现。
 
+独立前端的最小调用顺序：
+
+```text
+POST /api/v1/tasks 或 POST /api/v1/tasks/from-document
+→ POST /api/v1/tasks/{task_id}/run
+→ 定时 GET /api/v1/tasks/{task_id}/progress
+→ 如 waiting_for_user，POST /clarifications 后再次 POST /run
+→ completed 后 GET /api/v1/tasks/{task_id}读取测试点和报告
+```
+
+轮询期间只读取轻量`progress`；进入结果页后再读取完整任务详情。业务状态为等待用户时，后台执行状态停止属于正常暂停，不代表任务失败。
+
 如需运行完整开发测试，安装包含pytest的开发依赖：
 
 ```powershell

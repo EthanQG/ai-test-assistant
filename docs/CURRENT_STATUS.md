@@ -11,11 +11,11 @@
 - 阶段2.16.9第二小步：`b7583a1 阶段2.16.9：接入紧凑ID需求分析`
 - 本地提交尚未推送，由用户手动执行`git push`
 
-## 当前阶段：2.17.4 FastAPI文档上传入口（已完成）
+## 当前阶段：2.17.5 FastAPI V1链路验收（已完成）
 
-新增`POST /api/v1/tasks/from-document` multipart入口，支持TXT、Markdown、PDF和DOCX，API层限制20MB。接口只把文件转换为现有`UploadedDocument + CreateTaskCommand`，文档解析、OCR/视觉降级、指标记录和任务创建继续由Application Service及DocumentService完成。
+新增正式Fake链路测试，实际经过FastAPI、Application Service、`TaskBackgroundRunner`、Orchestrator边界和InMemory Repository，串通文档上传、后台执行、轮询等待、提交补充、同task_id恢复、再次后台执行、完成及报告读取。
 
-本阶段没有复制Streamlit上传逻辑或文档解析算法，也没有修改AgentState、Application Service、DocumentService、Orchestrator或页面。空文件返回422，超过20MB返回413，解析失败返回422。
+本阶段没有修改生产代码，也不调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。README已给出独立前端最小调用顺序，FastAPI V1后端链路可以收尾。
 
 ## 上一阶段：2.16.14 V1长PRD完整功能验收（已完成）
 
@@ -102,7 +102,7 @@ git diff --check
 
 ## 下一步建议
 
-下一阶段对2.17后端接口做完整验收和示例化收尾，确认文本/文件创建、后台执行、轮询、暂停恢复和结果读取能够组成一条可供前端调用的链路；暂不开始Vue。
+下一步建议先暂停扩展后端功能，进入项目学习与简历材料整理；如果确实开始前端分离，再新建独立Vue工程消费现有API。SSE和分布式任务队列不是当前秋招版本的必要条件。
 
 ## 新电脑恢复方式
 
