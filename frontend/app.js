@@ -128,7 +128,10 @@ async function pollProgress() {
   try {
     const progress = await request(`/api/v1/tasks/${currentTaskId}/progress`);
     await renderProgress(progress);
-    if (progress.status === "waiting_for_user") {
+    if (
+      progress.status === "waiting_for_user"
+      && !["queued", "running"].includes(progress.execution_status)
+    ) {
       setBusy(false);
       lockTaskInput(true);
       elements.start.disabled = true;

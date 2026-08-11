@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from services.llm_service import LLMService
 from services.prompt_service import PromptService
 
@@ -50,12 +52,17 @@ class TestPointReviewer:
                 context.values["requirement_analysis"],
                 context.values["test_points"],
             )
-            result = generate_and_parse_json(
-                self.llm_service,
+            fact_by_id = {
+                f"F{index:03d}": fact
+                for index, fact in enumerate(
+                    state.requirement_facts,
+                    start=1,
+                )
+            }
+            result = self._generate_review(
                 user_prompt,
                 system_prompt,
-                TestPointReviewResult.from_json,
-                max_tokens=REVIEW_STRUCTURED_OUTPUT_MAX_TOKENS,
+                fact_by_id,
             )
             self._validate_coverage(state, result)
             passed = self._is_passing(result)
@@ -112,6 +119,59 @@ class TestPointReviewer:
             result.overall_score >= self.passing_score
             and result.uncovered_requirement_count == 0
             and not result.hallucination_issues
+        )
+
+    def _generate_review(
+        self,
+        user_prompt: str,
+        system_prompt: str,
+        fact_by_id: dict[str, str],
+    ) -> TestPointReviewResult:
+        parser = lambda raw: self._parse_result(raw, fact_by_id)
+        try:
+            return generate_and_parse_json(
+                self.llm_service,
+                user_prompt,
+                system_prompt,
+                parser,
+                max_tokens=REVIEW_STRUCTURED_OUTPUT_MAX_TOKENS,
+            )
+        except ValueError as exc:
+            if "max_tokens" not in str(exc):
+                raise
+            compact_retry_prompt = (
+                user_prompt
+                + "\n\n上一次评审输出因长度限制被截断。"
+                "请只返回完整紧凑JSON；coverage只写fact_id，"
+                "问题和建议只保留影响修正的主要项，不得复述输入。"
+            )
+            return generate_and_parse_json(
+                self.llm_service,
+                compact_retry_prompt,
+                system_prompt,
+                parser,
+                max_attempts=1,
+                max_tokens=REVIEW_STRUCTURED_OUTPUT_MAX_TOKENS,
+            )
+
+    @staticmethod
+    def _parse_result(
+        raw_response: str,
+        fact_by_id: dict[str, str],
+    ) -> TestPointReviewResult:
+        result = TestPointReviewResult.from_json(raw_response)
+        return replace(
+            result,
+            requirement_coverage=[
+                replace(
+                    item,
+                    requirement_fact=fact_by_id.get(
+                        item.requirement_fact,
+                        item.requirement_fact,
+                    ),
+                )
+                for item in result.requirement_coverage
+            ],
         )
 
     @staticmethod

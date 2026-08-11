@@ -106,6 +106,19 @@ def test_native_frontend_is_served_by_fastapi():
     assert "确认规则并继续" in page.text
 
 
+def test_frontend_keeps_polling_while_resumed_task_is_queued_or_running():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    waiting_guard = re.search(
+        r'progress\.status === "waiting_for_user"\s*'
+        r'&&\s*!\["queued", "running"\]\.includes\('
+        r'progress\.execution_status\)',
+        script,
+    )
+
+    assert waiting_guard is not None
+
+
 def test_frontend_javascript_element_ids_exist_in_page():
     page = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")

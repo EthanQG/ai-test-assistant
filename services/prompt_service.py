@@ -168,19 +168,33 @@ class PromptService:
             raise ValueError("requirement facts cannot be empty")
         if not test_points:
             raise ValueError("test points cannot be empty")
+        compact_analysis = dict(requirement_analysis)
+        compact_analysis["requirement_facts"] = [
+            {"fact_id": f"F{index:03d}", "fact": fact}
+            for index, fact in enumerate(
+                requirement_analysis["requirement_facts"],
+                start=1,
+            )
+        ]
         return (
             "请评审以下结构化测试点，并严格按照系统要求只返回 JSON。\n\n"
+            "输出必须紧凑：不要重复解释需求或测试步骤；"
+            "missing_scenarios、hallucination_issues 和 revision_suggestions "
+            "分别最多8项；每条问题或建议不超过80个汉字；"
+            "requirement_coverage只为每条需求事实输出一项，"
+            "requirement_fact字段只返回对应fact_id（例如F001），"
+            "不要重复事实原文。\n\n"
             "【结构化需求分析】\n"
             + json.dumps(
-                requirement_analysis,
+                compact_analysis,
                 ensure_ascii=False,
-                indent=2,
+                separators=(",", ":"),
             )
             + "\n\n【待评审测试点】\n"
             + json.dumps(
                 test_points,
                 ensure_ascii=False,
-                indent=2,
+                separators=(",", ":"),
             )
         )
 

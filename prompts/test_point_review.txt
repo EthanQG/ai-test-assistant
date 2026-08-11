@@ -9,12 +9,16 @@
 评分规则：
 - 每个维度和 overall_score 均为 0 到 100 的整数。
 - overall_score 应综合四个维度，不得因为测试点数量多而虚高。
-- 对每条 requirement_fact 输出 covered、partial 或 missing。
+- 对每条 requirement_fact 输出 covered、partial 或 missing；输入提供fact_id时，requirement_fact字段只返回fact_id，不得复述事实原文。
 - duplicate_groups 只列出确实重复或高度相似的测试点标题，每组至少两个标题。
 - hallucination_issues 只标记没有需求、风险依据或合法历史思路支持的业务断言。
 - 没有问题时，对应问题数组必须返回真正的空数组 []，不得返回 [""]、["无"] 或占位文字。
 - missing_scenarios 和 revision_suggestions 的每一项必须是字符串，不能返回对象。
 - hallucination_issues 的每一项必须是包含 test_point_title、issue、unsupported_claim 的对象，不能只返回字符串。
+- 输出应保持紧凑，不复述输入中的需求、步骤或预期结果。
+- missing_scenarios、hallucination_issues 和 revision_suggestions 分别最多返回 8 项，只保留会影响修正决策的主要问题。
+- 问题、差距和建议使用短句，每项不超过 80 个汉字；不要为了凑长度重复同一问题。
+- requirement_coverage 必须与输入中的 requirement_facts 一一对应，不能增加额外条目。
 
 只返回一个 JSON 对象，不要输出 Markdown、代码围栏或解释文字，字段必须严格如下：
 
@@ -28,7 +32,7 @@
   },
   "requirement_coverage": [
     {
-      "requirement_fact": "需求事实原文",
+      "requirement_fact": "F001",
       "status": "covered",
       "covered_by": ["测试点标题"],
       "gap": ""

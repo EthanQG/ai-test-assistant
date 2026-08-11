@@ -224,6 +224,52 @@ class TestPointReviewerTests(unittest.TestCase):
 
         self.assertFalse(state.review_passed)
 
+    def test_fact_ids_are_restored_to_original_facts_before_saving(self):
+        payload = review_payload()
+        payload["requirement_coverage"][0]["requirement_fact"] = "F001"
+        state = ready_state()
+
+        result = TestPointReviewer(
+            llm_service=FakeLLMService(json.dumps(payload))
+        ).review(state)
+
+        self.assertEqual(
+            result.requirement_coverage[0].requirement_fact,
+            "提交订单时扣减库存",
+        )
+        self.assertEqual(
+            state.review_result["requirement_coverage"][0][
+                "requirement_fact"
+            ],
+            "提交订单时扣减库存",
+        )
+
+    def test_max_tokens_truncation_retries_only_the_reviewer_once(self):
+        class TruncatedOnceLLM(FakeLLMService):
+            def generate_json(
+                self,
+                prompt: str,
+                system_prompt: str,
+                max_tokens: int | None = None,
+            ) -> str:
+                self.received_max_tokens.append(max_tokens)
+                self.calls.append((prompt, system_prompt))
+                if len(self.calls) == 1:
+                    raise ValueError(
+                        "LLM输出达到max_tokens限制，结构化JSON被截断"
+                    )
+                return json.dumps(review_payload(), ensure_ascii=False)
+
+        llm = TruncatedOnceLLM()
+        state = ready_state()
+
+        result = TestPointReviewer(llm_service=llm).review(state)
+
+        self.assertEqual(result.overall_score, 90)
+        self.assertEqual(len(llm.calls), 2)
+        self.assertIn("只返回完整紧凑JSON", llm.calls[1][0])
+        self.assertEqual(llm.received_max_tokens, [16384, 16384])
+
     def test_partial_coverage_does_not_pass(self):
         llm = FakeLLMService(
             json.dumps(review_payload(coverage_status="partial"))

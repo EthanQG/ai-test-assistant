@@ -106,6 +106,10 @@ class PromptServiceTests(unittest.TestCase):
         self.assertIn("库存充足时提交订单", prompt)
         self.assertIn("【结构化需求分析】", prompt)
         self.assertIn("【待评审测试点】", prompt)
+        self.assertIn("分别最多8项", prompt)
+        self.assertNotIn('"requirement_facts": [', prompt)
+        self.assertIn('"fact_id":"F001"', prompt)
+        self.assertIn("不要重复事实原文", prompt)
 
     def test_review_prompt_rejects_empty_test_points(self):
         with self.assertRaisesRegex(

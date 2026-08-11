@@ -131,6 +131,8 @@ python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 
 原生Web前端由FastAPI同源托管，启动后访问`http://127.0.0.1:8000/app/`。当前支持文本/文件创建、后台启动、进度轮询、待确认问题回答、结构化测试点分页和详情、Reviewer质量结果、人工反馈与业务规则二次确认，以及最终Markdown报告预览和下载。
 
+补充信息提交后，页面会在后台任务处于`queued/running`期间继续轮询，不会因旧的`waiting_for_user`业务状态提前停止。长任务Reviewer使用紧凑JSON和事实ID返回覆盖映射，并仅在明确的输出截断时受控重试一次；ID会在Python校验前恢复为原事实文本。
+
 阶段2.17.2使用进程内`ThreadPoolExecutor`避免HTTP请求等待完整Agent链路，并防止同一进程重复启动同一任务。它适合当前单实例演示，不等同于Celery/Redis等分布式任务队列；API多进程、高可用调度和SSE仍未实现。
 
 独立前端的最小调用顺序：
