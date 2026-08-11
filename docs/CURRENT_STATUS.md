@@ -11,7 +11,13 @@
 - 阶段2.16.9第二小步：`b7583a1 阶段2.16.9：接入紧凑ID需求分析`
 - 本地提交尚未推送，由用户手动执行`git push`
 
-## 当前阶段：2.16.14 V1长PRD完整功能验收（已完成）
+## 当前阶段：2.17.1 FastAPI同步薄接口（已完成）
+
+新增`api/`传输适配层，复用`TestAnalysisApplicationService`，提供健康检查、Swagger以及任务创建、列表、详情、同步推进、补充信息、业务规则确认、人工反馈、失败重试和删除接口。API只构造现有Command并返回`TaskView.to_dict()`的隔离传输结果，不接受节点名称，也不复制Orchestrator状态机。
+
+当前`POST /advance`仍同步执行一个Agent节点；后台Worker、轮询进度和SSE尚未实现。Streamlit页面未改动，仍可作为V1演示入口。
+
+## 上一阶段：2.16.14 V1长PRD完整功能验收（已完成）
 
 使用2735字符电商PRD执行真实Application Service主链路，任务`25858f12-28c2-42ad-a37c-f85868fc9224`完成需求分析、2项补充恢复、Milvus检索、测试点生成、3轮Reviewer和2轮Reviser。Embedding生成768维向量，Milvus从5条数据中命中1条（0.6274）；测试点42条，经两轮修正后57条，最终Reviewer为82分。任务按设计达到自动修正上限并转入人工反馈入口，没有异常、JSON截断或Embedding超时。
 
@@ -96,7 +102,7 @@ git diff --check
 
 ## 下一步建议
 
-Streamlit V1功能冻结。下一步优先用于学习、简历和演示；FastAPI与前后端分离作为后续独立大阶段，不阻塞当前版本。
+下一阶段2.17.2实现受控后台任务执行和幂等启动，使HTTP请求不再等待真实Agent节点。
 
 ## 新电脑恢复方式
 

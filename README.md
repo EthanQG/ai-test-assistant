@@ -121,6 +121,14 @@ Copy-Item .env.example .env
 streamlit run main.py
 ```
 
+FastAPI后端（阶段2.17.1同步薄接口）：
+
+```powershell
+python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
+```
+
+启动后访问`http://127.0.0.1:8000/docs`查看Swagger。当前API复用同一个Application Service，支持任务创建、查询、同步推进、补充信息、业务规则确认、人工反馈、失败重试和删除；后台执行与进度轮询将在后续阶段实现。
+
 如需运行完整开发测试，安装包含pytest的开发依赖：
 
 ```powershell

@@ -81,6 +81,7 @@
 | 阶段 2.16.12 | 已完成 | 旧RAG读取Embedding配置并禁用环境代理 | 本次提交 |
 | 阶段 2.16.13 | 已完成 | 长PRD二次Reviewer使用独立有界输出额度 | 本次提交 |
 | 阶段 2.16.14 | 已完成 | 真实长PRD完整链路、修正上限和MySQL恢复验收 | 本次提交 |
+| 阶段 2.17.1 | 已完成 | FastAPI同步任务与用户动作接口、Swagger和pytest | 本次提交 |
 | 阶段 2.16 | 进行中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
@@ -3798,3 +3799,9 @@ git diff --check
 同一2735字符电商PRD通过真实Application Service执行：需求分析后提出2项关键问题，以“暂不确定”恢复同一任务；知识检索查询2836字符，Ollama返回768维向量，Milvus从5条资产中命中1条，相似度0.6274。Generator生成42条测试点，三轮Reviewer分数依次为88、82、82，两轮Reviser将测试点修正为52和57条。
 
 最终任务达到2轮自动修正上限，按受控状态机停止并等待人工反馈，没有发生异常、结构化JSON截断或Embedding超时。总执行约416秒，34次服务调用，provider Token 135375。新Application Service实例从MySQL按task_id恢复任务后再次推进，指标和节点均未增加，证明修正上限任务不会因恢复而重复执行。本样本未通过质量门禁，因此不生成报告；这是预期安全行为，不应伪装为完成态。
+
+## 阶段 2.17.1：FastAPI同步薄接口
+
+新增`api/main.py`和Pydantic请求模型，以HTTP用户动作调用现有Application Service。接口覆盖创建、查询、列表、同步推进、补充信息、业务规则确认、人工反馈、失败重试和删除，并由FastAPI自动生成OpenAPI/Swagger。`TaskView.to_dict()`提供隔离的传输字典，页面和API都无法通过返回值修改Repository中的AgentState。
+
+本阶段没有增加节点级执行接口，没有复制状态机，也没有修改Streamlit、Agent节点和Orchestrator。`advance`仍同步执行一个节点；后台任务和进度查询留到2.17.2。接口测试使用Fake Application Service，不调用真实LLM、MySQL、Ollama或Milvus。

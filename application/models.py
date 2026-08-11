@@ -78,6 +78,21 @@ class TaskView:
             raise AttributeError(name)
         return deepcopy(self._state_data[name])
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return a detached transport representation for UI/API adapters."""
+        return {
+            "state": deepcopy(self._state_data),
+            "decisions": deepcopy(list(self.decisions)),
+            "auto_run": self.auto_run,
+            "has_pending_clarifications": self.has_pending_clarifications,
+            "execution_steps": self.execution_steps,
+            "in_progress": self.in_progress,
+            "next_action": self.next_action,
+            "metrics": deepcopy(list(self.metrics)),
+            "revision_limit_reached": self.revision_limit_reached,
+            "performance_summary": self.performance_summary,
+        }
+
     @property
     def task_id(self) -> str:
         return str(self._state_data["task_id"])

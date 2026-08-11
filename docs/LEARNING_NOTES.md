@@ -5882,3 +5882,7 @@ DeepSeek V4默认开启思考模式，推理内容也会消耗`max_tokens`。对
 ## 67. 达到修正上限为什么也算链路验收成功
 
 验收成功不等于模型结果必须通过。只要节点按状态机执行、失败可解释、达到上限后停止且允许人工反馈，就证明受控Agent边界有效。强行把82分且仍有未覆盖项的结果整理成最终报告，反而会绕过Reviewer质量门禁。
+
+## 68. FastAPI为什么只能调用Application Service
+
+FastAPI是传输层，职责是校验HTTP输入、构造Command、调用应用用例并返回JSON。它不能接收`node_name`或直接调用Reviewer等节点，否则Vue、Streamlit和其他客户端会各自形成一套状态机。当前`advance`表达“继续任务”，具体节点仍由Orchestrator决定。
