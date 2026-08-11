@@ -11,11 +11,11 @@
 - 阶段2.16.9第二小步：`b7583a1 阶段2.16.9：接入紧凑ID需求分析`
 - 本地提交尚未推送，由用户手动执行`git push`
 
-## 当前阶段：2.17.5 FastAPI V1链路验收（已完成）
+## 当前阶段：2.18.1 原生Web前端骨架（已完成）
 
-新增正式Fake链路测试，实际经过FastAPI、Application Service、`TaskBackgroundRunner`、Orchestrator边界和InMemory Repository，串通文档上传、后台执行、轮询等待、提交补充、同task_id恢复、再次后台执行、完成及报告读取。
+新增独立`frontend/`目录，使用原生HTML、CSS和JavaScript，不依赖npm和前端框架。第一小步实现文本/文件输入、任务创建、后台启动、1.5秒进度轮询、中文状态、关键指标、最近事件、错误提示和清空工作区。
 
-本阶段没有修改生产代码，也不调用真实LLM、Embedding、Milvus、MySQL、OCR或视觉模型。README已给出独立前端最小调用顺序，FastAPI V1后端链路可以收尾。
+FastAPI通过`/app/`同源托管静态前端，根路径重定向到Web页面，因此当前不需要CORS。页面只调用公开API，不接触Agent、Application Service或Repository。等待用户补充、测试点详情、报告和人工反馈尚未接入，留给后续小阶段。
 
 ## 上一阶段：2.16.14 V1长PRD完整功能验收（已完成）
 
@@ -102,7 +102,7 @@ git diff --check
 
 ## 下一步建议
 
-下一步建议先暂停扩展后端功能，进入项目学习与简历材料整理；如果确实开始前端分离，再新建独立Vue工程消费现有API。SSE和分布式任务队列不是当前秋招版本的必要条件。
+下一阶段2.18.2接入待确认问题回答与同task_id恢复执行，只完成Human-in-the-loop主交互，不同时实现结果详情和人工反馈。
 
 ## 新电脑恢复方式
 

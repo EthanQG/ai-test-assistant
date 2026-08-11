@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from application.bootstrap import build_session_application_service
 from application.background_runner import TaskBackgroundRunner
@@ -28,6 +32,7 @@ from .progress import build_task_progress
 
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 
 def _response(view) -> TaskResponse:
@@ -71,6 +76,10 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/", include_in_schema=False)
+    def frontend_home() -> RedirectResponse:
+        return RedirectResponse("/app/")
 
     @app.post(
         "/api/v1/tasks",
@@ -208,6 +217,12 @@ def create_app(
     def delete_task(task_id: str) -> Response:
         get_service().delete_task(task_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    app.mount(
+        "/app",
+        StaticFiles(directory=FRONTEND_DIR, html=True),
+        name="frontend",
+    )
 
     return app
 

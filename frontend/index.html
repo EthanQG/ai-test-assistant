@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Analysis Agent</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="product-header">
+    <div class="logo" aria-hidden="true">TA</div>
+    <div>
+      <h1>Test Analysis Agent</h1>
+      <p>上传需求，自动完成结构化测试分析</p>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="panel input-panel" aria-labelledby="input-title">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">需求输入</p>
+          <h2 id="input-title">创建测试分析任务</h2>
+        </div>
+        <button id="reset-button" class="button secondary" type="button">清空</button>
+      </div>
+
+      <label for="requirement">需求文本</label>
+      <textarea id="requirement" placeholder="粘贴PRD内容，或在下方上传需求文档。"></textarea>
+
+      <div class="divider"><span>或者上传文件</span></div>
+      <label class="file-picker" for="document">
+        <strong>选择PRD文档</strong>
+        <span>支持 TXT、Markdown、PDF、DOCX，最大20MB</span>
+        <input id="document" type="file" accept=".txt,.md,.pdf,.docx">
+      </label>
+      <p id="file-name" class="file-name">尚未选择文件</p>
+
+      <button id="start-button" class="button primary" type="button">开始分析</button>
+      <p id="form-error" class="message error" role="alert" hidden></p>
+    </section>
+
+    <section class="panel result-panel" aria-labelledby="result-title">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">任务进度</p>
+          <h2 id="result-title">分析概览</h2>
+        </div>
+        <span id="status-badge" class="status neutral">等待开始</span>
+      </div>
+
+      <div class="stage-card">
+        <div id="activity" class="activity" hidden aria-hidden="true"></div>
+        <div>
+          <p id="stage-label" class="stage-title">尚未创建任务</p>
+          <p id="stage-description" class="muted">提交需求后，这里会持续展示Agent执行状态。</p>
+        </div>
+      </div>
+
+      <dl class="metrics">
+        <div><dt>测试点</dt><dd id="test-point-count">0</dd></div>
+        <div><dt>Reviewer评分</dt><dd id="reviewer-score">待评审</dd></div>
+        <div><dt>自动修正</dt><dd id="revision-count">0</dd></div>
+      </dl>
+
+      <div class="progress-section">
+        <h3>最近进展</h3>
+        <ol id="recent-events" class="events">
+          <li>等待提交需求</li>
+        </ol>
+      </div>
+
+      <p id="task-message" class="message notice" hidden></p>
+      <p id="task-id" class="task-id"></p>
+    </section>
+  </main>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>

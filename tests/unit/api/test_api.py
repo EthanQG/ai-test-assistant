@@ -79,6 +79,21 @@ def test_health_and_openapi_are_available():
     assert client.get("/openapi.json").status_code == 200
 
 
+def test_native_frontend_is_served_by_fastapi():
+    client, _ = _client()
+
+    home = client.get("/", follow_redirects=False)
+    page = client.get("/app/")
+    script = client.get("/app/app.js")
+
+    assert home.status_code == 307
+    assert home.headers["location"] == "/app/"
+    assert page.status_code == 200
+    assert "Test Analysis Agent" in page.text
+    assert script.status_code == 200
+    assert "pollProgress" in script.text
+
+
 def test_create_get_list_and_delete_task():
     client, service = _client()
 
