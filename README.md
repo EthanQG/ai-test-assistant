@@ -129,7 +129,7 @@ python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 
 启动后访问`http://127.0.0.1:8000/docs`查看Swagger。当前API复用同一个Application Service，支持文本创建和`POST /api/v1/tasks/from-document`上传TXT、Markdown、PDF、DOCX需求文档，API文件上限为20MB。创建任务后可调用`POST /api/v1/tasks/{task_id}/run`提交后台执行，再通过`GET /api/v1/tasks/{task_id}/progress`轮询当前阶段、执行状态、关键计数和最近3条事件；需要完整结果时再调用任务详情接口。
 
-原生Web前端由FastAPI同源托管，启动后访问`http://127.0.0.1:8000/app/`。当前支持文本/文件创建、后台启动、进度轮询、待确认问题回答、结构化测试点分页和详情、Reviewer质量结果，以及最终Markdown报告预览和下载；人工反馈交互将在后续小阶段接入。
+原生Web前端由FastAPI同源托管，启动后访问`http://127.0.0.1:8000/app/`。当前支持文本/文件创建、后台启动、进度轮询、待确认问题回答、结构化测试点分页和详情、Reviewer质量结果、人工反馈与业务规则二次确认，以及最终Markdown报告预览和下载。
 
 阶段2.17.2使用进程内`ThreadPoolExecutor`避免HTTP请求等待完整Agent链路，并防止同一进程重复启动同一任务。它适合当前单实例演示，不等同于Celery/Redis等分布式任务队列；API多进程、高可用调度和SSE仍未实现。
 

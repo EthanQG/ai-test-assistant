@@ -140,6 +140,18 @@ textarea:focus, .file-picker:focus-within { outline: 2px solid #bfdbfe; border-c
 .question-field p { margin-bottom: 8px; font-size: 13px; font-weight: 650; line-height: 1.5; }
 .question-field textarea { min-height: 72px; background: white; }
 .unknown-option { margin: 8px 0 0; color: var(--muted); font-size: 12px; font-weight: 500; }
+.business-rule-content { margin: 12px 0; padding: 12px; border-radius: 8px; background: #fffaeb; color: #7a2e0e; font-size: 13px; }
+.business-rule-content p { margin: 5px 0; }
+.confirmation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.feedback-form { display: grid; gap: 12px; margin-top: 16px; }
+.feedback-form label { margin: 0; }
+.feedback-form select { width: 100%; min-height: 40px; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: white; color: var(--text); }
+.feedback-form textarea { min-height: 66px; margin-top: 6px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.feedback-history { margin-top: 16px; }
+.feedback-item { position: relative; padding: 12px 70px 12px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.feedback-item p { margin: 6px 0 0; color: #475467; }
+.feedback-item span { position: absolute; top: 12px; right: 0; color: var(--blue); font-size: 12px; }
 
 @media (max-width: 820px) {
   .workspace { grid-template-columns: 1fr; }

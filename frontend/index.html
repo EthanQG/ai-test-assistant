@@ -48,6 +48,20 @@
         <button id="clarification-button" class="button primary" type="button">提交补充并继续</button>
       </section>
 
+      <section id="business-rule-section" class="clarifications" hidden>
+        <div class="clarification-heading">
+          <div>
+            <p class="eyebrow">业务规则确认</p>
+            <h3>确认后才会写入正式需求</h3>
+          </div>
+        </div>
+        <div id="business-rule-content" class="business-rule-content"></div>
+        <div class="confirmation-actions">
+          <button id="confirm-business-rule" class="button primary" type="button">确认规则并继续</button>
+          <button id="reject-business-rule" class="button secondary" type="button">取消该规则</button>
+        </div>
+      </section>
+
       <button id="start-button" class="button primary" type="button">开始分析</button>
       <p id="form-error" class="message error" role="alert" hidden></p>
     </section>
@@ -84,6 +98,7 @@
       <nav id="result-navigation" class="result-navigation" aria-label="分析结果" hidden>
         <button class="result-tab active" data-result-tab="test-points" type="button">结构化测试点</button>
         <button class="result-tab" data-result-tab="quality" type="button">质量评审</button>
+        <button class="result-tab" data-result-tab="feedback" type="button">人工反馈</button>
         <button class="result-tab" data-result-tab="report" type="button">最终报告</button>
       </nav>
 
@@ -123,6 +138,48 @@
           <button id="download-report" class="button secondary" type="button">下载 Markdown</button>
         </div>
         <pre id="report-preview" class="report-preview"></pre>
+      </section>
+
+      <section id="feedback-section" class="result-section feedback-section" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Human-in-the-loop</p>
+            <h3>人工反馈</h3>
+          </div>
+        </div>
+        <p class="muted">测试建议会直接进入修正；新增或修改业务规则需要再次确认。</p>
+        <form id="feedback-form" class="feedback-form">
+          <div class="form-grid">
+            <label>反馈类型
+              <select id="feedback-type">
+                <option value="test_suggestion">测试建议</option>
+                <option value="business_rule">业务规则</option>
+              </select>
+            </label>
+            <label>操作
+              <select id="feedback-action"></select>
+            </label>
+          </div>
+          <label id="feedback-target-label">目标
+            <select id="feedback-target"></select>
+          </label>
+          <label id="feedback-content-label">反馈内容
+            <textarea id="feedback-content" rows="3" placeholder="说明希望新增或修改的场景、预期结果或业务规则。"></textarea>
+          </label>
+          <label id="feedback-priority-label" hidden>调整后的优先级
+            <select id="feedback-priority">
+              <option value="P0">P0</option>
+              <option value="P1">P1</option>
+              <option value="P2">P2</option>
+            </select>
+          </label>
+          <label>原因或依据
+            <textarea id="feedback-reason" rows="2" placeholder="例如：需求原文、遗漏风险或评审结论。"></textarea>
+          </label>
+          <button id="submit-feedback" class="button primary" type="submit">提交人工反馈</button>
+        </form>
+        <p id="feedback-message" class="message notice" hidden></p>
+        <div id="feedback-history" class="feedback-history"></div>
       </section>
 
       <div class="progress-section">

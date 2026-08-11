@@ -96,8 +96,12 @@ def test_native_frontend_is_served_by_fastapi():
     assert "renderTestPoints" in script.text
     assert "renderQuality" in script.text
     assert "downloadReport" in script.text
+    assert "submitFeedback" in script.text
+    assert "confirmBusinessRule" in script.text
     assert "质量评审" in page.text
     assert "最终报告" in page.text
+    assert "人工反馈" in page.text
+    assert "确认规则并继续" in page.text
 
 
 def test_create_get_list_and_delete_task():

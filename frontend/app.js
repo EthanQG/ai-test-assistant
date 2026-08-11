@@ -18,6 +18,10 @@ const elements = {
   clarificationSection: document.querySelector("#clarification-section"),
   clarificationList: document.querySelector("#clarification-list"),
   clarificationButton: document.querySelector("#clarification-button"),
+  businessRuleSection: document.querySelector("#business-rule-section"),
+  businessRuleContent: document.querySelector("#business-rule-content"),
+  confirmBusinessRule: document.querySelector("#confirm-business-rule"),
+  rejectBusinessRule: document.querySelector("#reject-business-rule"),
   flowSteps: [...document.querySelectorAll("#agent-flow span")],
   testPointSection: document.querySelector("#test-point-section"),
   testPointList: document.querySelector("#test-point-list"),
@@ -37,6 +41,19 @@ const elements = {
   reportSection: document.querySelector("#report-section"),
   reportPreview: document.querySelector("#report-preview"),
   downloadReport: document.querySelector("#download-report"),
+  feedbackSection: document.querySelector("#feedback-section"),
+  feedbackForm: document.querySelector("#feedback-form"),
+  feedbackType: document.querySelector("#feedback-type"),
+  feedbackAction: document.querySelector("#feedback-action"),
+  feedbackTargetLabel: document.querySelector("#feedback-target-label"),
+  feedbackTarget: document.querySelector("#feedback-target"),
+  feedbackContentLabel: document.querySelector("#feedback-content-label"),
+  feedbackContent: document.querySelector("#feedback-content"),
+  feedbackPriorityLabel: document.querySelector("#feedback-priority-label"),
+  feedbackPriority: document.querySelector("#feedback-priority"),
+  feedbackReason: document.querySelector("#feedback-reason"),
+  feedbackMessage: document.querySelector("#feedback-message"),
+  feedbackHistory: document.querySelector("#feedback-history"),
 };
 
 let currentTaskId = null;
@@ -46,6 +63,9 @@ let currentPage = 1;
 let testPointVersion = "";
 let activeResultTab = "test-points";
 let reportMarkdown = "";
+let businessRules = [];
+let humanFeedback = [];
+let pendingBusinessFeedback = null;
 const pageSize = 5;
 
 elements.document.addEventListener("change", () => {
@@ -61,6 +81,11 @@ elements.resultTabs.forEach((tab) => {
   tab.addEventListener("click", () => showResultTab(tab.dataset.resultTab));
 });
 elements.downloadReport.addEventListener("click", downloadReport);
+elements.feedbackType.addEventListener("change", renderFeedbackOptions);
+elements.feedbackAction.addEventListener("change", renderFeedbackTarget);
+elements.feedbackForm.addEventListener("submit", submitFeedback);
+elements.confirmBusinessRule.addEventListener("click", () => confirmBusinessRule(true));
+elements.rejectBusinessRule.addEventListener("click", () => confirmBusinessRule(false));
 
 async function startAnalysis() {
   clearMessages();
@@ -108,7 +133,7 @@ async function pollProgress() {
       lockTaskInput(true);
       elements.start.disabled = true;
       elements.start.textContent = "等待补充信息";
-      await loadClarifications();
+      await loadWaitingAction();
       return;
     }
     if (["completed", "failed"].includes(progress.status)) {
@@ -146,9 +171,9 @@ async function renderProgress(progress) {
   if (progress.waiting_for_clarifications) {
     showNotice("补充信息已提交，任务等待重新启动。");
   } else if (progress.status === "waiting_for_user") {
-    showNotice("Agent需要补充信息。问答交互将在下一小阶段接入。");
+    showNotice("Agent已暂停，请在左侧完成需求补充或业务规则确认。");
   } else if (progress.status === "completed") {
-    showNotice("分析已完成。测试点和报告展示将在后续小阶段接入。");
+    showNotice("分析已完成，可以查看测试点、质量评审、人工反馈和最终报告。");
   } else if (progress.status === "failed") {
     showNotice("任务执行失败，请查看上方错误信息后重新创建任务。");
   }
@@ -158,10 +183,13 @@ async function loadResults() {
   const task = await request(`/api/v1/tasks/${currentTaskId}`);
   testPoints = task.state.test_points || [];
   reportMarkdown = task.state.report || "";
+  businessRules = task.state.business_rules || [];
+  humanFeedback = task.state.human_feedback || [];
   currentPage = 1;
   renderTestPoints();
   renderQuality(task.state.review_result);
   renderReport();
+  renderFeedback();
   elements.resultNavigation.hidden = !(
     testPoints.length || task.state.review_result || reportMarkdown
   );
@@ -175,7 +203,185 @@ function showResultTab(name) {
   });
   elements.testPointSection.hidden = name !== "test-points" || testPoints.length === 0;
   elements.qualitySection.hidden = name !== "quality";
+  elements.feedbackSection.hidden = name !== "feedback";
   elements.reportSection.hidden = name !== "report";
+}
+
+function renderFeedback() {
+  renderFeedbackOptions();
+  elements.feedbackHistory.replaceChildren();
+  if (!humanFeedback.length) {
+    appendEmpty(elements.feedbackHistory, "当前尚未提交人工反馈。");
+    return;
+  }
+  humanFeedback.forEach((feedback) => {
+    const item = document.createElement("article");
+    item.className = "feedback-item";
+    const title = document.createElement("strong");
+    title.textContent = `${feedbackTypeLabel(feedback.feedback_type)} · ${actionLabel(feedback.action)}`;
+    const content = document.createElement("p");
+    content.textContent = `${feedback.target}：${feedback.content}`;
+    const status = document.createElement("span");
+    status.textContent = feedbackStatusLabel(feedback.status);
+    item.append(title, content, status);
+    elements.feedbackHistory.append(item);
+  });
+}
+
+function renderFeedbackOptions() {
+  const type = elements.feedbackType.value;
+  const actions = type === "test_suggestion"
+    ? [["add", "新增"], ["modify", "修改"], ["remove", "删除"], ["update_priority", "调整优先级"]]
+    : [["add", "新增"], ["modify", "修改"], ["remove", "删除"]];
+  const selected = elements.feedbackAction.value;
+  elements.feedbackAction.replaceChildren(...actions.map(([value, label]) => option(value, label)));
+  if (actions.some(([value]) => value === selected)) elements.feedbackAction.value = selected;
+  renderFeedbackTarget();
+}
+
+function renderFeedbackTarget() {
+  const type = elements.feedbackType.value;
+  const action = elements.feedbackAction.value;
+  const targets = type === "test_suggestion"
+    ? testPoints.map((point) => point.title).filter(Boolean)
+    : businessRules;
+  const isAdd = action === "add";
+  elements.feedbackTargetLabel.hidden = isAdd;
+  elements.feedbackTarget.replaceChildren(...targets.map((value) => option(value, value)));
+  elements.feedbackContentLabel.hidden = action === "remove" || action === "update_priority";
+  elements.feedbackPriorityLabel.hidden = action !== "update_priority";
+}
+
+function option(value, label) {
+  const item = document.createElement("option");
+  item.value = value;
+  item.textContent = label;
+  return item;
+}
+
+async function submitFeedback(event) {
+  event.preventDefault();
+  clearMessages();
+  const type = elements.feedbackType.value;
+  const action = elements.feedbackAction.value;
+  const targets = type === "test_suggestion" ? testPoints : businessRules;
+  let target = action === "add"
+    ? (type === "test_suggestion" ? "新增测试点" : "新增业务规则")
+    : elements.feedbackTarget.value;
+  let content = elements.feedbackContent.value.trim();
+  if (action === "remove") content = `删除：${target}`;
+  if (action === "update_priority") {
+    content = `将测试点优先级调整为 ${elements.feedbackPriority.value}`;
+  }
+  const reason = elements.feedbackReason.value.trim();
+  if ((!target && action !== "add") || !targets || !content || !reason) {
+    showFeedbackMessage("请填写完整的反馈目标、内容和原因。", true);
+    return;
+  }
+  activeResultTab = "feedback";
+  elements.feedbackForm.querySelector("button").disabled = true;
+  try {
+    const task = await request(`/api/v1/tasks/${currentTaskId}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, feedback_type: type, target, content, reason }),
+    });
+    humanFeedback = task.state.human_feedback || [];
+    businessRules = task.state.business_rules || [];
+    renderFeedback();
+    elements.feedbackForm.reset();
+    renderFeedbackOptions();
+    if (type === "business_rule") {
+      pendingBusinessFeedback = humanFeedback.find((item) => item.status === "pending_confirmation");
+      renderBusinessRuleConfirmation();
+      lockTaskInput(true);
+      elements.start.disabled = true;
+      elements.start.textContent = "等待规则确认";
+      showFeedbackMessage("业务规则已记录，请在左侧确认后继续。", false);
+      return;
+    }
+    showFeedbackMessage("反馈已接收，Agent正在修正并重新评审。", false);
+    await request(`/api/v1/tasks/${currentTaskId}/run`, { method: "POST" });
+    setBusy(true);
+    await pollProgress();
+  } catch (error) {
+    showFeedbackMessage(error.message, true);
+  } finally {
+    elements.feedbackForm.querySelector("button").disabled = false;
+  }
+}
+
+function showFeedbackMessage(message, error) {
+  elements.feedbackMessage.textContent = message;
+  elements.feedbackMessage.className = `message ${error ? "error" : "notice"}`;
+  elements.feedbackMessage.hidden = false;
+}
+
+async function loadWaitingAction() {
+  const task = await request(`/api/v1/tasks/${currentTaskId}`);
+  humanFeedback = task.state.human_feedback || [];
+  pendingBusinessFeedback = humanFeedback.find((item) => item.status === "pending_confirmation") || null;
+  if (pendingBusinessFeedback) {
+    elements.clarificationSection.hidden = true;
+    renderBusinessRuleConfirmation();
+  } else {
+    elements.businessRuleSection.hidden = true;
+    renderClarifications(task.state.open_questions || []);
+  }
+}
+
+function renderBusinessRuleConfirmation() {
+  if (!pendingBusinessFeedback) {
+    elements.businessRuleSection.hidden = true;
+    return;
+  }
+  const lines = [
+    `操作：${actionLabel(pendingBusinessFeedback.action)}`,
+    `目标：${pendingBusinessFeedback.target}`,
+    `规则：${pendingBusinessFeedback.content}`,
+    `依据：${pendingBusinessFeedback.reason}`,
+  ];
+  elements.businessRuleContent.replaceChildren(...lines.map((line) => {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = line;
+    return paragraph;
+  }));
+  elements.businessRuleSection.hidden = false;
+}
+
+async function confirmBusinessRule(confirmed) {
+  if (!pendingBusinessFeedback) return;
+  elements.confirmBusinessRule.disabled = true;
+  elements.rejectBusinessRule.disabled = true;
+  try {
+    await request(`/api/v1/tasks/${currentTaskId}/business-rules/confirmation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feedback_id: pendingBusinessFeedback.feedback_id, confirmed }),
+    });
+    pendingBusinessFeedback = null;
+    elements.businessRuleSection.hidden = true;
+    await request(`/api/v1/tasks/${currentTaskId}/run`, { method: "POST" });
+    setBusy(true);
+    await pollProgress();
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    elements.confirmBusinessRule.disabled = false;
+    elements.rejectBusinessRule.disabled = false;
+  }
+}
+
+function feedbackTypeLabel(value) {
+  return value === "business_rule" ? "业务规则" : "测试建议";
+}
+
+function actionLabel(value) {
+  return { add: "新增", modify: "修改", remove: "删除", update_priority: "调整优先级" }[value] || value;
+}
+
+function feedbackStatusLabel(value) {
+  return { pending_confirmation: "待确认", ready: "待执行", applied: "已应用", rejected: "已取消" }[value] || value;
 }
 
 function renderQuality(review) {
@@ -316,7 +522,10 @@ function categoryLabel(category) {
 
 async function loadClarifications() {
   const task = await request(`/api/v1/tasks/${currentTaskId}`);
-  const questions = task.state.open_questions || [];
+  renderClarifications(task.state.open_questions || []);
+}
+
+function renderClarifications(questions) {
   elements.clarificationList.replaceChildren(...questions.map(questionField));
   elements.clarificationSection.hidden = questions.length === 0;
 }
@@ -462,6 +671,7 @@ function resetWorkspace() {
   elements.revisions.textContent = "0";
   elements.events.innerHTML = "<li>等待提交需求</li>";
   elements.clarificationSection.hidden = true;
+  elements.businessRuleSection.hidden = true;
   elements.clarificationList.replaceChildren();
   elements.clarificationButton.disabled = false;
   elements.flowSteps.forEach((step) => { step.className = ""; });
@@ -470,10 +680,16 @@ function resetWorkspace() {
   testPointVersion = "";
   activeResultTab = "test-points";
   reportMarkdown = "";
+  businessRules = [];
+  humanFeedback = [];
+  pendingBusinessFeedback = null;
   elements.resultNavigation.hidden = true;
   elements.testPointSection.hidden = true;
   elements.qualitySection.hidden = true;
+  elements.feedbackSection.hidden = true;
   elements.reportSection.hidden = true;
+  elements.feedbackMessage.hidden = true;
+  elements.feedbackHistory.replaceChildren();
   elements.testPointList.replaceChildren();
   if (elements.detailDialog.open) elements.detailDialog.close();
   setBusy(false);
