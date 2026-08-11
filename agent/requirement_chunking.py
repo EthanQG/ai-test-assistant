@@ -35,8 +35,8 @@ class RequirementChunker:
     _SENTENCE_END = re.compile(r"[。！？；;]\s*|\n")
 
     def __init__(self, max_chars: int = DEFAULT_REQUIREMENT_CHUNK_CHARS):
-        if max_chars < 500:
-            raise ValueError("requirement chunk max_chars must be at least 500")
+        if max_chars < 250:
+            raise ValueError("requirement chunk max_chars must be at least 250")
         self.max_chars = max_chars
 
     def split(self, requirement: str) -> tuple[RequirementChunk, ...]:

@@ -24,6 +24,9 @@ class RequirementAnalysisError(RuntimeError):
 class RequirementAnalyzer:
     """Analyzes a raw requirement and writes structured results to state."""
 
+    MAX_ADAPTIVE_SPLIT_DEPTH = 3
+    MIN_ADAPTIVE_CHUNK_CHARS = 250
+
     def __init__(
         self,
         llm_service: LLMService | None = None,
@@ -55,12 +58,14 @@ class RequirementAnalyzer:
             )
             context = self.context_builder.build_requirement_analysis(state)
             chunks = self.chunker.split(context.values["requirement"])
+            runtime = {"attempts": 0, "adaptive_splits": 0}
             partial_results = [
                 self._analyze_chunk(
                     chunk,
                     system_prompt=system_prompt,
                     user_clarifications=context.values["user_clarifications"],
                     deferred_questions=context.values["deferred_questions"],
+                    runtime=runtime,
                 )
                 for chunk in chunks
             ]
@@ -97,6 +102,10 @@ class RequirementAnalyzer:
                     ),
                     "requirement_chunk_count": len(chunks),
                     "requirement_chunked": len(chunks) > 1,
+                    "requirement_analysis_attempt_count": runtime["attempts"],
+                    "requirement_adaptive_split_count": runtime[
+                        "adaptive_splits"
+                    ],
                     "context_metrics": context.metrics.to_dict(),
                 },
             )
@@ -118,6 +127,8 @@ class RequirementAnalyzer:
         system_prompt: str,
         user_clarifications: list[dict],
         deferred_questions: list[str],
+        runtime: dict[str, int],
+        depth: int = 0,
     ) -> RequirementAnalysisResult:
         source_label = f"{chunk.chunk_id}｜{chunk.title}"
         user_prompt = self.prompt_service.build_requirement_analysis_prompt(
@@ -126,6 +137,7 @@ class RequirementAnalyzer:
             deferred_questions=deferred_questions,
             source_label=source_label,
         )
+        runtime["attempts"] += 1
         try:
             result = generate_and_parse_json(
                 self.llm_service,
@@ -135,6 +147,20 @@ class RequirementAnalyzer:
                 max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
             )
         except Exception as exc:
+            if self._can_adaptively_split(chunk, exc, depth):
+                runtime["adaptive_splits"] += 1
+                child_results = [
+                    self._analyze_chunk(
+                        child,
+                        system_prompt=system_prompt,
+                        user_clarifications=user_clarifications,
+                        deferred_questions=deferred_questions,
+                        runtime=runtime,
+                        depth=depth + 1,
+                    )
+                    for child in self._split_failed_chunk(chunk)
+                ]
+                return self._merge_results(child_results)
             raise RequirementAnalysisError(
                 f"{source_label} 分析失败: {exc}"
             ) from exc
@@ -156,6 +182,61 @@ class RequirementAnalyzer:
                 )
                 for item in result.clarification_candidates
             ],
+        )
+
+    def _can_adaptively_split(
+        self,
+        chunk: RequirementChunk,
+        error: Exception,
+        depth: int,
+    ) -> bool:
+        return (
+            depth < self.MAX_ADAPTIVE_SPLIT_DEPTH
+            and len(chunk.content) > self.MIN_ADAPTIVE_CHUNK_CHARS
+            and self._is_output_truncation(error)
+        )
+
+    @staticmethod
+    def _is_output_truncation(error: Exception) -> bool:
+        messages = []
+        current: BaseException | None = error
+        while current is not None:
+            messages.append(str(current).casefold())
+            current = current.__cause__
+        combined = " ".join(messages)
+        return any(
+            marker in combined
+            for marker in (
+                "max_tokens",
+                "finish_reason=length",
+                "json被截断",
+            )
+        )
+
+    def _split_failed_chunk(
+        self,
+        chunk: RequirementChunk,
+    ) -> tuple[RequirementChunk, ...]:
+        target = max(
+            self.MIN_ADAPTIVE_CHUNK_CHARS,
+            len(chunk.content) // 2,
+        )
+        local_chunks = RequirementChunker(max_chars=target).split(
+            chunk.content
+        )
+        if len(local_chunks) < 2:
+            raise RequirementAnalysisError(
+                f"{chunk.chunk_id} cannot be split after output truncation"
+            )
+        return tuple(
+            RequirementChunk(
+                chunk_id=f"{chunk.chunk_id}.{index}",
+                title=f"{child.title} / 自适应子片段{index}",
+                content=child.content,
+                start_char=chunk.start_char + child.start_char,
+                end_char=chunk.start_char + child.end_char,
+            )
+            for index, child in enumerate(local_chunks, start=1)
         )
 
     @classmethod

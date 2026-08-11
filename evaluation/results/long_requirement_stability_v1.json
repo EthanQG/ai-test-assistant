@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "fixture": "examples/prd/电商订单履约与优惠结算需求.md",
+  "requirement_chars": 2735,
+  "structured_temperature": 0.0,
+  "output_limits": {
+    "summary_chars": 100,
+    "modules": 12,
+    "requirement_facts": 40,
+    "business_rules": 30,
+    "state_transitions": 20,
+    "inferred_risks": 12,
+    "open_questions": 5
+  },
+  "adaptive_split_max_depth": 3,
+  "runs": [
+    {
+      "model": "deepseek-v4-pro",
+      "completed": false,
+      "timeout_seconds": 480,
+      "note": "真实复验在工具总超时内未完成，没有生成可用结果"
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "completed": true,
+      "elapsed_seconds": 319.55,
+      "status": "waiting_for_user",
+      "initial_chunk_count": 2,
+      "attempt_count": 8,
+      "adaptive_split_count": 2,
+      "result_counts": {
+        "requirement_facts": 75,
+        "business_rules": 45,
+        "state_transitions": 15,
+        "inferred_risks": 46,
+        "open_questions": 3
+      }
+    }
+  ],
+  "conclusion": "自适应拆分可以避免单片段截断直接终止任务，但当前模型与同步执行方式耗时过长，不能视为理想交互体验"
+}

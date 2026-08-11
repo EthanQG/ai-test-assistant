@@ -55,7 +55,27 @@ class DeepSeekClientTests(unittest.TestCase):
             payload["response_format"],
             {"type": "json_object"},
         )
+        self.assertEqual(payload["temperature"], 0.0)
         self.assertEqual(post.call_args.kwargs["timeout"], 30)
+
+    @patch("utils.ai_client.requests.post")
+    def test_plain_text_call_keeps_configured_temperature(self, post):
+        post.return_value = FakeResponse(
+            {
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": "普通文本"},
+                    }
+                ]
+            }
+        )
+        client = client_without_environment()
+
+        client.call("生成文本")
+
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["temperature"], 0.1)
 
     @patch("utils.ai_client.requests.post")
     def test_call_can_override_max_tokens_for_large_json(self, post):

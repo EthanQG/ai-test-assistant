@@ -74,6 +74,24 @@ class FakeLLMService:
         return self.generate(prompt, system_prompt)
 
 
+class TruncateOnceLLMService(FakeLLMService):
+    def generate_json(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        max_tokens: int | None = None,
+    ) -> str:
+        self.received_max_tokens.append(max_tokens)
+        self.last_prompt = prompt
+        self.last_system_prompt = system_prompt
+        self.prompts.append(prompt)
+        if len(self.prompts) == 1:
+            raise ValueError(
+                "LLM输出达到max_tokens限制，结构化JSON被截断"
+            )
+        return self.response
+
+
 class RequirementAnalysisResultTests(unittest.TestCase):
     def test_valid_json_is_parsed(self):
         result = RequirementAnalysisResult.from_json(
@@ -189,7 +207,43 @@ class RequirementAnalyzerTests(unittest.TestCase):
             llm.last_prompt,
         )
         self.assertIn("只输出一个合法 JSON 对象", llm.last_system_prompt)
+        self.assertIn("requirement_facts最多40项", llm.last_system_prompt)
         self.assertEqual(llm.received_max_tokens, [8192])
+
+    def test_truncated_chunk_is_split_and_retried_with_bounded_children(self):
+        llm = TruncateOnceLLMService(
+            json.dumps(valid_analysis_payload(), ensure_ascii=False)
+        )
+        analyzer = RequirementAnalyzer(llm_service=llm)
+        state = TestAnalysisState(
+            requirement="# 订单规则\n" + ("库存不足时拒绝创建订单。" * 70)
+        )
+
+        result = analyzer.analyze(state)
+
+        assert len(llm.prompts) >= 3
+        assert "chunk-001.1" in llm.prompts[1]
+        assert "chunk-001.2" in llm.prompts[2]
+        assert result.requirement_facts == valid_analysis_payload()[
+            "requirement_facts"
+        ]
+        completed = state.events[-1]
+        assert completed.data["requirement_analysis_attempt_count"] == len(
+            llm.prompts
+        )
+        assert completed.data["requirement_adaptive_split_count"] == 1
+
+    def test_non_truncation_error_does_not_trigger_adaptive_split(self):
+        llm = FakeLLMService(error=TimeoutError("model timeout"))
+        analyzer = RequirementAnalyzer(llm_service=llm)
+        state = TestAnalysisState(
+            requirement="# 订单规则\n" + ("库存不足时拒绝创建订单。" * 70)
+        )
+
+        with pytest.raises(RequirementAnalysisError, match="model timeout"):
+            analyzer.analyze(state)
+
+        assert len(llm.prompts) == 1
 
     def test_long_requirement_is_chunked_and_merged_without_duplicates(self):
         payload = valid_analysis_payload()

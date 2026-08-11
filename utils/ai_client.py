@@ -50,7 +50,10 @@ class DeepSeekClient:
             "model": self.config.model,
             "messages": messages,
             "max_tokens": max_tokens or self.config.max_tokens,
-            "temperature": self.config.temperature,
+            "temperature": (
+                0.0 if response_format is not None
+                else self.config.temperature
+            ),
             "stream": False
         }
         if response_format is not None:

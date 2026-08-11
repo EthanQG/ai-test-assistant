@@ -39,12 +39,15 @@ JSON 必须包含且只能使用以下顶层字段：
 
 【字段质量要求】
 - summary 必须是非空字符串。
+- summary 最多100个中文字符，只概括当前片段，不重复罗列规则。
 - 其余字段必须是 JSON 数组。
 - 数组中的字符串必须具体、非空，不使用“正常处理”“符合预期”等空泛表述。
+- 当前片段modules最多12项、requirement_facts最多40项、business_rules最多30项、state_transitions最多20项、inferred_risks最多12项；合并同义项，不重复转述。
+- 除必要的具体依据外，单个字符串尽量控制在160个中文字符以内。
 - inferred_risks 中每一项必须同时包含非空的 risk 和 basis。
 - 如果原始需求没有状态流转，state_transitions 返回空数组。
 - 如果不存在待确认项，open_questions 返回空数组。
-- open_questions 最多返回 10 个候选；每个候选必须包含且只能包含 question、category、blocking_reason、evidence。
+- open_questions 最多返回5个候选；每个候选必须包含且只能包含 question、category、blocking_reason、evidence。
 - category 只能是 core_rule、critical_value、flow_branch、requirement_conflict、implementation_detail 或 low_impact。
 - core_rule 表示核心业务规则缺失；critical_value 表示金额、次数、时限、阈值等关键数字缺失；flow_branch 表示关键成功/失败分支结果缺失；requirement_conflict 表示正文、表格、OCR或图片之间存在冲突。
 - implementation_detail 和 low_impact 不得阻塞流程，会由Python转为风险继续；不得为了凑数量输出它们。

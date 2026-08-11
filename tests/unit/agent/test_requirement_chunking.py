@@ -66,7 +66,7 @@ def test_numbered_business_sentences_are_not_treated_as_section_headings():
 
 
 def test_invalid_input_and_too_small_limit_are_rejected():
-    with pytest.raises(ValueError, match="at least 500"):
+    with pytest.raises(ValueError, match="at least 250"):
         RequirementChunker(max_chars=100)
     with pytest.raises(ValueError, match="cannot be empty"):
         RequirementChunker().split("  ")
