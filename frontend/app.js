@@ -19,10 +19,23 @@ const elements = {
   clarificationList: document.querySelector("#clarification-list"),
   clarificationButton: document.querySelector("#clarification-button"),
   flowSteps: [...document.querySelectorAll("#agent-flow span")],
+  testPointSection: document.querySelector("#test-point-section"),
+  testPointList: document.querySelector("#test-point-list"),
+  pageLabel: document.querySelector("#page-label"),
+  previousPage: document.querySelector("#previous-page"),
+  nextPage: document.querySelector("#next-page"),
+  detailDialog: document.querySelector("#test-point-dialog"),
+  detailTitle: document.querySelector("#detail-title"),
+  detailContent: document.querySelector("#detail-content"),
+  closeDialog: document.querySelector("#close-dialog"),
 };
 
 let currentTaskId = null;
 let pollTimer = null;
+let testPoints = [];
+let currentPage = 1;
+let testPointVersion = "";
+const pageSize = 5;
 
 elements.document.addEventListener("change", () => {
   elements.fileName.textContent = elements.document.files[0]?.name || "尚未选择文件";
@@ -30,6 +43,9 @@ elements.document.addEventListener("change", () => {
 elements.start.addEventListener("click", startAnalysis);
 elements.reset.addEventListener("click", resetWorkspace);
 elements.clarificationButton.addEventListener("click", submitClarifications);
+elements.previousPage.addEventListener("click", () => changePage(-1));
+elements.nextPage.addEventListener("click", () => changePage(1));
+elements.closeDialog.addEventListener("click", () => elements.detailDialog.close());
 
 async function startAnalysis() {
   clearMessages();
@@ -71,7 +87,7 @@ async function pollProgress() {
   if (!currentTaskId) return;
   try {
     const progress = await request(`/api/v1/tasks/${currentTaskId}/progress`);
-    renderProgress(progress);
+    await renderProgress(progress);
     if (progress.status === "waiting_for_user") {
       setBusy(false);
       lockTaskInput(true);
@@ -91,7 +107,7 @@ async function pollProgress() {
   }
 }
 
-function renderProgress(progress) {
+async function renderProgress(progress) {
   const running = ["queued", "running"].includes(progress.execution_status);
   elements.status.textContent = progress.status_label;
   elements.status.className = `status ${statusClass(progress.status)}`;
@@ -103,6 +119,14 @@ function renderProgress(progress) {
   elements.revisions.textContent = progress.automatic_revision_count;
   elements.events.replaceChildren(...progress.recent_events.map(eventItem));
   renderFlow(progress.current_step, progress.status);
+  const resultVersion = [
+    progress.test_point_count, progress.automatic_revision_count,
+    progress.human_revision_count, progress.status,
+  ].join(":");
+  if (progress.test_point_count > 0 && testPointVersion !== resultVersion) {
+    await loadTestPoints();
+    testPointVersion = resultVersion;
+  }
 
   if (progress.waiting_for_clarifications) {
     showNotice("补充信息已提交，任务等待重新启动。");
@@ -113,6 +137,81 @@ function renderProgress(progress) {
   } else if (progress.status === "failed") {
     showNotice("任务执行失败，请查看上方错误信息后重新创建任务。");
   }
+}
+
+async function loadTestPoints() {
+  const task = await request(`/api/v1/tasks/${currentTaskId}`);
+  testPoints = task.state.test_points || [];
+  currentPage = 1;
+  renderTestPoints();
+}
+
+function renderTestPoints() {
+  const totalPages = Math.max(1, Math.ceil(testPoints.length / pageSize));
+  currentPage = Math.min(currentPage, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const visible = testPoints.slice(start, start + pageSize);
+  elements.testPointList.replaceChildren(...visible.map(testPointCard));
+  elements.pageLabel.textContent = `第 ${currentPage} / ${totalPages} 页`;
+  elements.previousPage.disabled = currentPage === 1;
+  elements.nextPage.disabled = currentPage === totalPages;
+  elements.testPointSection.hidden = testPoints.length === 0;
+}
+
+function testPointCard(point, index) {
+  const card = document.createElement("article");
+  card.className = "test-point-card";
+  const heading = document.createElement("div");
+  const title = document.createElement("h4");
+  title.textContent = `${(currentPage - 1) * pageSize + index + 1}. ${point.title || "未命名测试点"}`;
+  const meta = document.createElement("p");
+  meta.className = "test-point-meta";
+  meta.textContent = `${categoryLabel(point.category)} · ${point.priority || "-"}`;
+  const scenario = document.createElement("p");
+  scenario.className = "test-point-scenario";
+  scenario.textContent = point.scenario || "暂无场景摘要";
+  const button = document.createElement("button");
+  button.className = "button secondary detail-button";
+  button.type = "button";
+  button.textContent = "查看详情";
+  button.addEventListener("click", () => openTestPoint(point));
+  heading.append(title, meta);
+  card.append(heading, scenario, button);
+  return card;
+}
+
+function changePage(offset) {
+  currentPage += offset;
+  renderTestPoints();
+}
+
+function openTestPoint(point) {
+  elements.detailTitle.textContent = point.title || "未命名测试点";
+  const sections = [
+    ["前置条件", point.preconditions], ["执行步骤", point.steps],
+    ["预期结果", point.expected_results], ["来源", point.sources],
+  ];
+  elements.detailContent.replaceChildren(...sections.map(detailSection));
+  elements.detailDialog.showModal();
+}
+
+function detailSection([title, values]) {
+  const section = document.createElement("section");
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const list = document.createElement("ol");
+  (values || []).forEach((value) => {
+    const item = document.createElement("li");
+    item.textContent = value;
+    list.append(item);
+  });
+  if (!list.children.length) list.append(Object.assign(document.createElement("li"), { textContent: "无" }));
+  section.append(heading, list);
+  return section;
+}
+
+function categoryLabel(category) {
+  return { functional: "功能", boundary: "边界", exception: "异常", non_functional: "非功能" }[category] || category || "未分类";
 }
 
 async function loadClarifications() {
@@ -266,6 +365,12 @@ function resetWorkspace() {
   elements.clarificationList.replaceChildren();
   elements.clarificationButton.disabled = false;
   elements.flowSteps.forEach((step) => { step.className = ""; });
+  testPoints = [];
+  currentPage = 1;
+  testPointVersion = "";
+  elements.testPointSection.hidden = true;
+  elements.testPointList.replaceChildren();
+  if (elements.detailDialog.open) elements.detailDialog.close();
   setBusy(false);
   clearMessages();
 }

@@ -99,6 +99,21 @@ textarea:focus, .file-picker:focus-within { outline: 2px solid #bfdbfe; border-c
 .metrics div { padding: 14px; border: 1px solid var(--border); border-radius: 9px; }
 .metrics dt { color: var(--muted); font-size: 12px; }
 .metrics dd { margin: 7px 0 0; font-size: 20px; font-weight: 750; }
+.test-point-section { margin: 18px 0; padding-top: 18px; border-top: 1px solid var(--border); }
+.section-heading { display: flex; justify-content: space-between; align-items: start; }
+.section-heading span { color: var(--muted); font-size: 12px; }
+.test-point-card { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.test-point-card h4 { margin: 0; font-size: 14px; }
+.test-point-meta { margin: 5px 0 0; color: var(--blue); font-size: 12px; }
+.test-point-scenario { margin: 9px 0; color: #475467; font-size: 13px; line-height: 1.55; }
+.detail-button { min-height: 32px; padding-inline: 12px; font-size: 12px; }
+.pagination { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.detail-dialog { width: min(680px, calc(100% - 32px)); max-height: 78vh; padding: 26px; border: 0; border-radius: 14px; color: var(--text); }
+.detail-dialog::backdrop { background: rgba(15, 23, 42, .48); backdrop-filter: blur(2px); }
+.dialog-close { position: absolute; top: 14px; right: 16px; border: 0; background: none; cursor: pointer; font-size: 24px; }
+.detail-content { max-height: 55vh; overflow: auto; padding-right: 8px; }
+.detail-content section { padding: 13px 0; border-bottom: 1px solid var(--border); }
+.detail-content ol { margin: 0; padding-left: 22px; color: #475467; line-height: 1.7; font-size: 13px; }
 .progress-section { padding-top: 18px; border-top: 1px solid var(--border); }
 .events { margin: 0; padding-left: 22px; color: #344054; line-height: 1.8; font-size: 14px; }
 .message { margin: 18px 0 0; padding: 11px 13px; border-radius: 8px; font-size: 13px; }

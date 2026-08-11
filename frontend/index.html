@@ -81,6 +81,21 @@
         <div><dt>自动修正</dt><dd id="revision-count">0</dd></div>
       </dl>
 
+      <section id="test-point-section" class="test-point-section" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">分析结果</p>
+            <h3>结构化测试点</h3>
+          </div>
+          <span id="page-label">第 1 / 1 页</span>
+        </div>
+        <div id="test-point-list" class="test-point-list"></div>
+        <div class="pagination">
+          <button id="previous-page" class="button secondary" type="button">上一页</button>
+          <button id="next-page" class="button secondary" type="button">下一页</button>
+        </div>
+      </section>
+
       <div class="progress-section">
         <h3>最近进展</h3>
         <ol id="recent-events" class="events">
@@ -92,6 +107,13 @@
       <p id="task-id" class="task-id"></p>
     </section>
   </main>
+
+  <dialog id="test-point-dialog" class="detail-dialog">
+    <button id="close-dialog" class="dialog-close" type="button" aria-label="关闭">×</button>
+    <p class="eyebrow">测试点详情</p>
+    <h2 id="detail-title"></h2>
+    <div id="detail-content" class="detail-content"></div>
+  </dialog>
 
   <script src="./app.js" defer></script>
 </body>
