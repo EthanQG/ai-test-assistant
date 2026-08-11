@@ -11,11 +11,11 @@
 - 阶段2.16.9第二小步：`b7583a1 阶段2.16.9：接入紧凑ID需求分析`
 - 本地提交尚未推送，由用户手动执行`git push`
 
-## 当前阶段：2.17.3 前端轮询进度接口（已完成）
+## 当前阶段：2.17.4 FastAPI文档上传入口（已完成）
 
-新增`GET /api/v1/tasks/{task_id}/progress`聚合只读进度。前端一次轮询即可获得任务状态、中文状态与阶段、后台执行状态、下一动作、等待补充/规则确认标志、测试点数量、Reviewer评分、自动/人工修正次数、最近3条事件和错误信息，不需要反复下载并理解完整AgentState。
+新增`POST /api/v1/tasks/from-document` multipart入口，支持TXT、Markdown、PDF和DOCX，API层限制20MB。接口只把文件转换为现有`UploadedDocument + CreateTaskCommand`，文档解析、OCR/视觉降级、指标记录和任务创建继续由Application Service及DocumentService完成。
 
-进度映射位于API展示层，只读取TaskView和BackgroundRunStatus；没有修改AgentState、TaskView、Application Service、Runner、Orchestrator或Streamlit。最近事件固定最多3条，避免轮询响应随任务历史持续增长。
+本阶段没有复制Streamlit上传逻辑或文档解析算法，也没有修改AgentState、Application Service、DocumentService、Orchestrator或页面。空文件返回422，超过20MB返回413，解析失败返回422。
 
 ## 上一阶段：2.16.14 V1长PRD完整功能验收（已完成）
 
@@ -102,7 +102,7 @@ git diff --check
 
 ## 下一步建议
 
-下一阶段优先补充API文件上传与统一文档解析入口，使未来前端可以上传PRD；SSE和Vue继续后置。
+下一阶段对2.17后端接口做完整验收和示例化收尾，确认文本/文件创建、后台执行、轮询、暂停恢复和结果读取能够组成一条可供前端调用的链路；暂不开始Vue。
 
 ## 新电脑恢复方式
 

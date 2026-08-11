@@ -5933,3 +5933,25 @@ Runner不断读取最新TaskView；只要任务仍允许自动推进，就调用
 **问：为什么不让前端每次轮询完整任务详情？**
 
 参考答案：完整快照包含需求、全部测试点、报告和事件，体积会随任务增长。进度接口只返回稳定摘要，完成后或用户切换结果页时再读取完整详情，可以降低传输和前端耦合。
+
+## 71. 文件上传为什么仍然要经过Application Service
+
+FastAPI的`UploadFile`只是HTTP对象，不能进入Agent领域层。API读取字节后把它转换成项目已有的`UploadedDocument`，再构造`CreateTaskCommand`：
+
+```text
+multipart文件
+→ UploadFile
+→ UploadedDocument
+→ CreateTaskCommand
+→ Application Service
+→ DocumentService
+→ TaskRepository
+```
+
+这样Streamlit和未来Vue虽然传输方式不同，但正文提取、OCR/视觉降级、指标记录和任务创建规则完全相同。API只负责20MB传输上限、空文件和HTTP错误码。
+
+### 面试问题与参考答案
+
+**问：为什么不在FastAPI接口里直接调用DocumentService？**
+
+参考答案：文档解析是创建任务用例的一部分，还要关联指标、AgentState和Repository保存。如果API直接解析，其他客户端会重复这些步骤，也更容易绕过应用边界。

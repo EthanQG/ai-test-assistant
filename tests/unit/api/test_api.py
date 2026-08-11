@@ -6,11 +6,14 @@ from application.commands import (
     CreateTaskCommand,
     SubmitClarificationsCommand,
     SubmitFeedbackCommand,
+    UploadedDocument,
 )
+from api.main import MAX_UPLOAD_BYTES
 from application.background_runner import BackgroundRunStatus
 from application.models import TaskRecord, TaskView
+from application.service import TestAnalysisApplicationService
 from api.main import create_app
-from repositories import TaskNotFoundError
+from repositories import InMemoryTaskRepository, TaskNotFoundError
 
 
 def _view(requirement: str = "订单需求") -> TaskView:
@@ -103,6 +106,77 @@ def test_blank_requirement_is_rejected_before_application_service():
 
     assert response.status_code == 422
     assert service.calls == []
+
+
+def test_document_upload_builds_application_command():
+    client, service = _client()
+
+    response = client.post(
+        "/api/v1/tasks/from-document",
+        files={
+            "file": (
+                "订单需求.md",
+                "# 订单需求".encode(),
+                "text/markdown",
+            )
+        },
+    )
+
+    command = service.calls[0][1]
+    assert response.status_code == 201
+    assert isinstance(command, CreateTaskCommand)
+    assert command.requirement == ""
+    assert command.uploaded_document == UploadedDocument(
+        filename="订单需求.md",
+        content="# 订单需求".encode(),
+    )
+
+
+def test_document_upload_rejects_empty_and_oversized_files():
+    client, service = _client()
+
+    empty = client.post(
+        "/api/v1/tasks/from-document",
+        files={"file": ("empty.txt", b"", "text/plain")},
+    )
+    oversized = client.post(
+        "/api/v1/tasks/from-document",
+        files={
+            "file": (
+                "large.txt",
+                b"x" * (MAX_UPLOAD_BYTES + 1),
+                "text/plain",
+            )
+        },
+    )
+
+    assert empty.status_code == 422
+    assert oversized.status_code == 413
+    assert service.calls == []
+
+
+def test_document_upload_uses_existing_document_parser_to_create_task():
+    service = TestAnalysisApplicationService(
+        InMemoryTaskRepository(),
+        knowledge_loader=lambda: "",
+    )
+    client = TestClient(create_app(service))
+
+    response = client.post(
+        "/api/v1/tasks/from-document",
+        files={
+            "file": (
+                "订单需求.md",
+                "# 订单需求\n\n库存不足时拒绝创建订单。".encode(),
+                "text/markdown",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["state"]["requirement"] == (
+        "# 订单需求\n\n库存不足时拒绝创建订单。"
+    )
 
 
 def test_advance_expresses_task_action_without_node_name():

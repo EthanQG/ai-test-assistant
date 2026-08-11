@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.encoders import jsonable_encoder
 
 from application.bootstrap import build_session_application_service
@@ -10,6 +10,7 @@ from application.commands import (
     CreateTaskCommand,
     SubmitClarificationsCommand,
     SubmitFeedbackCommand,
+    UploadedDocument,
 )
 from application.service import TestAnalysisApplicationService
 from repositories import TaskNotFoundError
@@ -24,6 +25,9 @@ from .schemas import (
     TaskResponse,
 )
 from .progress import build_task_progress
+
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
 def _response(view) -> TaskResponse:
@@ -77,6 +81,30 @@ def create_app(
         return _response(get_service().create_task(
             CreateTaskCommand(requirement=payload.requirement)
         ))
+
+    @app.post(
+        "/api/v1/tasks/from-document",
+        response_model=TaskResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_task_from_document(
+        file: UploadFile = File(...),
+    ) -> TaskResponse:
+        content = await file.read(MAX_UPLOAD_BYTES + 1)
+        if not content:
+            raise HTTPException(422, "uploaded document cannot be empty")
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "uploaded document exceeds 20 MB")
+        try:
+            view = get_service().create_task(CreateTaskCommand(
+                uploaded_document=UploadedDocument(
+                    filename=file.filename or "",
+                    content=content,
+                )
+            ))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return _response(view)
 
     @app.get("/api/v1/tasks", response_model=list[TaskResponse])
     def list_tasks() -> list[TaskResponse]:

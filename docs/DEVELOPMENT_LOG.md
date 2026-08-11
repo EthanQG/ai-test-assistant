@@ -84,6 +84,7 @@
 | 阶段 2.17.1 | 已完成 | FastAPI同步任务与用户动作接口、Swagger和pytest | 本次提交 |
 | 阶段 2.17.2 | 已完成 | 单进程后台执行、幂等启动和执行状态查询 | 本次提交 |
 | 阶段 2.17.3 | 已完成 | 聚合任务状态、阶段、指标与最近事件的前端轮询接口 | 本次提交 |
+| 阶段 2.17.4 | 已完成 | FastAPI文档上传、输入限制与现有解析用例复用 | 本次提交 |
 | 阶段 2.16 | 进行中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
@@ -3861,3 +3862,25 @@ git diff --check
 ### 验证结果
 
 API测试覆盖响应字段、中文映射、等待补充状态、Reviewer评分和最近事件上限。默认测试使用Fake Service与Fake Runner，不调用外部服务。
+
+## 阶段 2.17.4：FastAPI文档上传入口
+
+### 本阶段目标
+
+让未来独立前端可以上传PRD文件创建任务，同时保持Streamlit和FastAPI共用同一套文档解析与任务创建逻辑。
+
+### 修改内容
+
+- 新增`POST /api/v1/tasks/from-document` multipart接口；
+- 接受TXT、Markdown、PDF和DOCX，具体格式校验仍由DocumentService负责；
+- API输入上限为20MB，空文件返回422，超限返回413；
+- 上传内容转换为`UploadedDocument`并交给现有`CreateTaskCommand`；
+- 增加`python-multipart`运行依赖。
+
+### 代码边界
+
+FastAPI不解析正文、表格或图片，也不直接创建AgentState。Application Service继续负责文档解析、指标收集、TaskRecord创建和Repository保存，因此页面与API不会形成两套业务实现。
+
+### 验证结果
+
+测试覆盖Command转换、空文件、20MB上限，并通过真实Application Service和现有Markdown解析器验证上传后创建的任务保存了解析正文。默认测试不调用真实OCR、视觉模型、LLM、MySQL或Milvus。
