@@ -6,10 +6,18 @@ from services.prompt_service import PromptService
 
 from .events import AgentStep
 from .clarification_policy import ClarificationQuestionPolicy
+from .compact_requirement_analysis import (
+    CompactGlobalQuestions,
+    CompactRequirementBatch,
+)
 from .context_builder import ContextBuilder
 from .models import RequirementAnalysisResult
 from .models import ClarificationCandidate, InferredRisk
 from .requirement_chunking import RequirementChunk, RequirementChunker
+from .requirement_statements import (
+    RequirementStatement,
+    RequirementStatementExtractor,
+)
 from .state import AgentStatus, TestAnalysisState
 from .structured_output import (
     LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
@@ -26,6 +34,8 @@ class RequirementAnalyzer:
 
     MAX_ADAPTIVE_SPLIT_DEPTH = 3
     MIN_ADAPTIVE_CHUNK_CHARS = 250
+    COMPACT_OUTPUT_MAX_TOKENS = 4_096
+    GLOBAL_QUESTION_MAX_TOKENS = 2_048
 
     def __init__(
         self,
@@ -34,6 +44,7 @@ class RequirementAnalyzer:
         clarification_policy: ClarificationQuestionPolicy | None = None,
         context_builder: ContextBuilder | None = None,
         chunker: RequirementChunker | None = None,
+        statement_extractor: RequirementStatementExtractor | None = None,
     ):
         self.llm_service = llm_service or LLMService()
         self.prompt_service = prompt_service or PromptService()
@@ -42,6 +53,9 @@ class RequirementAnalyzer:
         )
         self.context_builder = context_builder or ContextBuilder()
         self.chunker = chunker or RequirementChunker()
+        self.statement_extractor = (
+            statement_extractor or RequirementStatementExtractor()
+        )
 
     def analyze(
         self,
@@ -59,21 +73,41 @@ class RequirementAnalyzer:
             context = self.context_builder.build_requirement_analysis(state)
             chunks = self.chunker.split(context.values["requirement"])
             runtime = {"attempts": 0, "adaptive_splits": 0}
-            partial_results = [
-                self._analyze_chunk(
-                    chunk,
-                    system_prompt=system_prompt,
-                    user_clarifications=context.values["user_clarifications"],
-                    deferred_questions=context.values["deferred_questions"],
-                    runtime=runtime,
+            compact_contract = len(chunks) > 1
+            statement_count = 0
+            if compact_contract:
+                result, raw_candidate_count, statement_count = (
+                    self._analyze_compact_requirement(
+                        chunks,
+                        user_clarifications=context.values[
+                            "user_clarifications"
+                        ],
+                        deferred_questions=context.values[
+                            "deferred_questions"
+                        ],
+                        runtime=runtime,
+                    )
                 )
-                for chunk in chunks
-            ]
-            result = self._merge_results(partial_results)
-            raw_candidate_count = sum(
-                len(item.clarification_candidates)
-                for item in partial_results
-            )
+            else:
+                partial_results = [
+                    self._analyze_chunk(
+                        chunk,
+                        system_prompt=system_prompt,
+                        user_clarifications=context.values[
+                            "user_clarifications"
+                        ],
+                        deferred_questions=context.values[
+                            "deferred_questions"
+                        ],
+                        runtime=runtime,
+                    )
+                    for chunk in chunks
+                ]
+                result = self._merge_results(partial_results)
+                raw_candidate_count = sum(
+                    len(item.clarification_candidates)
+                    for item in partial_results
+                )
             selection = self.clarification_policy.select(
                 result.clarification_candidates,
                 deferred_questions=state.deferred_questions,
@@ -102,6 +136,8 @@ class RequirementAnalyzer:
                     ),
                     "requirement_chunk_count": len(chunks),
                     "requirement_chunked": len(chunks) > 1,
+                    "requirement_compact_contract": compact_contract,
+                    "requirement_statement_count": statement_count,
                     "requirement_analysis_attempt_count": runtime["attempts"],
                     "requirement_adaptive_split_count": runtime[
                         "adaptive_splits"
@@ -119,6 +155,131 @@ class RequirementAnalyzer:
             raise RequirementAnalysisError(
                 f"requirement analysis failed: {exc}"
             ) from exc
+
+    def _analyze_compact_requirement(
+        self,
+        chunks: tuple[RequirementChunk, ...],
+        *,
+        user_clarifications: list[dict],
+        deferred_questions: list[str],
+        runtime: dict[str, int],
+    ) -> tuple[RequirementAnalysisResult, int, int]:
+        statements = self.statement_extractor.extract(chunks)
+        catalog = {item.statement_id: item for item in statements}
+        batches = [
+            tuple(item for item in statements if item.chunk_id == chunk.chunk_id)
+            for chunk in chunks
+        ]
+        results = [
+            self._analyze_statement_batch(batch, catalog, runtime=runtime)
+            for batch in batches
+            if batch
+        ]
+        result = self._merge_results(results)
+        confirmed = [
+            f"用户补充确认：{item['question']}；答案：{item['answer']}"
+            for item in user_clarifications
+            if item.get("answer")
+        ]
+        if confirmed:
+            result = replace(
+                result,
+                requirement_facts=self._unique(
+                    [*result.requirement_facts, *confirmed]
+                ),
+            )
+        questions = self._generate_global_questions(
+            statements,
+            catalog,
+            user_clarifications=user_clarifications,
+            deferred_questions=deferred_questions,
+            runtime=runtime,
+        )
+        return (
+            replace(result, clarification_candidates=list(questions)),
+            len(questions),
+            len(statements),
+        )
+
+    def _analyze_statement_batch(
+        self,
+        statements: tuple[RequirementStatement, ...],
+        catalog: dict[str, RequirementStatement],
+        *,
+        runtime: dict[str, int],
+        depth: int = 0,
+    ) -> RequirementAnalysisResult:
+        allowed_ids = {item.statement_id for item in statements}
+        prompt = self.prompt_service.build_statement_analysis_prompt(
+            [item.to_prompt_dict() for item in statements]
+        )
+        system_prompt = self.prompt_service.load_system_prompt(
+            "requirement_statement_analysis"
+        )
+        runtime["attempts"] += 1
+        try:
+            batch = generate_and_parse_json(
+                self.llm_service,
+                prompt,
+                system_prompt,
+                lambda raw: CompactRequirementBatch.from_json(
+                    raw, allowed_ids
+                ),
+                max_tokens=self.COMPACT_OUTPUT_MAX_TOKENS,
+            )
+        except Exception as exc:
+            if (
+                depth < self.MAX_ADAPTIVE_SPLIT_DEPTH
+                and len(statements) > 1
+                and self._is_output_truncation(exc)
+            ):
+                runtime["adaptive_splits"] += 1
+                middle = len(statements) // 2
+                return self._merge_results(
+                    [
+                        self._analyze_statement_batch(
+                            part,
+                            catalog,
+                            runtime=runtime,
+                            depth=depth + 1,
+                        )
+                        for part in (
+                            statements[:middle], statements[middle:]
+                        )
+                        if part
+                    ]
+                )
+            raise RequirementAnalysisError(
+                "compact statement analysis failed: " + str(exc)
+            ) from exc
+        return batch.to_requirement_result(catalog)
+
+    def _generate_global_questions(
+        self,
+        statements: tuple[RequirementStatement, ...],
+        catalog: dict[str, RequirementStatement],
+        *,
+        user_clarifications: list[dict],
+        deferred_questions: list[str],
+        runtime: dict[str, int],
+    ) -> tuple[ClarificationCandidate, ...]:
+        prompt = self.prompt_service.build_global_questions_prompt(
+            [item.to_prompt_dict() for item in statements],
+            user_clarifications=user_clarifications,
+            deferred_questions=deferred_questions,
+        )
+        system_prompt = self.prompt_service.load_system_prompt(
+            "requirement_global_questions"
+        )
+        runtime["attempts"] += 1
+        result = generate_and_parse_json(
+            self.llm_service,
+            prompt,
+            system_prompt,
+            lambda raw: CompactGlobalQuestions.from_json(raw, catalog),
+            max_tokens=self.GLOBAL_QUESTION_MAX_TOKENS,
+        )
+        return result.candidates
 
     def _analyze_chunk(
         self,

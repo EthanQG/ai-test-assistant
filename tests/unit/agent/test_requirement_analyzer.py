@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 
 import pytest
@@ -90,6 +91,60 @@ class TruncateOnceLLMService(FakeLLMService):
                 "LLM输出达到max_tokens限制，结构化JSON被截断"
             )
         return self.response
+
+
+class CompactFlowLLMService(FakeLLMService):
+    def __init__(self, *, truncate_first: bool = False):
+        super().__init__()
+        self.truncate_first = truncate_first
+
+    def generate_json(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        max_tokens: int | None = None,
+    ) -> str:
+        self.received_max_tokens.append(max_tokens)
+        self.last_prompt = prompt
+        self.last_system_prompt = system_prompt
+        self.prompts.append(prompt)
+        if self.truncate_first and len(self.prompts) == 1:
+            raise ValueError(
+                "LLM输出达到max_tokens限制，结构化JSON被截断"
+            )
+        statement_ids = list(dict.fromkeys(
+            re.findall(r'"id":"(S\d+)"', prompt)
+        ))
+        if "缺口审核专家" in system_prompt:
+            return json.dumps(
+                {
+                    "open_questions": [
+                        {
+                            "question": "支付与关闭并发时哪个状态优先？",
+                            "category": "flow_branch",
+                            "blocking_reason": "无法确定最终订单状态",
+                            "evidence_ids": [statement_ids[0]],
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "summary": "订单规则",
+                "modules": ["订单"],
+                "fact_ids": statement_ids,
+                "business_rule_ids": statement_ids[:1],
+                "state_transition_ids": [],
+                "inferred_risks": [
+                    {
+                        "risk": "重复请求可能重复处理",
+                        "basis_ids": statement_ids[:1],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
 
 
 class RequirementAnalysisResultTests(unittest.TestCase):
@@ -211,23 +266,17 @@ class RequirementAnalyzerTests(unittest.TestCase):
         self.assertEqual(llm.received_max_tokens, [8192])
 
     def test_truncated_chunk_is_split_and_retried_with_bounded_children(self):
-        llm = TruncateOnceLLMService(
-            json.dumps(valid_analysis_payload(), ensure_ascii=False)
-        )
+        llm = CompactFlowLLMService(truncate_first=True)
         analyzer = RequirementAnalyzer(llm_service=llm)
         state = TestAnalysisState(
-            requirement="# 订单规则\n" + ("库存不足时拒绝创建订单。" * 70)
+            requirement="# 订单规则\n" + ("库存不足时拒绝创建订单。" * 200)
         )
 
         result = analyzer.analyze(state)
 
         assert len(llm.prompts) >= 3
-        assert "chunk-001.1" in llm.prompts[1]
-        assert "chunk-001.2" in llm.prompts[2]
-        assert result.requirement_facts == valid_analysis_payload()[
-            "requirement_facts"
-        ]
-        completed = state.events[-1]
+        assert result.requirement_facts
+        completed = state.events[-2]
         assert completed.data["requirement_analysis_attempt_count"] == len(
             llm.prompts
         )
@@ -246,11 +295,7 @@ class RequirementAnalyzerTests(unittest.TestCase):
         assert len(llm.prompts) == 1
 
     def test_long_requirement_is_chunked_and_merged_without_duplicates(self):
-        payload = valid_analysis_payload()
-        payload["open_questions"] = [
-            clarification_candidate("支付与关闭并发时哪个状态优先？")
-        ]
-        llm = FakeLLMService(json.dumps(payload, ensure_ascii=False))
+        llm = CompactFlowLLMService()
         analyzer = RequirementAnalyzer(llm_service=llm)
         state = TestAnalysisState(
             requirement="".join(
@@ -262,14 +307,16 @@ class RequirementAnalyzerTests(unittest.TestCase):
         result = analyzer.analyze(state)
 
         assert len(llm.received_max_tokens) > 1
-        assert all(value == 8192 for value in llm.received_max_tokens)
-        assert result.requirement_facts == payload["requirement_facts"]
+        assert set(llm.received_max_tokens) == {4096, 2048}
+        assert result.requirement_facts
         assert len(result.inferred_risks) == 1
-        assert result.inferred_risks[0].basis.startswith("[chunk-001｜")
+        assert result.inferred_risks[0].basis.startswith("[S001｜")
         assert state.open_questions == ["支付与关闭并发时哪个状态优先？"]
-        assert "【当前片段来源】" in llm.prompts[0]
+        assert "S001" in llm.prompts[0]
         assert state.events[-2].data["requirement_chunked"] is True
         assert state.events[-2].data["requirement_chunk_count"] > 1
+        assert state.events[-2].data["requirement_compact_contract"] is True
+        assert state.events[-2].data["requirement_statement_count"] > 1
 
     def test_chunk_failure_identifies_source_and_fails_whole_task(self):
         analyzer = RequirementAnalyzer(
@@ -279,11 +326,14 @@ class RequirementAnalyzerTests(unittest.TestCase):
             requirement="# 第一章\n" + ("库存规则。" * 400)
         )
 
-        with pytest.raises(RequirementAnalysisError, match="chunk-001"):
+        with pytest.raises(
+            RequirementAnalysisError,
+            match="compact statement analysis failed",
+        ):
             analyzer.analyze(state)
 
         assert state.status is AgentStatus.FAILED
-        assert "chunk-001" in state.error_message
+        assert "compact statement analysis failed" in state.error_message
 
     def test_open_questions_put_task_in_waiting_state(self):
         payload = valid_analysis_payload()

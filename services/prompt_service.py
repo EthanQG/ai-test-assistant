@@ -88,6 +88,46 @@ class PromptService:
         return prompt
 
     @staticmethod
+    def build_statement_analysis_prompt(statements: list[dict]) -> str:
+        if not statements:
+            raise ValueError("statements cannot be empty")
+        return (
+            "请分类以下带ID的原文陈述，只返回JSON。\n\n"
+            + json.dumps(statements, ensure_ascii=False, separators=(",", ":"))
+        )
+
+    @staticmethod
+    def build_global_questions_prompt(
+        statements: list[dict],
+        user_clarifications: list[dict] | None = None,
+        deferred_questions: list[str] | None = None,
+    ) -> str:
+        if not statements:
+            raise ValueError("statements cannot be empty")
+        sections = [
+            "请基于整份需求判断是否仍有阻塞型业务问题，只返回JSON。",
+            "【全部原文陈述】\n" + json.dumps(
+                statements, ensure_ascii=False, separators=(",", ":")
+            ),
+        ]
+        if user_clarifications:
+            sections.append(
+                "【用户补充确认】\n" + json.dumps(
+                    user_clarifications, ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+        if deferred_questions:
+            sections.append(
+                "【用户暂不确认且不得再次询问】\n" + json.dumps(
+                    deferred_questions, ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+        return "\n\n".join(sections)
+
+
+    @staticmethod
     def build_structured_test_points_prompt(
         requirement_analysis: dict,
         local_bug_knowledge: str | None = None,
