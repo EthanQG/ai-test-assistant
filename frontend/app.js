@@ -79,6 +79,7 @@ let humanFeedback = [];
 let pendingBusinessFeedback = null;
 let currentTaskStatus = null;
 let currentTaskName = "";
+let activeDeleteConfirmation = null;
 const pageSize = 5;
 const historyPageSize = 10;
 let historyOffset = 0;
@@ -108,8 +109,10 @@ elements.historyQuery.addEventListener("keydown", (event) => {
 });
 elements.previousHistoryPage.addEventListener("click", () => changeHistoryPage(-1));
 elements.nextHistoryPage.addEventListener("click", () => changeHistoryPage(1));
+elements.historyList.addEventListener("scroll", closeDeleteConfirmation);
 
 async function loadHistory() {
+  closeDeleteConfirmation();
   const query = encodeURIComponent(elements.historyQuery.value.trim());
   try {
     const page = await request(
@@ -155,21 +158,38 @@ function historyItem(summary) {
   remove.textContent = "×";
   remove.title = "删除任务";
   remove.setAttribute("aria-label", `删除任务：${title.textContent}`);
-  const confirmation = deleteConfirmation(summary);
   remove.addEventListener("click", () => {
-    document.querySelectorAll(".history-delete-confirmation").forEach((node) => {
-      if (node !== confirmation) node.hidden = true;
-    });
-    confirmation.hidden = !confirmation.hidden;
+    showDeleteConfirmation(summary, remove);
   });
-  item.append(open, remove, confirmation);
+  item.append(open, remove);
   return item;
+}
+
+function showDeleteConfirmation(summary, anchor) {
+  closeDeleteConfirmation();
+  const popover = deleteConfirmation(summary);
+  document.body.append(popover);
+  activeDeleteConfirmation = popover;
+  const anchorRect = anchor.getBoundingClientRect();
+  const popoverRect = popover.getBoundingClientRect();
+  let top = anchorRect.top - popoverRect.height - 6;
+  if (top < 8) top = anchorRect.bottom + 6;
+  const left = Math.min(
+    window.innerWidth - popoverRect.width - 8,
+    Math.max(8, anchorRect.right - popoverRect.width),
+  );
+  popover.style.top = `${top}px`;
+  popover.style.left = `${left}px`;
+}
+
+function closeDeleteConfirmation() {
+  if (activeDeleteConfirmation) activeDeleteConfirmation.remove();
+  activeDeleteConfirmation = null;
 }
 
 function deleteConfirmation(summary) {
   const popover = document.createElement("div");
   popover.className = "history-delete-confirmation";
-  popover.hidden = true;
   const message = document.createElement("p");
   message.textContent = "确认删除此任务？";
   const actions = document.createElement("div");
@@ -177,7 +197,7 @@ function deleteConfirmation(summary) {
   cancel.className = "button secondary";
   cancel.type = "button";
   cancel.textContent = "取消";
-  cancel.addEventListener("click", () => { popover.hidden = true; });
+  cancel.addEventListener("click", closeDeleteConfirmation);
   const confirm = document.createElement("button");
   confirm.className = "button danger";
   confirm.type = "button";
@@ -192,6 +212,7 @@ async function deleteHistoryTask(summary, confirmButton) {
   confirmButton.disabled = true;
   try {
     await request(`/api/v1/tasks/${summary.task_id}`, { method: "DELETE" });
+    closeDeleteConfirmation();
     if (summary.task_id === currentTaskId) resetWorkspace();
     await loadHistory();
   } catch (error) {
@@ -879,6 +900,7 @@ function clearMessages() {
 }
 
 function resetWorkspace() {
+  closeDeleteConfirmation();
   if (pollTimer) window.clearTimeout(pollTimer);
   currentTaskId = null;
   currentTaskStatus = null;

@@ -194,6 +194,8 @@ def test_native_frontend_exposes_history_and_restore_entry():
     assert 'method: "DELETE"' in script
     assert "deleteConfirmation" in script
     assert "window.confirm" not in script
+    assert "document.body.append(popover)" in script
+    assert "getBoundingClientRect" in script
 
 
 def test_completed_result_can_be_confirmed_and_indexed_as_knowledge():
@@ -253,6 +255,14 @@ def test_native_frontend_requires_explicit_knowledge_safety_confirmation():
     assert 'id="data-safety-confirmed"' in page
     assert "/knowledge-assets" in script
     assert "dataSafetyConfirmed.checked" in script
+
+
+def test_native_frontend_uses_viewport_workspace_and_internal_panel_scroll():
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "height: calc(100vh - 108px)" in styles
+    assert "html, body { height: 100%; overflow: hidden; }" in styles
+    assert "overflow-y: auto" in styles
 
 
 def test_blank_requirement_is_rejected_before_application_service():
