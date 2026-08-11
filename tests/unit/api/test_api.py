@@ -1,3 +1,5 @@
+import re
+
 from fastapi.testclient import TestClient
 
 from agent import TestAnalysisState
@@ -8,7 +10,7 @@ from application.commands import (
     SubmitFeedbackCommand,
     UploadedDocument,
 )
-from api.main import MAX_UPLOAD_BYTES
+from api.main import FRONTEND_DIR, MAX_UPLOAD_BYTES
 from application.background_runner import BackgroundRunStatus
 from application.models import TaskRecord, TaskView
 from application.service import TestAnalysisApplicationService
@@ -102,6 +104,17 @@ def test_native_frontend_is_served_by_fastapi():
     assert "最终报告" in page.text
     assert "人工反馈" in page.text
     assert "确认规则并继续" in page.text
+
+
+def test_frontend_javascript_element_ids_exist_in_page():
+    page = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    page_ids = set(re.findall(r'\bid="([^"]+)"', page))
+    script_ids = set(re.findall(r'querySelector\("#([^"]+)"\)', script))
+
+    assert script_ids
+    assert script_ids <= page_ids
 
 
 def test_create_get_list_and_delete_task():

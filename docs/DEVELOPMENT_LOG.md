@@ -91,6 +91,7 @@
 | 阶段 2.18.3 | 已完成 | 结构化测试点分页、结果刷新和详情Dialog | 本次提交 |
 | 阶段 2.18.4 | 已完成 | Reviewer质量结果、Markdown报告预览与下载 | 本次提交 |
 | 阶段 2.18.5 | 已完成 | 人工反馈、业务规则二次确认与同任务恢复 | 本次提交 |
+| 阶段 2.18.6 | 已完成 | Web主链路HTTP验收与DOM元素契约检查 | 本次提交 |
 | 阶段 2.16 | 进行中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
@@ -4024,3 +4025,26 @@ API测试确认根路径重定向、Web页面与脚本可访问；现有FastAPI�
 ### 验证结果
 
 API、Application Service和HumanFeedback领域专项测试通过；静态资源测试确认反馈提交与业务规则确认逻辑已发布。真实浏览器完整交互验收留到2.18.6统一执行。
+
+## 阶段 2.18.6：原生Web主链路自动化验收
+
+### 验收链路
+
+```text
+Markdown上传 → 后台运行 → 等待需求补充 → 同task_id恢复
+→ 测试点/评审/报告 → 测试建议 → Reviser/Reviewer/Finalizer
+→ 业务规则待确认 → 确认并修正 → 取消另一条未确认规则
+```
+
+### 自动化证据
+
+- 使用真实FastAPI路由、Application Service、TaskBackgroundRunner和InMemory Repository；
+- 使用脚本化Orchestrator隔离LLM、Embedding、Milvus和MySQL；
+- 断言反馈状态从`ready`变为`applied`，人工修正次数递增；
+- 断言业务规则确认后写入，取消后保持`rejected`且不写入；
+- 前端DOM契约测试核对JavaScript查询的所有元素ID；
+- 本地HTTP检查确认页面、脚本及新增交互标识返回成功。
+
+### 未形成的证据
+
+Codex桌面浏览器控制环境因组件路径缺失无法启动，因此本阶段没有自动生成真实浏览器点击截图。该限制不影响HTTP和应用链路测试结果，但在冻结V1前仍需用户手动完成一次页面点击体验。

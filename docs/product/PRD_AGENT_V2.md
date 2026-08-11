@@ -5,11 +5,11 @@
 | 项目 | 内容 |
 |---|---|
 | 产品名称 | Test Analysis Agent |
-| 文档版本 | V2.50 |
+| 文档版本 | V2.51 |
 | 更新时间 | 2026-08-11 |
 | 文档状态 | 当前有效 |
-| 产品阶段 | Streamlit V1演示、可靠知识资产闭环、OCR与有界多模态代码边界完成 |
-| 当前界面 | Streamlit |
+| 产品阶段 | FastAPI与原生Web V1演示、可靠知识资产闭环、OCR与有界多模态代码边界完成 |
+| 当前界面 | 原生Web V1、Streamlit兼容演示页 |
 | 当前模型 | DeepSeek 兼容 Chat Completions API |
 | 历史版本 | [Workflow PRD V1](../archive/PRD_WORKFLOW_V1.md) |
 
@@ -733,6 +733,7 @@ HTML、CSS和JavaScript建立独立前端，不引入npm或框架；当前已完
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| V2.51 | 2026-08-11 | 完成Web主链路自动化验收并补充前端DOM契约检查 |
 | V2.50 | 2026-08-11 | 增加Web人工反馈、业务规则二次确认与同任务恢复 |
 | V2.49 | 2026-08-11 | 增加Web质量评审、最终Markdown报告预览与下载 |
 | V2.48 | 2026-08-11 | 增加Web结构化测试点分页、中文标签和详情Dialog |

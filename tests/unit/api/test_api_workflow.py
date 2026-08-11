@@ -7,6 +7,7 @@ from agent import (
     KnowledgeRetrievalStatus,
     OrchestratorAction,
     OrchestratorDecision,
+    HumanFeedbackHandler,
 )
 from application.background_runner import TaskBackgroundRunner
 from application.service import TestAnalysisApplicationService
@@ -45,6 +46,13 @@ class ScriptedOrchestrator:
             "补充信息后重新分析",
         )
 
+    def queue_feedback_cycle(self):
+        self._steps.extend([
+            (OrchestratorAction.REVISE_TEST_POINTS, self._revise_feedback),
+            (OrchestratorAction.REVIEW_TEST_POINTS, self._review),
+            (OrchestratorAction.FINALIZE, self._finalize),
+        ])
+
     @staticmethod
     def _analyze(state):
         state.start_step(AgentStep.ANALYZE_REQUIREMENT, "开始分析需求")
@@ -70,6 +78,19 @@ class ScriptedOrchestrator:
         state.review_result = {"score": 90}
         state.review_passed = True
         state.complete_step(AgentStep.REVIEW_TEST_POINTS, "质量评审完成")
+
+    @staticmethod
+    def _revise_feedback(state):
+        state.start_step(AgentStep.REVISE_TEST_POINTS, "开始处理人工反馈")
+        applied = HumanFeedbackHandler.mark_ready_as_applied(state)
+        state.human_revision_count += 1
+        state.review_result = None
+        state.review_passed = None
+        state.complete_step(
+            AgentStep.REVISE_TEST_POINTS,
+            "人工反馈修正完成",
+            {"applied_feedback_count": applied},
+        )
 
     @staticmethod
     def _finalize(state):
@@ -128,5 +149,68 @@ def test_fastapi_v1_file_background_pause_resume_and_result_flow():
         assert completed["reviewer_score"] == 90
         assert detail["state"]["report"].startswith("# 测试分析报告")
         assert detail["state"]["user_clarifications"][0]["answer"] == "拒绝创建订单"
+
+        orchestrator.queue_feedback_cycle()
+        suggestion = client.post(
+            f"/api/v1/tasks/{task_id}/feedback",
+            json={
+                "action": "add",
+                "feedback_type": "test_suggestion",
+                "target": "新增测试点",
+                "content": "补充并发扣减库存场景",
+                "reason": "覆盖幂等与超卖风险",
+            },
+        )
+        assert suggestion.json()["state"]["task_id"] == task_id
+        assert suggestion.json()["state"]["human_feedback"][-1]["status"] == "ready"
+        assert client.post(f"/api/v1/tasks/{task_id}/run").status_code == 202
+        _wait_for_status(client, task_id, "completed")
+        after_suggestion = client.get(f"/api/v1/tasks/{task_id}").json()
+        assert after_suggestion["state"]["human_revision_count"] == 1
+        assert after_suggestion["state"]["human_feedback"][-1]["status"] == "applied"
+
+        business = client.post(
+            f"/api/v1/tasks/{task_id}/feedback",
+            json={
+                "action": "add",
+                "feedback_type": "business_rule",
+                "target": "新增业务规则",
+                "content": "库存扣减失败时不得创建订单",
+                "reason": "产品补充规则",
+            },
+        )
+        pending = business.json()["state"]["human_feedback"][-1]
+        assert business.json()["state"]["status"] == "waiting_for_user"
+        assert pending["status"] == "pending_confirmation"
+
+        orchestrator.queue_feedback_cycle()
+        confirmed = client.post(
+            f"/api/v1/tasks/{task_id}/business-rules/confirmation",
+            json={"feedback_id": pending["feedback_id"], "confirmed": True},
+        )
+        assert confirmed.json()["state"]["task_id"] == task_id
+        assert "库存扣减失败时不得创建订单" in confirmed.json()["state"]["business_rules"]
+        assert client.post(f"/api/v1/tasks/{task_id}/run").status_code == 202
+        _wait_for_status(client, task_id, "completed")
+        after_rule = client.get(f"/api/v1/tasks/{task_id}").json()
+        assert after_rule["state"]["human_revision_count"] == 2
+        assert after_rule["state"]["human_feedback"][-1]["status"] == "applied"
+
+        cancelled = client.post(
+            f"/api/v1/tasks/{task_id}/feedback",
+            json={
+                "action": "add",
+                "feedback_type": "business_rule",
+                "target": "新增业务规则",
+                "content": "无依据的临时规则",
+                "reason": "用于验证取消流程",
+            },
+        ).json()["state"]["human_feedback"][-1]
+        rejected = client.post(
+            f"/api/v1/tasks/{task_id}/business-rules/confirmation",
+            json={"feedback_id": cancelled["feedback_id"], "confirmed": False},
+        ).json()
+        assert rejected["state"]["human_feedback"][-1]["status"] == "rejected"
+        assert "无依据的临时规则" not in rejected["state"]["business_rules"]
     finally:
         runner.shutdown()

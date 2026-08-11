@@ -7,14 +7,14 @@
 ## Git基线
 
 - 分支：`main`
-- 上一提交：`41360b7 阶段2.18.4：增加Web质量评审与报告展示`
+- 上一提交：`393309d 阶段2.18.5：增加Web人工反馈与规则确认`
 - 本地提交尚未推送，由用户手动执行`git push`
 
-## 当前阶段：2.18.5 Web人工反馈与业务规则确认（已完成）
+## 当前阶段：2.18.6 原生Web主链路自动化验收（已完成）
 
-原生Web结果区增加“人工反馈”导航，支持新增、修改、删除测试建议和调整优先级，也支持新增、修改、删除业务规则。测试建议提交后调用既有后台运行入口，由Orchestrator决定修正与重新评审；业务规则先进入待确认状态，用户在左侧确认或取消后再恢复同一任务。
+FastAPI端到端验收现覆盖：Markdown上传、后台执行、等待需求补充、同task_id恢复、测试点生成、Reviewer评分、报告读取、测试建议修正、业务规则二次确认、再次修正，以及取消未确认规则。测试使用真实HTTP路由、Application Service、后台Runner和InMemory Repository，仅用脚本化Orchestrator替代外部模型。
 
-反馈目标使用真实测试点标题或业务规则内容，分页序号不参与提交。前端只调用既有用户动作接口，不指定Reviser或其他节点；没有修改AgentState、Application Service和Orchestrator规则。完整浏览器验收仍留到下一阶段统一执行。
+新增前端DOM契约测试，保证`app.js`引用的元素ID都存在于`index.html`。本地FastAPI页面和脚本均返回200。Codex桌面浏览器控制因本机组件路径缺失无法启动，因此真实浏览器点击与截图尚未形成自动化证据，需要用户手动完成一次V1页面体验验收。
 
 ## 上一阶段：2.16.14 V1长PRD完整功能验收（已完成）
 
@@ -79,7 +79,7 @@ V1完整验收发现，长PRD需求分析生成79条事实和61条规则后，�
 
 ```text
 python -m pytest -q
-522 passed，10 skipped
+523 passed，10 skipped
 
 python -m compileall -q agent application repositories services utils views tests main.py evaluation
 通过
@@ -101,7 +101,7 @@ git diff --check
 
 ## 下一步建议
 
-下一阶段2.18.6进行原生Web完整链路验收和必要的小型修复，不继续扩张功能。
+下一步先由用户手动体验原生Web V1；如无阻断问题，冻结当前前端，回到后端质量评测、知识库管理入口或项目学习，不继续追加页面功能。
 
 ## 新电脑恢复方式
 
