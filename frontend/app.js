@@ -15,6 +15,10 @@ const elements = {
   events: document.querySelector("#recent-events"),
   taskMessage: document.querySelector("#task-message"),
   taskId: document.querySelector("#task-id"),
+  clarificationSection: document.querySelector("#clarification-section"),
+  clarificationList: document.querySelector("#clarification-list"),
+  clarificationButton: document.querySelector("#clarification-button"),
+  flowSteps: [...document.querySelectorAll("#agent-flow span")],
 };
 
 let currentTaskId = null;
@@ -25,6 +29,7 @@ elements.document.addEventListener("change", () => {
 });
 elements.start.addEventListener("click", startAnalysis);
 elements.reset.addEventListener("click", resetWorkspace);
+elements.clarificationButton.addEventListener("click", submitClarifications);
 
 async function startAnalysis() {
   clearMessages();
@@ -67,7 +72,15 @@ async function pollProgress() {
   try {
     const progress = await request(`/api/v1/tasks/${currentTaskId}/progress`);
     renderProgress(progress);
-    if (["completed", "failed", "waiting_for_user"].includes(progress.status)) {
+    if (progress.status === "waiting_for_user") {
+      setBusy(false);
+      lockTaskInput(true);
+      elements.start.disabled = true;
+      elements.start.textContent = "等待补充信息";
+      await loadClarifications();
+      return;
+    }
+    if (["completed", "failed"].includes(progress.status)) {
       setBusy(false);
       return;
     }
@@ -89,6 +102,7 @@ function renderProgress(progress) {
   elements.reviewerScore.textContent = progress.reviewer_score ?? "待评审";
   elements.revisions.textContent = progress.automatic_revision_count;
   elements.events.replaceChildren(...progress.recent_events.map(eventItem));
+  renderFlow(progress.current_step, progress.status);
 
   if (progress.waiting_for_clarifications) {
     showNotice("补充信息已提交，任务等待重新启动。");
@@ -99,6 +113,82 @@ function renderProgress(progress) {
   } else if (progress.status === "failed") {
     showNotice("任务执行失败，请查看上方错误信息后重新创建任务。");
   }
+}
+
+async function loadClarifications() {
+  const task = await request(`/api/v1/tasks/${currentTaskId}`);
+  const questions = task.state.open_questions || [];
+  elements.clarificationList.replaceChildren(...questions.map(questionField));
+  elements.clarificationSection.hidden = questions.length === 0;
+}
+
+function questionField(question, index) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "question-field";
+  wrapper.dataset.question = question;
+
+  const title = document.createElement("p");
+  title.textContent = `${index + 1}. ${question}`;
+  const answer = document.createElement("textarea");
+  answer.rows = 2;
+  answer.placeholder = "请输入产品或业务答案";
+  const unknownLabel = document.createElement("label");
+  unknownLabel.className = "unknown-option";
+  const unknown = document.createElement("input");
+  unknown.type = "checkbox";
+  unknown.addEventListener("change", () => {
+    answer.disabled = unknown.checked;
+    if (unknown.checked) answer.value = "";
+  });
+  unknownLabel.append(unknown, " 暂不确定");
+  wrapper.append(title, answer, unknownLabel);
+  return wrapper;
+}
+
+async function submitClarifications() {
+  clearMessages();
+  const answers = {};
+  for (const field of elements.clarificationList.children) {
+    const answer = field.querySelector("textarea");
+    const unknown = field.querySelector("input[type=checkbox]");
+    if (!unknown.checked && !answer.value.trim()) {
+      showError("请回答所有问题，或选择“暂不确定”。");
+      return;
+    }
+    answers[field.dataset.question] = unknown.checked ? null : answer.value.trim();
+  }
+  setBusy(true);
+  elements.clarificationButton.disabled = true;
+  try {
+    await request(`/api/v1/tasks/${currentTaskId}/clarifications`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    });
+    elements.clarificationSection.hidden = true;
+    await request(`/api/v1/tasks/${currentTaskId}/run`, { method: "POST" });
+    await pollProgress();
+  } catch (error) {
+    showError(error.message);
+    setBusy(false);
+    lockTaskInput(true);
+    elements.start.disabled = true;
+    elements.start.textContent = "等待补充信息";
+    elements.clarificationButton.disabled = false;
+  }
+}
+
+function renderFlow(currentStep, status) {
+  const stageByStep = {
+    initialize: 0, analyze_requirement: 1, retrieve_knowledge: 2,
+    generate_test_points: 3, review_test_points: 4,
+    revise_test_points: 4, collect_human_feedback: 4, finalize: 5,
+  };
+  const current = stageByStep[currentStep] || 0;
+  elements.flowSteps.forEach((step) => {
+    const index = Number(step.dataset.stage);
+    step.className = index < current || status === "completed" ? "done" : index === current ? "active" : "";
+  });
 }
 
 function eventItem(event) {
@@ -131,9 +221,13 @@ async function request(url, options = {}) {
 
 function setBusy(busy) {
   elements.start.disabled = busy;
-  elements.requirement.readOnly = busy;
-  elements.document.disabled = busy;
+  lockTaskInput(busy);
   elements.start.textContent = busy ? "Agent执行中…" : "开始分析";
+}
+
+function lockTaskInput(locked) {
+  elements.requirement.readOnly = locked;
+  elements.document.disabled = locked;
 }
 
 function showError(message) {
@@ -168,6 +262,10 @@ function resetWorkspace() {
   elements.reviewerScore.textContent = "待评审";
   elements.revisions.textContent = "0";
   elements.events.innerHTML = "<li>等待提交需求</li>";
+  elements.clarificationSection.hidden = true;
+  elements.clarificationList.replaceChildren();
+  elements.clarificationButton.disabled = false;
+  elements.flowSteps.forEach((step) => { step.className = ""; });
   setBusy(false);
   clearMessages();
 }

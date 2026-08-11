@@ -36,6 +36,18 @@
       </label>
       <p id="file-name" class="file-name">尚未选择文件</p>
 
+      <section id="clarification-section" class="clarifications" hidden>
+        <div class="clarification-heading">
+          <div>
+            <p class="eyebrow">需要你确认</p>
+            <h3>补充关键信息</h3>
+          </div>
+          <span>可选择暂不确定</span>
+        </div>
+        <div id="clarification-list"></div>
+        <button id="clarification-button" class="button primary" type="button">提交补充并继续</button>
+      </section>
+
       <button id="start-button" class="button primary" type="button">开始分析</button>
       <p id="form-error" class="message error" role="alert" hidden></p>
     </section>
@@ -47,6 +59,12 @@
           <h2 id="result-title">分析概览</h2>
         </div>
         <span id="status-badge" class="status neutral">等待开始</span>
+      </div>
+
+      <div id="agent-flow" class="agent-flow" aria-label="Agent执行阶段">
+        <span data-stage="1">需求分析</span><span data-stage="2">知识检索</span>
+        <span data-stage="3">生成测试点</span><span data-stage="4">评审修正</span>
+        <span data-stage="5">整理报告</span>
       </div>
 
       <div class="stage-card">

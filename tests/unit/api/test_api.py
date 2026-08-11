@@ -92,6 +92,7 @@ def test_native_frontend_is_served_by_fastapi():
     assert "Test Analysis Agent" in page.text
     assert script.status_code == 200
     assert "pollProgress" in script.text
+    assert "submitClarifications" in script.text
 
 
 def test_create_get_list_and_delete_task():
