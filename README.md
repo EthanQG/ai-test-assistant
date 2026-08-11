@@ -121,13 +121,15 @@ Copy-Item .env.example .env
 streamlit run main.py
 ```
 
-FastAPI后端（阶段2.17.1同步薄接口）：
+FastAPI后端（阶段2.17.2后台执行接口）：
 
 ```powershell
 python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
-启动后访问`http://127.0.0.1:8000/docs`查看Swagger。当前API复用同一个Application Service，支持任务创建、查询、同步推进、补充信息、业务规则确认、人工反馈、失败重试和删除；后台执行与进度轮询将在后续阶段实现。
+启动后访问`http://127.0.0.1:8000/docs`查看Swagger。当前API复用同一个Application Service，支持任务创建、查询、同步推进、补充信息、业务规则确认、人工反馈、失败重试和删除。创建任务后可调用`POST /api/v1/tasks/{task_id}/run`提交后台执行，再通过`GET /api/v1/tasks/{task_id}`读取业务状态，通过`GET /api/v1/tasks/{task_id}/execution`读取后台执行状态。
+
+阶段2.17.2使用进程内`ThreadPoolExecutor`避免HTTP请求等待完整Agent链路，并防止同一进程重复启动同一任务。它适合当前单实例演示，不等同于Celery/Redis等分布式任务队列；API多进程、高可用调度和SSE仍未实现。
 
 如需运行完整开发测试，安装包含pytest的开发依赖：
 

@@ -82,6 +82,7 @@
 | 阶段 2.16.13 | 已完成 | 长PRD二次Reviewer使用独立有界输出额度 | 本次提交 |
 | 阶段 2.16.14 | 已完成 | 真实长PRD完整链路、修正上限和MySQL恢复验收 | 本次提交 |
 | 阶段 2.17.1 | 已完成 | FastAPI同步任务与用户动作接口、Swagger和pytest | 本次提交 |
+| 阶段 2.17.2 | 已完成 | 单进程后台执行、幂等启动和执行状态查询 | 本次提交 |
 | 阶段 2.16 | 进行中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
@@ -3805,3 +3806,35 @@ git diff --check
 新增`api/main.py`和Pydantic请求模型，以HTTP用户动作调用现有Application Service。接口覆盖创建、查询、列表、同步推进、补充信息、业务规则确认、人工反馈、失败重试和删除，并由FastAPI自动生成OpenAPI/Swagger。`TaskView.to_dict()`提供隔离的传输字典，页面和API都无法通过返回值修改Repository中的AgentState。
 
 本阶段没有增加节点级执行接口，没有复制状态机，也没有修改Streamlit、Agent节点和Orchestrator。`advance`仍同步执行一个节点；后台任务和进度查询留到2.17.2。接口测试使用Fake Application Service，不调用真实LLM、MySQL、Ollama或Milvus。
+
+## 阶段 2.17.2：受控后台执行与状态查询
+
+### 本阶段目标
+
+让HTTP请求不再等待完整Agent链路，同时继续由Application Service和Orchestrator控制业务执行，不为后台任务复制状态机。
+
+### 修改内容
+
+- 新增`TaskBackgroundRunner`，用有界线程池循环调用现有`advance_task`，直到任务暂停、完成或失败。
+- 新增`POST /api/v1/tasks/{task_id}/run`，接受后台执行后立即返回202。
+- 新增`GET /api/v1/tasks/{task_id}/execution`，查询`idle/queued/running/stopped/failed`执行状态。
+- 同一API进程内，同一个`task_id`已有未结束Future时不会重复提交。
+- 保留原同步`advance`接口，便于调试和兼容；Streamlit、Agent节点与Orchestrator均未修改。
+
+### 为什么只做小重构
+
+后台Runner只负责“何时继续调用应用用例”，不判断具体节点。具体下一步仍由Orchestrator根据AgentState决定，节点重复执行仍受Repository执行租约保护。因此没有必要重构Agent状态机，也没有引入Celery、Redis或新的消息系统。
+
+### 验证结果
+
+- Runner推进至暂停后停止；
+- 重复启动不会创建第二个线程任务；
+- Worker异常可通过执行状态查询；
+- 已暂停任务不会被错误提交；
+- API后台启动与状态查询使用Fake Runner验证。
+
+阶段完成时全量pytest为515 passed、10 skipped；默认测试未调用真实LLM、MySQL、Embedding或Milvus。
+
+### 当前限制
+
+当前Runner和Future注册表只存在于单个API进程内。多进程部署时，不同进程无法共享执行状态；进程退出后排队任务也不会自动恢复。本阶段不是生产级分布式任务队列，也未实现SSE。

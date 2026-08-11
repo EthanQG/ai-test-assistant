@@ -11,11 +11,11 @@
 - 阶段2.16.9第二小步：`b7583a1 阶段2.16.9：接入紧凑ID需求分析`
 - 本地提交尚未推送，由用户手动执行`git push`
 
-## 当前阶段：2.17.1 FastAPI同步薄接口（已完成）
+## 当前阶段：2.17.2 受控后台执行与状态查询（已完成）
 
-新增`api/`传输适配层，复用`TestAnalysisApplicationService`，提供健康检查、Swagger以及任务创建、列表、详情、同步推进、补充信息、业务规则确认、人工反馈、失败重试和删除接口。API只构造现有Command并返回`TaskView.to_dict()`的隔离传输结果，不接受节点名称，也不复制Orchestrator状态机。
+在2.17.1同步薄接口上新增`TaskBackgroundRunner`。`POST /api/v1/tasks/{task_id}/run`立即返回202，由进程内线程池循环调用Application Service；每次具体节点仍由Orchestrator决定。`GET /api/v1/tasks/{task_id}/execution`返回`queued/running/stopped/failed/idle`，业务状态继续通过任务详情读取。同一进程内重复启动同一任务会被拒绝，节点级重复执行保护继续复用Repository执行租约。
 
-当前`POST /advance`仍同步执行一个Agent节点；后台Worker、轮询进度和SSE尚未实现。Streamlit页面未改动，仍可作为V1演示入口。
+本阶段只做必要的小重构：把“推进直到暂停或结束”的循环从HTTP接口抽到独立Runner，没有修改AgentState、节点、Orchestrator、Streamlit和现有同步`advance`接口。当前仍是单进程线程池方案，不具备跨API进程任务调度、Worker崩溃恢复和SSE推送能力。
 
 ## 上一阶段：2.16.14 V1长PRD完整功能验收（已完成）
 
@@ -97,12 +97,12 @@ git diff --check
 - 两个陈述批次仍为同步串行执行，模型或网络变慢时页面仍会等待；
 - ID分类减少输出重复，但模型仍可能漏分类或错误分类，后续应通过离线金标准评测质量；
 - 结构化调用关闭思考模式提升了速度和输出稳定性，但可能影响复杂语义判断，需要扩大样本比较；
-- 阶段2.17的FastAPI、后台任务、SSE和Vue尚未实现。
+- FastAPI同步接口和单进程后台执行已实现；跨进程任务队列、SSE和Vue尚未实现。
 - 长PRD完整验收仍可能受Embedding超时和Reviewer结构化字段漂移影响；本次只修复知识检索输入预算。
 
 ## 下一步建议
 
-下一阶段2.17.2实现受控后台任务执行和幂等启动，使HTTP请求不再等待真实Agent节点。
+下一阶段优先完善适合前端轮询的任务进度读取与接口契约，再评估是否需要SSE；当前不急于重写Vue页面。
 
 ## 新电脑恢复方式
 

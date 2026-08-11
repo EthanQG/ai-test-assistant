@@ -5886,3 +5886,31 @@ DeepSeek V4默认开启思考模式，推理内容也会消耗`max_tokens`。对
 ## 68. FastAPI为什么只能调用Application Service
 
 FastAPI是传输层，职责是校验HTTP输入、构造Command、调用应用用例并返回JSON。它不能接收`node_name`或直接调用Reviewer等节点，否则Vue、Streamlit和其他客户端会各自形成一套状态机。当前`advance`表达“继续任务”，具体节点仍由Orchestrator决定。
+
+## 69. 后台Runner和AgentOrchestrator有什么区别
+
+最简单的理解是：Runner负责“让任务在HTTP请求结束后继续跑”，Orchestrator负责“下一步具体跑哪个节点”。
+
+调用链是：
+
+```text
+POST /run
+→ TaskBackgroundRunner
+→ Application Service.advance_task()
+→ AgentOrchestrator
+→ 具体Agent节点
+```
+
+Runner不断读取最新TaskView；只要任务仍允许自动推进，就调用一次`advance_task`。它不接收节点名，也不判断应该执行RequirementAnalyzer还是Reviewer，因此没有产生第二套状态机。
+
+同一进程的`_futures`字典解决“用户重复点击启动”问题；Repository已有的执行租约继续解决节点级重复执行风险。前者不是跨进程幂等：如果未来运行多个API进程，需要使用共享任务队列或数据库调度状态。
+
+### 面试问题与参考答案
+
+**问：为什么当前不用Celery和Redis？**
+
+参考答案：当前目标是单实例后端演示，先验证HTTP异步返回、受控执行和轮询契约。线程池只新增很小的代码量，并复用现有Application Service。只有出现多进程调度、Worker故障恢复或任务削峰的真实需求时，才引入分布式队列。
+
+**问：后台Runner会不会绕过Orchestrator？**
+
+参考答案：不会。Runner只调用用户动作级的`advance_task`，具体节点始终由Orchestrator根据AgentState选择。

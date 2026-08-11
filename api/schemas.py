@@ -43,3 +43,10 @@ class TaskResponse(BaseModel):
     metrics: list[Any]
     revision_limit_reached: bool
     performance_summary: dict[str, Any]
+
+
+class BackgroundRunResponse(BaseModel):
+    task_id: str
+    status: str
+    accepted: bool
+    error: str | None = None

@@ -7,6 +7,7 @@ from application.commands import (
     SubmitClarificationsCommand,
     SubmitFeedbackCommand,
 )
+from application.background_runner import BackgroundRunStatus
 from application.models import TaskRecord, TaskView
 from api.main import create_app
 from repositories import TaskNotFoundError
@@ -175,3 +176,27 @@ def test_application_value_error_maps_to_conflict():
 
     assert response.status_code == 409
     assert "cannot advance" in response.json()["detail"]
+
+
+def test_background_run_and_execution_status_endpoints():
+    class Runner:
+        def start(self, task_id):
+            return BackgroundRunStatus(task_id, "queued", True)
+
+        def get_status(self, task_id):
+            return BackgroundRunStatus(task_id, "running", False)
+
+    service = FakeApplicationService()
+    client = TestClient(create_app(service, Runner()))
+
+    started = client.post("/api/v1/tasks/task-1/run")
+    execution = client.get("/api/v1/tasks/task-1/execution")
+
+    assert started.status_code == 202
+    assert started.json() == {
+        "task_id": "task-1",
+        "status": "queued",
+        "accepted": True,
+        "error": None,
+    }
+    assert execution.json()["status"] == "running"

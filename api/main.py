@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.encoders import jsonable_encoder
 
 from application.bootstrap import build_session_application_service
+from application.background_runner import TaskBackgroundRunner
 from application.commands import (
     ConfirmBusinessRulesCommand,
     CreateTaskCommand,
@@ -18,6 +19,7 @@ from .schemas import (
     ClarificationsRequest,
     CreateTaskRequest,
     FeedbackRequest,
+    BackgroundRunResponse,
     TaskResponse,
 )
 
@@ -28,6 +30,7 @@ def _response(view) -> TaskResponse:
 
 def create_app(
     service: TestAnalysisApplicationService | None = None,
+    background_runner: TaskBackgroundRunner | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Test Analysis Agent API",
@@ -35,12 +38,20 @@ def create_app(
         description="受控测试分析Agent的同步应用接口。",
     )
     app.state.application_service = service
+    app.state.background_runner = background_runner
 
     def get_service() -> TestAnalysisApplicationService:
         current = app.state.application_service
         if current is None:
             current = build_session_application_service()
             app.state.application_service = current
+        return current
+
+    def get_background_runner() -> TaskBackgroundRunner:
+        current = app.state.background_runner
+        if current is None:
+            current = TaskBackgroundRunner(get_service())
+            app.state.background_runner = current
         return current
 
     @app.exception_handler(TaskNotFoundError)
@@ -79,6 +90,25 @@ def create_app(
     )
     def advance_task(task_id: str) -> TaskResponse:
         return _response(get_service().advance_task(task_id))
+
+    @app.post(
+        "/api/v1/tasks/{task_id}/run",
+        response_model=BackgroundRunResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def run_task(task_id: str) -> BackgroundRunResponse:
+        return BackgroundRunResponse.model_validate(
+            get_background_runner().start(task_id).__dict__
+        )
+
+    @app.get(
+        "/api/v1/tasks/{task_id}/execution",
+        response_model=BackgroundRunResponse,
+    )
+    def get_execution(task_id: str) -> BackgroundRunResponse:
+        return BackgroundRunResponse.model_validate(
+            get_background_runner().get_status(task_id).__dict__
+        )
 
     @app.post(
         "/api/v1/tasks/{task_id}/clarifications",
