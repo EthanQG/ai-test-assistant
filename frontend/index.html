@@ -81,7 +81,13 @@
         <div><dt>自动修正</dt><dd id="revision-count">0</dd></div>
       </dl>
 
-      <section id="test-point-section" class="test-point-section" hidden>
+      <nav id="result-navigation" class="result-navigation" aria-label="分析结果" hidden>
+        <button class="result-tab active" data-result-tab="test-points" type="button">结构化测试点</button>
+        <button class="result-tab" data-result-tab="quality" type="button">质量评审</button>
+        <button class="result-tab" data-result-tab="report" type="button">最终报告</button>
+      </nav>
+
+      <section id="test-point-section" class="result-section test-point-section" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">分析结果</p>
@@ -94,6 +100,29 @@
           <button id="previous-page" class="button secondary" type="button">上一页</button>
           <button id="next-page" class="button secondary" type="button">下一页</button>
         </div>
+      </section>
+
+      <section id="quality-section" class="result-section quality-section" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Reviewer 结果</p>
+            <h3>质量评审</h3>
+          </div>
+          <strong id="quality-score" class="quality-score">-</strong>
+        </div>
+        <dl id="quality-dimensions" class="quality-dimensions"></dl>
+        <div id="quality-findings" class="quality-findings"></div>
+      </section>
+
+      <section id="report-section" class="result-section report-section" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Finalizer 结果</p>
+            <h3>最终测试分析报告</h3>
+          </div>
+          <button id="download-report" class="button secondary" type="button">下载 Markdown</button>
+        </div>
+        <pre id="report-preview" class="report-preview"></pre>
       </section>
 
       <div class="progress-section">

@@ -28,6 +28,15 @@ const elements = {
   detailTitle: document.querySelector("#detail-title"),
   detailContent: document.querySelector("#detail-content"),
   closeDialog: document.querySelector("#close-dialog"),
+  resultNavigation: document.querySelector("#result-navigation"),
+  resultTabs: [...document.querySelectorAll(".result-tab")],
+  qualitySection: document.querySelector("#quality-section"),
+  qualityScore: document.querySelector("#quality-score"),
+  qualityDimensions: document.querySelector("#quality-dimensions"),
+  qualityFindings: document.querySelector("#quality-findings"),
+  reportSection: document.querySelector("#report-section"),
+  reportPreview: document.querySelector("#report-preview"),
+  downloadReport: document.querySelector("#download-report"),
 };
 
 let currentTaskId = null;
@@ -35,6 +44,8 @@ let pollTimer = null;
 let testPoints = [];
 let currentPage = 1;
 let testPointVersion = "";
+let activeResultTab = "test-points";
+let reportMarkdown = "";
 const pageSize = 5;
 
 elements.document.addEventListener("change", () => {
@@ -46,6 +57,10 @@ elements.clarificationButton.addEventListener("click", submitClarifications);
 elements.previousPage.addEventListener("click", () => changePage(-1));
 elements.nextPage.addEventListener("click", () => changePage(1));
 elements.closeDialog.addEventListener("click", () => elements.detailDialog.close());
+elements.resultTabs.forEach((tab) => {
+  tab.addEventListener("click", () => showResultTab(tab.dataset.resultTab));
+});
+elements.downloadReport.addEventListener("click", downloadReport);
 
 async function startAnalysis() {
   clearMessages();
@@ -124,7 +139,7 @@ async function renderProgress(progress) {
     progress.human_revision_count, progress.status,
   ].join(":");
   if (progress.test_point_count > 0 && testPointVersion !== resultVersion) {
-    await loadTestPoints();
+    await loadResults();
     testPointVersion = resultVersion;
   }
 
@@ -139,11 +154,96 @@ async function renderProgress(progress) {
   }
 }
 
-async function loadTestPoints() {
+async function loadResults() {
   const task = await request(`/api/v1/tasks/${currentTaskId}`);
   testPoints = task.state.test_points || [];
+  reportMarkdown = task.state.report || "";
   currentPage = 1;
   renderTestPoints();
+  renderQuality(task.state.review_result);
+  renderReport();
+  elements.resultNavigation.hidden = !(
+    testPoints.length || task.state.review_result || reportMarkdown
+  );
+  showResultTab(activeResultTab);
+}
+
+function showResultTab(name) {
+  activeResultTab = name;
+  elements.resultTabs.forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.resultTab === name);
+  });
+  elements.testPointSection.hidden = name !== "test-points" || testPoints.length === 0;
+  elements.qualitySection.hidden = name !== "quality";
+  elements.reportSection.hidden = name !== "report";
+}
+
+function renderQuality(review) {
+  elements.qualityScore.textContent = review ? `${review.overall_score}/100` : "待评审";
+  elements.qualityDimensions.replaceChildren();
+  elements.qualityFindings.replaceChildren();
+  if (!review) {
+    appendEmpty(elements.qualityFindings, "当前尚未产生 Reviewer 结果。");
+    return;
+  }
+  const dimensions = [
+    ["需求覆盖", "requirement_coverage"], ["边界异常", "boundary_exception"],
+    ["可执行性", "executability"], ["可追踪性", "traceability"],
+  ];
+  dimensions.forEach(([label, key]) => {
+    const wrapper = document.createElement("div");
+    const term = document.createElement("dt");
+    const value = document.createElement("dd");
+    term.textContent = label;
+    value.textContent = review.dimension_scores?.[key] ?? "-";
+    wrapper.append(term, value);
+    elements.qualityDimensions.append(wrapper);
+  });
+  appendFinding("缺失或关注场景", review.missing_scenarios);
+  appendFinding("无依据断言风险", (review.hallucination_issues || []).map(
+    (item) => item.issue || item.unsupported_claim,
+  ));
+  appendFinding("Reviewer 建议", review.revision_suggestions);
+  if (!elements.qualityFindings.children.length) {
+    appendEmpty(elements.qualityFindings, "本轮评审未发现需要额外展示的问题。");
+  }
+}
+
+function appendFinding(title, items = []) {
+  if (!items.length) return;
+  const section = document.createElement("section");
+  const heading = document.createElement("h4");
+  const list = document.createElement("ul");
+  heading.textContent = title;
+  items.forEach((text) => {
+    const item = document.createElement("li");
+    item.textContent = text;
+    list.append(item);
+  });
+  section.append(heading, list);
+  elements.qualityFindings.append(section);
+}
+
+function appendEmpty(target, message) {
+  const empty = document.createElement("p");
+  empty.className = "muted";
+  empty.textContent = message;
+  target.append(empty);
+}
+
+function renderReport() {
+  elements.reportPreview.textContent = reportMarkdown || "任务完成后将在这里生成 Markdown 报告。";
+  elements.downloadReport.disabled = !reportMarkdown;
+}
+
+function downloadReport() {
+  if (!reportMarkdown) return;
+  const url = URL.createObjectURL(new Blob([reportMarkdown], { type: "text/markdown;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `测试分析报告-${currentTaskId || "task"}.md`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function renderTestPoints() {
@@ -368,7 +468,12 @@ function resetWorkspace() {
   testPoints = [];
   currentPage = 1;
   testPointVersion = "";
+  activeResultTab = "test-points";
+  reportMarkdown = "";
+  elements.resultNavigation.hidden = true;
   elements.testPointSection.hidden = true;
+  elements.qualitySection.hidden = true;
+  elements.reportSection.hidden = true;
   elements.testPointList.replaceChildren();
   if (elements.detailDialog.open) elements.detailDialog.close();
   setBusy(false);

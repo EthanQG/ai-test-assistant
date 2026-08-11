@@ -94,6 +94,10 @@ def test_native_frontend_is_served_by_fastapi():
     assert "pollProgress" in script.text
     assert "submitClarifications" in script.text
     assert "renderTestPoints" in script.text
+    assert "renderQuality" in script.text
+    assert "downloadReport" in script.text
+    assert "质量评审" in page.text
+    assert "最终报告" in page.text
 
 
 def test_create_get_list_and_delete_task():
