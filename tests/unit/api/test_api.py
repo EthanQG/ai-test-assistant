@@ -192,6 +192,8 @@ def test_native_frontend_exposes_history_and_restore_entry():
     assert "restoreTask" in script
     assert "deleteHistoryTask" in script
     assert 'method: "DELETE"' in script
+    assert "deleteConfirmation" in script
+    assert "window.confirm" not in script
 
 
 def test_completed_result_can_be_confirmed_and_indexed_as_knowledge():

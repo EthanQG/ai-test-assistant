@@ -147,6 +147,16 @@ textarea:focus, .file-picker:focus-within { outline: 2px solid #bfdbfe; border-c
 .history-delete { align-self: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; color: #98a2b3; background: transparent; cursor: pointer; opacity: 0; }
 .history-item:hover .history-delete, .history-delete:focus { opacity: 1; }
 .history-delete:hover { color: var(--danger); background: #fef3f2; }
+.history-delete-confirmation {
+  position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 10;
+  width: 176px; padding: 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: white; box-shadow: 0 8px 24px rgba(15, 23, 42, .16);
+}
+.history-delete-confirmation[hidden] { display: none; }
+.history-delete-confirmation p { margin: 0 0 8px; color: var(--text); font-size: 12px; }
+.history-delete-confirmation div { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.history-delete-confirmation .button { min-height: 30px; padding: 0 7px; font-size: 11px; }
+.button.danger { color: white; background: var(--danger); }
 .history-pagination { align-items: center; justify-content: space-between; }
 .history-pagination .button { min-height: 32px; padding-inline: 8px; font-size: 11px; }
 .history-pagination span { color: var(--muted); font-size: 11px; white-space: nowrap; }

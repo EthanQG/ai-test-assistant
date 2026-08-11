@@ -155,18 +155,47 @@ function historyItem(summary) {
   remove.textContent = "×";
   remove.title = "删除任务";
   remove.setAttribute("aria-label", `删除任务：${title.textContent}`);
-  remove.addEventListener("click", () => deleteHistoryTask(summary));
-  item.append(open, remove);
+  const confirmation = deleteConfirmation(summary);
+  remove.addEventListener("click", () => {
+    document.querySelectorAll(".history-delete-confirmation").forEach((node) => {
+      if (node !== confirmation) node.hidden = true;
+    });
+    confirmation.hidden = !confirmation.hidden;
+  });
+  item.append(open, remove, confirmation);
   return item;
 }
 
-async function deleteHistoryTask(summary) {
-  if (!window.confirm(`确定删除“${summary.task_name}”吗？删除后无法恢复。`)) return;
+function deleteConfirmation(summary) {
+  const popover = document.createElement("div");
+  popover.className = "history-delete-confirmation";
+  popover.hidden = true;
+  const message = document.createElement("p");
+  message.textContent = "确认删除此任务？";
+  const actions = document.createElement("div");
+  const cancel = document.createElement("button");
+  cancel.className = "button secondary";
+  cancel.type = "button";
+  cancel.textContent = "取消";
+  cancel.addEventListener("click", () => { popover.hidden = true; });
+  const confirm = document.createElement("button");
+  confirm.className = "button danger";
+  confirm.type = "button";
+  confirm.textContent = "确认删除";
+  confirm.addEventListener("click", () => deleteHistoryTask(summary, confirm));
+  actions.append(cancel, confirm);
+  popover.append(message, actions);
+  return popover;
+}
+
+async function deleteHistoryTask(summary, confirmButton) {
+  confirmButton.disabled = true;
   try {
     await request(`/api/v1/tasks/${summary.task_id}`, { method: "DELETE" });
     if (summary.task_id === currentTaskId) resetWorkspace();
     await loadHistory();
   } catch (error) {
+    confirmButton.disabled = false;
     showError(error.message);
   }
 }
