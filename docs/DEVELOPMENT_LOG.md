@@ -76,6 +76,7 @@
 | 阶段 2.16.2 | 第三小步已完成 | 合成附件及正文、表格、OCR、流程和UI确定性评分 | `744228b`, `7395b8d`，本次提交 |
 | 阶段 2.16.3 | 第一小步已完成 | 5份虚构RAG查询、资产级排序指标和Fake测试 | 本次提交 |
 | 阶段 2.16.9 | 已完成 | 稳定陈述ID、紧凑分类、全局问题审核和非思考结构化调用 | `f65f08f`, `b7583a1`, 本次提交 |
+| 阶段 2.16.10 | 已完成 | 长PRD知识检索分区预算、关键条目保留和裁剪指标 | 本次提交 |
 | 阶段 2.16 | 进行中 | 图文解析、RAG/Reviewer专项评测和三组消融实验 | - |
 | 阶段 2.17 | 远期评估 | FastAPI、后台任务、SSE或轮询和Vue | - |
 
@@ -3751,3 +3752,22 @@ git diff --check
 这组数据证明当前单样本的截断和时延问题得到改善，但不能证明所有长PRD均达到相同效果。非思考模式对复杂分类质量的影响仍需在现有金标准上扩样评测。
 
 验证：默认pytest使用Fake，不调用外部服务；真实长PRD入口由`RUN_LONG_REQUIREMENT_INTEGRATION_EVALUATION=1`显式保护，成功或失败都会保存脱敏指标。
+
+## 阶段 2.16.10：长PRD知识检索上下文预算适配
+
+V1完整功能验收发现，长PRD虽然已完成紧凑ID需求分析，但进入知识检索时仍会同时拼接原始需求、79条事实、61条规则、状态和风险，导致受保护上下文达到8081个估算Token，超过知识检索节点4000 Token预算。该问题不是模型输出长度限制，而是下游检索输入重复且无界。
+
+本阶段只调整`ContextBuilder.build_knowledge_retrieval()`生成的检索视图：为原始需求、事实、规则、状态和风险分别设置字符预算；先保留包含金额、数字、权限、状态、时限和幂等等关键提示的条目，再按原顺序填充剩余额度；风险依据限制为120字符，并对完全相同的风险和依据去重。完整`AgentState`不被裁剪，Generator、Reviewer和Finalizer仍读取完整领域状态。裁剪结果通过`context_metrics.truncated_sections`留存，便于后续离线评测检索质量。
+
+使用同一长PRD重新验收，知识检索查询缩减至2835字符，成功越过原`8081 > 4000`阻断。随后Embedding请求发生30秒超时，现有RAG降级逻辑使任务继续生成43条测试点；任务最终因第二轮Reviewer返回非法字段类型而失败。后两项属于外部服务可用性和Reviewer结构化契约问题，不混入本次预算修复。
+
+```text
+python -m pytest -q
+496 passed，10 skipped
+
+python -m compileall -q agent application repositories services utils views tests main.py evaluation
+通过
+
+git diff --check
+通过
+```

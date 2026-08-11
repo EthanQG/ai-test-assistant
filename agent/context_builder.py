@@ -87,7 +87,11 @@ class ContextBuilder:
     }
     SECTION_CHAR_LIMITS = {
         "requirement": 24_000,
-        "retrieval_requirement": 10_000,
+        "retrieval_requirement": 600,
+        "retrieval_facts": 650,
+        "retrieval_rules": 900,
+        "retrieval_transitions": 350,
+        "retrieval_risks": 450,
         "local_bug_knowledge": 4_000,
         "rag_context": 8_000,
     }
@@ -145,12 +149,37 @@ class ContextBuilder:
         error_category=MetricErrorCategory.INPUT_BUDGET,
     )
     def build_knowledge_retrieval(self, state: TestAnalysisState) -> BuiltContext:
-        requirement, truncated = self._fit_text(
+        requirement, requirement_truncated = self._fit_text(
             state.requirement,
             self.SECTION_CHAR_LIMITS["retrieval_requirement"],
         )
+        facts, facts_truncated = self._fit_string_items(
+            state.requirement_facts,
+            self.SECTION_CHAR_LIMITS["retrieval_facts"],
+        )
+        rules, rules_truncated = self._fit_string_items(
+            state.business_rules,
+            self.SECTION_CHAR_LIMITS["retrieval_rules"],
+        )
+        transitions, transitions_truncated = self._fit_string_items(
+            state.state_transitions,
+            self.SECTION_CHAR_LIMITS["retrieval_transitions"],
+        )
+        risks, risks_truncated = self._fit_risks(
+            state.inferred_risks,
+            self.SECTION_CHAR_LIMITS["retrieval_risks"],
+        )
         values = {
             "requirement": requirement,
+            "requirement_summary": state.requirement_summary,
+            "modules": list(state.modules),
+            "requirement_facts": facts,
+            "business_rules": rules,
+            "state_transitions": transitions,
+            "inferred_risks": risks,
+        }
+        original_values = {
+            "requirement": state.requirement,
             "requirement_summary": state.requirement_summary,
             "modules": list(state.modules),
             "requirement_facts": list(state.requirement_facts),
@@ -158,11 +187,21 @@ class ContextBuilder:
             "state_transitions": list(state.state_transitions),
             "inferred_risks": deepcopy(state.inferred_risks),
         }
+        truncation_flags = {
+            "requirement": requirement_truncated,
+            "requirement_facts": facts_truncated,
+            "business_rules": rules_truncated,
+            "state_transitions": transitions_truncated,
+            "inferred_risks": risks_truncated,
+        }
         return self._result(
             ContextNode.KNOWLEDGE_RETRIEVAL,
             values,
-            original_values={**values, "requirement": state.requirement},
-            truncated_sections=("requirement",) if truncated else (),
+            original_values=original_values,
+            truncated_sections=tuple(
+                name for name, truncated in truncation_flags.items()
+                if truncated
+            ),
         )
 
     @observed_service_call(
@@ -303,6 +342,69 @@ class ContextBuilder:
         selected.sort()
         result = "\n".join(chunks[index] for index in selected)
         return f"{result}\n{cls._TRUNCATION_MARKER}", True
+
+    @classmethod
+    def _fit_string_items(
+        cls,
+        values: list[str],
+        max_chars: int,
+    ) -> tuple[list[str], bool]:
+        cleaned = list(dict.fromkeys(
+            item.strip() for item in values
+            if isinstance(item, str) and item.strip()
+        ))
+        selected: list[int] = []
+        used = 0
+
+        def add(index: int) -> None:
+            nonlocal used
+            if index in selected:
+                return
+            cost = len(cleaned[index]) + 1
+            if used + cost <= max_chars:
+                selected.append(index)
+                used += cost
+
+        for index, item in enumerate(cleaned):
+            if cls._is_important(item):
+                add(index)
+        for index in range(len(cleaned)):
+            add(index)
+        selected.sort()
+        return [cleaned[index] for index in selected], (
+            len(selected) < len(cleaned)
+        )
+
+    @classmethod
+    def _fit_risks(
+        cls,
+        values: list[dict[str, Any]],
+        max_chars: int,
+    ) -> tuple[list[dict[str, str]], bool]:
+        compact = []
+        seen = set()
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            risk = str(item.get("risk", "")).strip()
+            if not risk:
+                continue
+            basis = str(item.get("basis", "")).strip()[:120]
+            identity = (risk, basis)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            compact.append({"risk": risk, "basis": basis})
+        lines = [
+            f"{item['risk']}｜{item['basis']}"
+            for item in compact
+        ]
+        selected_lines, truncated = cls._fit_string_items(lines, max_chars)
+        selected = set(selected_lines)
+        return [
+            item for item, line in zip(compact, lines)
+            if line in selected
+        ], truncated
 
     @staticmethod
     def _chunks(text: str, size: int = 500) -> list[str]:

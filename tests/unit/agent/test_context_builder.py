@@ -112,6 +112,44 @@ def test_context_metrics_are_explicit_estimates_not_provider_usage():
     assert "actual" not in context.metrics.to_dict()
 
 
+def test_long_analysis_is_compacted_for_knowledge_retrieval():
+    state = populated_state()
+    state.requirement = "普通需求说明。" * 600
+    state.requirement_facts = [
+        f"事实{index}：用户可以执行订单操作。"
+        for index in range(80)
+    ]
+    state.business_rules = [
+        f"规则{index}：金额上限必须为{index + 1}元。"
+        for index in range(60)
+    ]
+    state.state_transitions = [
+        f"状态{index}：待处理转为已完成。"
+        for index in range(20)
+    ]
+    state.inferred_risks = [
+        {
+            "risk": f"风险{index}：重复操作可能导致金额错误",
+            "basis": "原始需求存在资金和重复操作规则" * 20,
+        }
+        for index in range(20)
+    ]
+
+    original_facts = list(state.requirement_facts)
+    context = ContextBuilder().build_knowledge_retrieval(state)
+
+    assert context.metrics.estimated_input_tokens <= 4_000
+    assert context.metrics.final_chars < context.metrics.original_chars
+    assert set(context.metrics.truncated_sections).issuperset({
+        "requirement",
+        "requirement_facts",
+        "business_rules",
+        "inferred_risks",
+    })
+    assert any("金额上限" in item for item in context.values["business_rules"])
+    assert state.requirement_facts == original_facts
+
+
 def test_protected_review_context_over_budget_fails_explicitly(monkeypatch):
     state = populated_state()
     state.test_points = [

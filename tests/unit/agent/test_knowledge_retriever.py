@@ -176,6 +176,34 @@ class KnowledgeRetrieverTests(unittest.TestCase):
             KnowledgeRetrievalStatus.NOT_STARTED,
         )
 
+    def test_long_analysis_reaches_rag_with_bounded_query(self):
+        rag = FakeRAGService(
+            RAGSearchResult(
+                context="",
+                max_score=0.0,
+                matched_count=0,
+                status=RAGSearchStatus.NO_MATCH,
+            )
+        )
+        state = analyzed_state()
+        state.requirement = "普通需求描述。" * 600
+        state.requirement_facts = [
+            f"事实{index}：用户可以提交订单"
+            for index in range(80)
+        ]
+        state.business_rules = [
+            f"规则{index}：库存数量必须大于等于购买数量"
+            for index in range(60)
+        ]
+
+        KnowledgeRetriever(rag_service=rag).retrieve(state)
+
+        self.assertEqual(rag.call_count, 1)
+        self.assertLess(len(rag.last_query), 4_000)
+        metrics = state.events[-1].data["context_metrics"]
+        self.assertIn("requirement_facts", metrics["truncated_sections"])
+        self.assertIn("business_rules", metrics["truncated_sections"])
+
     def test_waiting_task_cannot_retrieve_knowledge(self):
         rag = FakeRAGService(
             RAGSearchResult(
