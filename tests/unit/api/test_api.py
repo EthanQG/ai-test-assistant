@@ -200,3 +200,34 @@ def test_background_run_and_execution_status_endpoints():
         "error": None,
     }
     assert execution.json()["status"] == "running"
+
+
+def test_progress_endpoint_returns_polling_friendly_summary():
+    class Runner:
+        def get_status(self, task_id):
+            return BackgroundRunStatus(task_id, "running", False)
+
+    service = FakeApplicationService()
+    client = TestClient(create_app(service, Runner()))
+
+    response = client.get(f"/api/v1/tasks/{service.view.task_id}/progress")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "task_id": service.view.task_id,
+        "status": "pending",
+        "status_label": "等待开始",
+        "current_step": "initialize",
+        "stage_label": "初始化",
+        "execution_status": "running",
+        "next_action": "analyze_requirement",
+        "waiting_for_clarifications": False,
+        "waiting_for_business_rules": False,
+        "revision_limit_reached": False,
+        "test_point_count": 0,
+        "reviewer_score": None,
+        "automatic_revision_count": 0,
+        "human_revision_count": 0,
+        "recent_events": [service.view.events[0].to_dict()],
+        "error": None,
+    }

@@ -50,3 +50,22 @@ class BackgroundRunResponse(BaseModel):
     status: str
     accepted: bool
     error: str | None = None
+
+
+class TaskProgressResponse(BaseModel):
+    task_id: str
+    status: str
+    status_label: str
+    current_step: str
+    stage_label: str
+    execution_status: str
+    next_action: str | None
+    waiting_for_clarifications: bool
+    waiting_for_business_rules: bool
+    revision_limit_reached: bool
+    test_point_count: int
+    reviewer_score: int | float | None
+    automatic_revision_count: int
+    human_revision_count: int
+    recent_events: list[dict[str, Any]]
+    error: str | None

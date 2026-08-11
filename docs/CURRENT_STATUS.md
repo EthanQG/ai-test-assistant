@@ -11,11 +11,11 @@
 - 阶段2.16.9第二小步：`b7583a1 阶段2.16.9：接入紧凑ID需求分析`
 - 本地提交尚未推送，由用户手动执行`git push`
 
-## 当前阶段：2.17.2 受控后台执行与状态查询（已完成）
+## 当前阶段：2.17.3 前端轮询进度接口（已完成）
 
-在2.17.1同步薄接口上新增`TaskBackgroundRunner`。`POST /api/v1/tasks/{task_id}/run`立即返回202，由进程内线程池循环调用Application Service；每次具体节点仍由Orchestrator决定。`GET /api/v1/tasks/{task_id}/execution`返回`queued/running/stopped/failed/idle`，业务状态继续通过任务详情读取。同一进程内重复启动同一任务会被拒绝，节点级重复执行保护继续复用Repository执行租约。
+新增`GET /api/v1/tasks/{task_id}/progress`聚合只读进度。前端一次轮询即可获得任务状态、中文状态与阶段、后台执行状态、下一动作、等待补充/规则确认标志、测试点数量、Reviewer评分、自动/人工修正次数、最近3条事件和错误信息，不需要反复下载并理解完整AgentState。
 
-本阶段只做必要的小重构：把“推进直到暂停或结束”的循环从HTTP接口抽到独立Runner，没有修改AgentState、节点、Orchestrator、Streamlit和现有同步`advance`接口。当前仍是单进程线程池方案，不具备跨API进程任务调度、Worker崩溃恢复和SSE推送能力。
+进度映射位于API展示层，只读取TaskView和BackgroundRunStatus；没有修改AgentState、TaskView、Application Service、Runner、Orchestrator或Streamlit。最近事件固定最多3条，避免轮询响应随任务历史持续增长。
 
 ## 上一阶段：2.16.14 V1长PRD完整功能验收（已完成）
 
@@ -102,7 +102,7 @@ git diff --check
 
 ## 下一步建议
 
-下一阶段优先完善适合前端轮询的任务进度读取与接口契约，再评估是否需要SSE；当前不急于重写Vue页面。
+下一阶段优先补充API文件上传与统一文档解析入口，使未来前端可以上传PRD；SSE和Vue继续后置。
 
 ## 新电脑恢复方式
 

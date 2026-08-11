@@ -20,8 +20,10 @@ from .schemas import (
     CreateTaskRequest,
     FeedbackRequest,
     BackgroundRunResponse,
+    TaskProgressResponse,
     TaskResponse,
 )
+from .progress import build_task_progress
 
 
 def _response(view) -> TaskResponse:
@@ -108,6 +110,17 @@ def create_app(
     def get_execution(task_id: str) -> BackgroundRunResponse:
         return BackgroundRunResponse.model_validate(
             get_background_runner().get_status(task_id).__dict__
+        )
+
+    @app.get(
+        "/api/v1/tasks/{task_id}/progress",
+        response_model=TaskProgressResponse,
+    )
+    def get_progress(task_id: str) -> TaskProgressResponse:
+        view = get_service().get_task(task_id)
+        execution = get_background_runner().get_status(task_id)
+        return TaskProgressResponse.model_validate(
+            build_task_progress(view, execution)
         )
 
     @app.post(
