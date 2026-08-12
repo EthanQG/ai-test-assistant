@@ -168,10 +168,15 @@ def test_frontend_keeps_polling_while_resumed_task_is_queued_or_running():
     assert waiting_guard is not None
 
 
-def test_frontend_stops_polling_when_revision_limit_is_reached():
+def test_frontend_stops_at_revision_limit_only_after_background_run_finishes():
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
 
-    assert "if (progress.revision_limit_reached)" in script
+    assert (
+        "if (progress.revision_limit_reached && !executionActive)" in script
+    )
+    assert (
+        "progress.revision_limit_reached && !running" in script
+    )
     assert 'showResultTab("feedback")' in script
 
 

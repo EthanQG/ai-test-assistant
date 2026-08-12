@@ -378,7 +378,10 @@ async function pollProgress() {
       await loadWaitingAction();
       return;
     }
-    if (progress.revision_limit_reached) {
+    const executionActive = ["queued", "running"].includes(
+      progress.execution_status
+    );
+    if (progress.revision_limit_reached && !executionActive) {
       setBusy(false);
       showResultTab("feedback");
       return;
@@ -422,7 +425,7 @@ async function renderProgress(progress) {
     showNotice("补充信息已提交，任务等待重新启动。");
   } else if (progress.status === "waiting_for_user") {
     showNotice("Agent已暂停，请在左侧完成需求补充或业务规则确认。");
-  } else if (progress.revision_limit_reached) {
+  } else if (progress.revision_limit_reached && !running) {
     showNotice("自动修正已达到上限，请进入“人工反馈”补充修改建议后继续。");
     showResultTab("feedback");
   } else if (progress.status === "completed") {
