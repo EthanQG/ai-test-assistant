@@ -143,6 +143,12 @@ def test_native_knowledge_page_is_served_and_uses_asset_api():
     assert "loadDetail" in script.text
 
 
+def test_hidden_knowledge_empty_state_does_not_push_detail_below_viewport():
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert "[hidden] { display: none !important; }" in styles
+
+
 def test_frontend_keeps_polling_while_resumed_task_is_queued_or_running():
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
 
