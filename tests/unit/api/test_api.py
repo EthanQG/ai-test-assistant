@@ -151,8 +151,8 @@ def test_hidden_knowledge_empty_state_does_not_push_detail_below_viewport():
     assert "[hidden] { display: none !important; }" in styles
     assert 'elements.empty.style.display = "none"' in script
     assert 'elements.detail.style.display = "block"' in script
-    assert "styles.css?v=2.19.2.3" in page
-    assert "knowledge.js?v=2.19.2.2" in page
+    assert "styles.css?v=2.19.3" in page
+    assert "knowledge.js?v=2.19.3" in page
 
 
 def test_frontend_keeps_polling_while_resumed_task_is_queued_or_running():
@@ -338,6 +338,7 @@ def test_knowledge_asset_summary_and_detail_endpoints():
                 test_points=[],
                 review_result={"overall_score": 91},
                 final_report="# 订单履约测试报告",
+                latest_index_error=None,
             )
 
     asset_service = AssetService()
@@ -359,6 +360,66 @@ def test_knowledge_asset_summary_and_detail_endpoints():
     assert detail.status_code == 200
     assert detail.json()["content_hash"] == "a" * 64
     assert detail.json()["final_report"] == "# 订单履约测试报告"
+
+
+def test_knowledge_asset_management_routes_use_indexing_service():
+    task_service = FakeApplicationService()
+
+    class IndexingService:
+        def __init__(self):
+            self.calls = []
+
+        def retire_asset(self, asset_id):
+            self.calls.append(("retire", asset_id))
+            return SimpleNamespace(
+                asset_id=asset_id,
+                status=SimpleNamespace(value="retired"),
+                vector_cleanup_completed=True,
+            )
+
+        def restore_asset(self, asset_id):
+            self.calls.append(("restore", asset_id))
+            return SimpleNamespace(
+                asset_id=asset_id, status=SimpleNamespace(value="indexed"),
+                chunk_count=4, omitted_chunk_count=0,
+            )
+
+        def retry_failed_asset(self, asset_id, request_id):
+            self.calls.append(("retry", asset_id, request_id))
+            return SimpleNamespace(
+                asset_id=asset_id, status=SimpleNamespace(value="indexed"),
+                chunk_count=3, omitted_chunk_count=1,
+            )
+
+    indexing = IndexingService()
+    client = TestClient(create_app(
+        task_service,
+        knowledge_asset_service=SimpleNamespace(),
+        knowledge_indexing_service=indexing,
+    ))
+
+    retired = client.post("/api/v1/knowledge-assets/asset-1/retire")
+    restored = client.post("/api/v1/knowledge-assets/asset-1/restore")
+    retried = client.post("/api/v1/knowledge-assets/asset-1/retry-index")
+
+    assert retired.json()["vector_cleanup_completed"] is True
+    assert restored.json()["chunk_count"] == 4
+    assert retried.json()["omitted_chunk_count"] == 1
+    assert indexing.calls[0] == ("retire", "asset-1")
+    assert indexing.calls[1] == ("restore", "asset-1")
+    assert indexing.calls[2][0:2] == ("retry", "asset-1")
+
+
+def test_native_knowledge_page_exposes_status_based_management_actions():
+    page = (FRONTEND_DIR / "knowledge.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "knowledge.js").read_text(encoding="utf-8")
+
+    assert 'id="retire-asset"' in page
+    assert 'id="restore-asset"' in page
+    assert 'id="retry-index"' in page
+    assert 'asset.status !== "indexed"' in script
+    assert 'asset.status !== "retired"' in script
+    assert 'asset.status !== "index_failed"' in script
 
 
 def test_native_frontend_requires_explicit_knowledge_safety_confirmation():

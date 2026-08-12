@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>知识库 - AI 测试分析助手</title>
-  <link rel="stylesheet" href="./styles.css?v=2.19.2.3">
+  <link rel="stylesheet" href="./styles.css?v=2.19.3">
 </head>
 <body>
   <header class="product-header">
@@ -54,6 +54,13 @@
           <div><p class="eyebrow">资产详情</p><h2 id="asset-title"></h2></div>
           <span id="asset-detail-status" class="status neutral"></span>
         </div>
+        <div id="asset-management" class="asset-management">
+          <p id="asset-index-error" class="message error" hidden></p>
+          <button id="retire-asset" class="button secondary" type="button">停用资产</button>
+          <button id="restore-asset" class="button secondary" type="button" hidden>恢复资产</button>
+          <button id="retry-index" class="button secondary" type="button" hidden>重试索引</button>
+          <p id="asset-action-message" class="message notice" hidden></p>
+        </div>
         <dl class="knowledge-metrics">
           <div><dt>Reviewer评分</dt><dd id="asset-score">-</dd></div>
           <div><dt>测试点</dt><dd id="asset-test-point-count">0</dd></div>
@@ -67,6 +74,6 @@
       <p id="knowledge-error" class="message error" hidden></p>
     </section>
   </main>
-  <script src="./knowledge.js?v=2.19.2.2" defer></script>
+  <script src="./knowledge.js?v=2.19.3" defer></script>
 </body>
 </html>

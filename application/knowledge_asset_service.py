@@ -82,9 +82,15 @@ class KnowledgeAssetDetailView(KnowledgeAssetView):
     test_points: tuple[dict[str, Any], ...]
     review_result: dict[str, Any]
     final_report: str
+    latest_index_error: str | None
 
     @classmethod
-    def from_asset(cls, asset: KnowledgeAsset) -> "KnowledgeAssetDetailView":
+    def from_asset(
+        cls,
+        asset: KnowledgeAsset,
+        *,
+        latest_index_error: str | None = None,
+    ) -> "KnowledgeAssetDetailView":
         base = KnowledgeAssetView.from_asset(asset)
         return cls(
             **base.__dict__,
@@ -93,6 +99,7 @@ class KnowledgeAssetDetailView(KnowledgeAssetView):
             test_points=tuple(point.to_dict() for point in asset.test_points),
             review_result=asset.review_result.to_dict(),
             final_report=asset.final_report,
+            latest_index_error=latest_index_error,
         )
 
 
@@ -132,8 +139,19 @@ class KnowledgeAssetApplicationService:
         return KnowledgeAssetView.from_asset(asset)
 
     def get_asset(self, asset_id: str) -> KnowledgeAssetDetailView:
+        asset = self._asset_repository.get(asset_id)
+        requests = self._asset_repository.list_index_requests(asset_id)
+        latest_error = next(
+            (
+                request.error_message
+                for request in reversed(requests)
+                if request.error_message
+            ),
+            None,
+        )
         return KnowledgeAssetDetailView.from_asset(
-            self._asset_repository.get(asset_id)
+            asset,
+            latest_index_error=latest_error,
         )
 
     def list_assets(self) -> tuple[KnowledgeAssetView, ...]:

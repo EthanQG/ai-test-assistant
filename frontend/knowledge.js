@@ -19,6 +19,11 @@ const elements = {
   requirement: document.querySelector("#asset-requirement"),
   testPoints: document.querySelector("#asset-test-points"),
   report: document.querySelector("#asset-report"),
+  retire: document.querySelector("#retire-asset"),
+  restore: document.querySelector("#restore-asset"),
+  retry: document.querySelector("#retry-index"),
+  indexError: document.querySelector("#asset-index-error"),
+  actionMessage: document.querySelector("#asset-action-message"),
 };
 
 const pageSize = 10;
@@ -32,6 +37,9 @@ elements.query.addEventListener("keydown", (event) => {
 });
 elements.previous.addEventListener("click", () => { offset -= pageSize; loadAssets(); });
 elements.next.addEventListener("click", () => { offset += pageSize; loadAssets(); });
+elements.retire.addEventListener("click", () => manageAsset("retire"));
+elements.restore.addEventListener("click", () => manageAsset("restore"));
+elements.retry.addEventListener("click", () => manageAsset("retry-index"));
 
 async function loadAssets() {
   const params = new URLSearchParams({
@@ -89,8 +97,33 @@ async function loadDetail(assetId) {
     renderRequirement(asset.structured_requirement);
     renderTestPoints(asset.test_points || []);
     elements.report.textContent = asset.final_report || "暂无最终报告";
+    renderManagement(asset);
     await loadAssets();
   } catch (error) { showError(error.message); }
+}
+
+function renderManagement(asset) {
+  elements.retire.hidden = asset.status !== "indexed";
+  elements.restore.hidden = asset.status !== "retired";
+  elements.retry.hidden = asset.status !== "index_failed";
+  elements.indexError.hidden = !asset.latest_index_error;
+  elements.indexError.textContent = asset.latest_index_error
+    ? `最近索引错误：${asset.latest_index_error}` : "";
+  elements.actionMessage.hidden = true;
+}
+
+async function manageAsset(action) {
+  if (!activeAssetId) return;
+  const buttons = [elements.retire, elements.restore, elements.retry];
+  buttons.forEach((button) => { button.disabled = true; });
+  elements.actionMessage.hidden = true;
+  try {
+    const result = await request(`/api/v1/knowledge-assets/${activeAssetId}/${action}`, { method: "POST" });
+    elements.actionMessage.textContent = `操作成功，当前状态：${statusLabel(result.status)}`;
+    elements.actionMessage.hidden = false;
+    await loadDetail(activeAssetId);
+  } catch (error) { showError(error.message); }
+  finally { buttons.forEach((button) => { button.disabled = false; }); }
 }
 
 function renderRequirement(requirement) {
@@ -153,8 +186,8 @@ function showError(message) {
   elements.error.hidden = false;
 }
 
-async function request(url) {
-  const response = await fetch(url);
+async function request(url, options = {}) {
+  const response = await fetch(url, options);
   if (response.ok) return response.json();
   let detail = `请求失败（${response.status}）`;
   try { detail = (await response.json()).detail || detail; } catch (_) { /* 默认错误 */ }

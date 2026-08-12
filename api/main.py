@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.encoders import jsonable_encoder
@@ -46,6 +47,7 @@ from .schemas import (
     KnowledgeAssetPublicationResponse,
     KnowledgeAssetDetailResponse,
     KnowledgeAssetSummaryPageResponse,
+    KnowledgeAssetManagementResponse,
 )
 from .progress import build_task_progress
 
@@ -166,6 +168,49 @@ def create_app(
         return KnowledgeAssetDetailResponse.model_validate(
             jsonable_encoder(asset)
         )
+
+    @app.post(
+        "/api/v1/knowledge-assets/{asset_id}/retire",
+        response_model=KnowledgeAssetManagementResponse,
+    )
+    def retire_knowledge_asset(asset_id: str) -> KnowledgeAssetManagementResponse:
+        _, indexing_service = get_knowledge_services()
+        try:
+            result = indexing_service.retire_asset(asset_id)
+        except KnowledgeAssetIndexingError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return KnowledgeAssetManagementResponse(
+            asset_id=result.asset_id,
+            status=result.status.value,
+            vector_cleanup_completed=result.vector_cleanup_completed,
+        )
+
+    @app.post(
+        "/api/v1/knowledge-assets/{asset_id}/restore",
+        response_model=KnowledgeAssetManagementResponse,
+    )
+    def restore_knowledge_asset(asset_id: str) -> KnowledgeAssetManagementResponse:
+        _, indexing_service = get_knowledge_services()
+        try:
+            result = indexing_service.restore_asset(asset_id)
+        except KnowledgeAssetIndexingError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return _index_management_response(result)
+
+    @app.post(
+        "/api/v1/knowledge-assets/{asset_id}/retry-index",
+        response_model=KnowledgeAssetManagementResponse,
+    )
+    def retry_knowledge_asset_index(asset_id: str) -> KnowledgeAssetManagementResponse:
+        _, indexing_service = get_knowledge_services()
+        try:
+            result = indexing_service.retry_failed_asset(
+                asset_id,
+                f"web-{uuid4()}",
+            )
+        except KnowledgeAssetIndexingError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return _index_management_response(result)
 
     @app.post(
         "/api/v1/tasks/{task_id}/knowledge-assets",
@@ -390,6 +435,15 @@ def _error_response(status_code: int, message: str):
     return JSONResponse(
         status_code=status_code,
         content={"detail": message},
+    )
+
+
+def _index_management_response(result) -> KnowledgeAssetManagementResponse:
+    return KnowledgeAssetManagementResponse(
+        asset_id=result.asset_id,
+        status=result.status.value,
+        chunk_count=result.chunk_count,
+        omitted_chunk_count=result.omitted_chunk_count,
     )
 
 

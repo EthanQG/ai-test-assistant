@@ -243,6 +243,9 @@ textarea:focus, .file-picker:focus-within { outline: 2px solid #bfdbfe; border-c
 .knowledge-section details { padding: 12px 0; border-bottom: 1px solid var(--border); }
 .knowledge-section summary { cursor: pointer; font-size: 13px; font-weight: 650; }
 .knowledge-test-point-detail { padding: 14px 12px 0; }
+.asset-management { display: flex; flex-wrap: wrap; gap: 8px; margin: -8px 0 18px; }
+.asset-management .button { min-height: 34px; }
+.asset-management .message { width: 100%; margin: 0; }
 
 @media (max-width: 820px) {
   html, body { height: auto; overflow: auto; }

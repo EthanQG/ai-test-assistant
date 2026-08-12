@@ -137,3 +137,12 @@ class KnowledgeAssetDetailResponse(KnowledgeAssetSummaryResponse):
     test_points: list[dict[str, Any]]
     review_result: dict[str, Any]
     final_report: str
+    latest_index_error: str | None
+
+
+class KnowledgeAssetManagementResponse(BaseModel):
+    asset_id: str
+    status: str
+    chunk_count: int = 0
+    omitted_chunk_count: int = 0
+    vector_cleanup_completed: bool | None = None

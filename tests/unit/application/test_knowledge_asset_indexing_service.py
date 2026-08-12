@@ -341,4 +341,22 @@ def test_retire_asset_rejects_non_indexed_asset_without_vector_deletion():
             vector_index,
         ).retire_asset(asset.asset_id)
 
+
+def test_restore_asset_rebuilds_vectors_and_marks_asset_indexed():
+    asset = replace(_asset(), status=KnowledgeAssetStatus.RETIRED)
+    repository = _repository(asset)
+    embedding = _FakeEmbeddingService()
+    vector_index = _FakeVectorIndex()
+
+    result = KnowledgeAssetIndexingService(
+        repository,
+        embedding,
+        vector_index,
+    ).restore_asset(asset.asset_id)
+
+    assert result.status is KnowledgeAssetStatus.INDEXED
+    assert repository.get(asset.asset_id).status is KnowledgeAssetStatus.INDEXED
+    assert embedding.calls == 1
+    assert vector_index.chunks
+
     assert vector_index.deletions == []

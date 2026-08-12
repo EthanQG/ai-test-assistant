@@ -227,6 +227,16 @@ class KnowledgeAssetIndexingService:
             vector_cleanup_completed=True,
         )
 
+    def restore_asset(self, asset_id: str) -> KnowledgeAssetIndexingResult:
+        """Restore a retired asset by rebuilding its vector index."""
+
+        self._asset_repository.update_status(
+            asset_id,
+            KnowledgeAssetStatus.PENDING_INDEX,
+            expected_status=KnowledgeAssetStatus.RETIRED,
+        )
+        return self.index_asset(asset_id)
+
     def _replay_index_request(
         self,
         request: KnowledgeAssetIndexRequest,
