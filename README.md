@@ -45,6 +45,7 @@
 - Application Service记录每次节点执行的开始、结束、耗时、成功/失败和错误类型，并汇总单任务执行耗时
 - MySQL Repository已经通过真实CRUD和跨Application Service实例恢复验证，可按同一`task_id`恢复等待补充、完成和失败任务
 - 后端已建立KnowledgeAsset准入、版本化JSON、MySQL权威存储、Milvus V2索引写入与可信候选回查边界，并已接入完成报告的显式确认入口
+- FastAPI已提供知识资产摘要搜索、状态筛选、分页和单条详情接口；独立知识库管理页面尚未实现
 
 当前原生Web支持用户确认后沉淀知识资产；Streamlit兼容页面仍不提供该入口。
 阶段2.14.3已经完成有界语义Chunk、一次批量Embedding和Milvus V2 upsert；阶段2.14.4已经完成
@@ -128,6 +129,8 @@ python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
 启动后访问`http://127.0.0.1:8000/docs`查看Swagger。当前API复用同一个Application Service，支持文本创建和`POST /api/v1/tasks/from-document`上传TXT、Markdown、PDF、DOCX需求文档，API文件上限为20MB。创建任务后可调用`POST /api/v1/tasks/{task_id}/run`提交后台执行，再通过`GET /api/v1/tasks/{task_id}/progress`轮询当前阶段、执行状态、关键计数和最近3条事件；需要完整结果时再调用任务详情接口。
+
+知识资产可通过`GET /api/v1/knowledge-assets`按关键词、状态和分页查询摘要，再通过`GET /api/v1/knowledge-assets/{asset_id}`读取单条详情。当前接口用于后续知识库管理页，尚未提供下线、删除和索引重试操作。
 
 原生Web前端由FastAPI同源托管，启动后访问`http://127.0.0.1:8000/app/`。当前支持文本/文件创建、后台启动、进度轮询、待确认问题回答、结构化测试点分页和详情、Reviewer质量结果、人工反馈与业务规则二次确认、最终Markdown报告预览和下载，以及左侧MySQL历史任务的新建、搜索、恢复、重命名与悬浮确认删除。历史列表只展示任务标题和状态；任务默认按需求标题自动命名，也可由用户修改，报告下载使用当前任务名称。完成且通过Reviewer的结果可在用户确认脱敏后保存到知识库：MySQL保存完整资产，Milvus保存有关联标识的检索片段。
 

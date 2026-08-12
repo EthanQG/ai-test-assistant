@@ -109,3 +109,26 @@ class KnowledgeAssetPublicationResponse(BaseModel):
     reviewer_score: int
     chunk_count: int
     omitted_chunk_count: int
+
+
+class KnowledgeAssetSummaryResponse(BaseModel):
+    asset_id: str
+    source_task_id: str
+    asset_version: int
+    status: str
+    requirement_summary: str
+    reviewer_score: int
+    test_point_count: int
+    confirmed_at: datetime
+    created_at: datetime
+
+
+class KnowledgeAssetSummaryPageResponse(BaseModel):
+    items: list[KnowledgeAssetSummaryResponse]
+    total: int
+    offset: int
+    limit: int
+
+
+class KnowledgeAssetDetailResponse(KnowledgeAssetSummaryResponse):
+    content_hash: str

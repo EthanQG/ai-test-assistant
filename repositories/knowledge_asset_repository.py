@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from threading import RLock
 
@@ -12,6 +12,27 @@ from knowledge_assets import (
     KnowledgeAssetIndexRequestStatus,
     KnowledgeAssetStatus,
 )
+
+
+@dataclass(frozen=True)
+class KnowledgeAssetSummary:
+    asset_id: str
+    source_task_id: str
+    asset_version: int
+    status: KnowledgeAssetStatus
+    requirement_summary: str
+    reviewer_score: int
+    test_point_count: int
+    confirmed_at: datetime
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class KnowledgeAssetSummaryPage:
+    items: tuple[KnowledgeAssetSummary, ...]
+    total: int
+    offset: int
+    limit: int
 
 
 class KnowledgeAssetRepositoryError(RuntimeError):
@@ -93,6 +114,17 @@ class KnowledgeAssetRepository(ABC):
 
     @abstractmethod
     def list(self) -> list[KnowledgeAsset]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_summaries(
+        self,
+        *,
+        query: str = "",
+        status: KnowledgeAssetStatus | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> KnowledgeAssetSummaryPage:
         raise NotImplementedError
 
     @abstractmethod
@@ -218,6 +250,39 @@ class InMemoryKnowledgeAssetRepository(KnowledgeAssetRepository):
         with self._lock:
             return [deepcopy(asset) for asset in self._assets.values()]
 
+    def list_summaries(
+        self,
+        *,
+        query: str = "",
+        status: KnowledgeAssetStatus | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> KnowledgeAssetSummaryPage:
+        if offset < 0 or limit <= 0:
+            raise ValueError("offset must be non-negative and limit must be positive")
+        normalized_query = query.strip().casefold()
+        with self._lock:
+            matching = [
+                asset
+                for asset in self._assets.values()
+                if (status is None or asset.status is status)
+                and (
+                    not normalized_query
+                    or normalized_query
+                    in asset.structured_requirement.summary.casefold()
+                    or normalized_query in asset.source_task_id.casefold()
+                )
+            ]
+            matching.sort(
+                key=lambda asset: (asset.created_at, asset.asset_id),
+                reverse=True,
+            )
+            items = tuple(
+                _summary_from_asset(asset)
+                for asset in matching[offset : offset + limit]
+            )
+        return KnowledgeAssetSummaryPage(items, len(matching), offset, limit)
+
     def update_status(
         self,
         asset_id: str,
@@ -323,3 +388,17 @@ class InMemoryKnowledgeAssetRepository(KnowledgeAssetRepository):
                 if request.asset_id == asset_id
             ]
         return sorted(matching, key=lambda request: request.started_at)
+
+
+def _summary_from_asset(asset: KnowledgeAsset) -> KnowledgeAssetSummary:
+    return KnowledgeAssetSummary(
+        asset_id=asset.asset_id,
+        source_task_id=asset.source_task_id,
+        asset_version=asset.asset_version,
+        status=asset.status,
+        requirement_summary=asset.structured_requirement.summary,
+        reviewer_score=asset.review_result.overall_score,
+        test_point_count=len(asset.test_points),
+        confirmed_at=asset.confirmed_at,
+        created_at=asset.created_at,
+    )

@@ -46,6 +46,34 @@ def test_repository_creates_reads_lists_and_finds_asset():
     assert repository.list() == [asset]
 
 
+def test_repository_lists_filtered_paginated_summaries():
+    repository = InMemoryKnowledgeAssetRepository()
+    first = _make_asset("asset-summary-1")
+    second = replace(
+        first,
+        asset_id="asset-summary-2",
+        source_task_id="payment-task",
+        asset_version=2,
+        content_hash="d" * 64,
+        status=KnowledgeAssetStatus.INDEXED,
+        created_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+    )
+    repository.create(first)
+    repository.create(second)
+
+    page = repository.list_summaries(
+        query="payment",
+        status=KnowledgeAssetStatus.INDEXED,
+        offset=0,
+        limit=1,
+    )
+
+    assert page.total == 1
+    assert page.items[0].asset_id == second.asset_id
+    assert page.items[0].test_point_count == len(second.test_points)
+    assert page.items[0].status is KnowledgeAssetStatus.INDEXED
+
+
 def test_repository_returns_isolated_copies():
     repository = InMemoryKnowledgeAssetRepository()
     asset = _make_asset()

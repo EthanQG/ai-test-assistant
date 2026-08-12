@@ -243,6 +243,39 @@ def test_mysql_asset_repository_list_restores_all_rows():
     assert assets == [first, second]
 
 
+def test_mysql_asset_repository_lists_summaries_without_snapshot_json():
+    connection = _FakeConnection()
+    asset = _asset()
+    connection.cursor_instance.fetchone_result = {"total": 1}
+    connection.cursor_instance.fetchall_result = [{
+        "asset_id": asset.asset_id,
+        "source_task_id": asset.source_task_id,
+        "asset_version": asset.asset_version,
+        "status": asset.status.value,
+        "requirement_summary": asset.structured_requirement.summary,
+        "reviewer_score": asset.review_result.overall_score,
+        "test_point_count": len(asset.test_points),
+        "confirmed_at": asset.confirmed_at.replace(tzinfo=None),
+        "created_at": asset.created_at.replace(tzinfo=None),
+    }]
+
+    page = _repository(connection).list_summaries(
+        query="订单",
+        status=KnowledgeAssetStatus.PENDING_INDEX,
+        offset=5,
+        limit=10,
+    )
+
+    count_sql, count_params = connection.cursor_instance.executed[0]
+    list_sql, list_params = connection.cursor_instance.executed[1]
+    assert page.total == 1
+    assert page.items[0].asset_id == asset.asset_id
+    assert "asset_json" not in list_sql
+    assert "COUNT(*)" in count_sql
+    assert count_params == ("%订单%", "%订单%", "pending_index")
+    assert list_params == (*count_params, 10, 5)
+
+
 def test_mysql_asset_repository_rolls_back_failed_schema_initialization():
     connection = _FakeConnection()
     connection.cursor_instance.fail_exception = RuntimeError("ddl failed")

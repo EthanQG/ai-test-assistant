@@ -8,7 +8,11 @@ from knowledge_assets import (
     KnowledgeAssetAdmissionPolicy,
     KnowledgeAssetStatus,
 )
-from repositories import KnowledgeAssetRepository, TaskRepository
+from repositories import (
+    KnowledgeAssetRepository,
+    KnowledgeAssetSummary,
+    TaskRepository,
+)
 
 from .commands import ConfirmKnowledgeAssetCommand
 
@@ -24,6 +28,7 @@ class KnowledgeAssetView:
     test_point_count: int
     reviewer_score: int
     confirmed_at: datetime
+    created_at: datetime
 
     @classmethod
     def from_asset(cls, asset: KnowledgeAsset) -> "KnowledgeAssetView":
@@ -37,7 +42,36 @@ class KnowledgeAssetView:
             test_point_count=len(asset.test_points),
             reviewer_score=asset.review_result.overall_score,
             confirmed_at=asset.confirmed_at,
+            created_at=asset.created_at,
         )
+
+
+@dataclass(frozen=True)
+class KnowledgeAssetSummaryView:
+    asset_id: str
+    source_task_id: str
+    asset_version: int
+    status: KnowledgeAssetStatus
+    requirement_summary: str
+    reviewer_score: int
+    test_point_count: int
+    confirmed_at: datetime
+    created_at: datetime
+
+    @classmethod
+    def from_summary(
+        cls,
+        summary: KnowledgeAssetSummary,
+    ) -> "KnowledgeAssetSummaryView":
+        return cls(**summary.__dict__)
+
+
+@dataclass(frozen=True)
+class KnowledgeAssetSummaryPageView:
+    items: tuple[KnowledgeAssetSummaryView, ...]
+    total: int
+    offset: int
+    limit: int
 
 
 class KnowledgeAssetApplicationService:
@@ -84,4 +118,28 @@ class KnowledgeAssetApplicationService:
         return tuple(
             KnowledgeAssetView.from_asset(asset)
             for asset in self._asset_repository.list()
+        )
+
+    def list_asset_summaries(
+        self,
+        *,
+        query: str = "",
+        status: KnowledgeAssetStatus | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> KnowledgeAssetSummaryPageView:
+        page = self._asset_repository.list_summaries(
+            query=query,
+            status=status,
+            offset=offset,
+            limit=limit,
+        )
+        return KnowledgeAssetSummaryPageView(
+            items=tuple(
+                KnowledgeAssetSummaryView.from_summary(item)
+                for item in page.items
+            ),
+            total=page.total,
+            offset=page.offset,
+            limit=page.limit,
         )

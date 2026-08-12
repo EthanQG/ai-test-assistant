@@ -25,7 +25,12 @@ from application.knowledge_asset_indexing_service import (
     KnowledgeAssetIndexingService,
 )
 from application.knowledge_asset_service import KnowledgeAssetApplicationService
-from repositories import KnowledgeAssetAlreadyExistsError, TaskNotFoundError
+from knowledge_assets import KnowledgeAssetStatus
+from repositories import (
+    KnowledgeAssetAlreadyExistsError,
+    KnowledgeAssetNotFoundError,
+    TaskNotFoundError,
+)
 
 from .schemas import (
     BusinessRuleConfirmationRequest,
@@ -39,6 +44,8 @@ from .schemas import (
     RenameTaskRequest,
     KnowledgeAssetConfirmationRequest,
     KnowledgeAssetPublicationResponse,
+    KnowledgeAssetDetailResponse,
+    KnowledgeAssetSummaryPageResponse,
 )
 from .progress import build_task_progress
 
@@ -111,6 +118,12 @@ def create_app(
     ):
         return _error_response(status.HTTP_409_CONFLICT, str(exc))
 
+    @app.exception_handler(KnowledgeAssetNotFoundError)
+    async def knowledge_asset_not_found_handler(
+        _, exc: KnowledgeAssetNotFoundError
+    ):
+        return _error_response(status.HTTP_404_NOT_FOUND, str(exc))
+
     @app.exception_handler(ValueError)
     async def invalid_action_handler(_, exc: ValueError):
         return _error_response(status.HTTP_409_CONFLICT, str(exc))
@@ -118,6 +131,41 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get(
+        "/api/v1/knowledge-assets",
+        response_model=KnowledgeAssetSummaryPageResponse,
+    )
+    def list_knowledge_assets(
+        query: str = Query(default="", max_length=200),
+        asset_status: KnowledgeAssetStatus | None = Query(
+            default=None,
+            alias="status",
+        ),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> KnowledgeAssetSummaryPageResponse:
+        asset_service, _ = get_knowledge_services()
+        page = asset_service.list_asset_summaries(
+            query=query,
+            status=asset_status,
+            offset=offset,
+            limit=limit,
+        )
+        return KnowledgeAssetSummaryPageResponse.model_validate(
+            jsonable_encoder(page)
+        )
+
+    @app.get(
+        "/api/v1/knowledge-assets/{asset_id}",
+        response_model=KnowledgeAssetDetailResponse,
+    )
+    def get_knowledge_asset(asset_id: str) -> KnowledgeAssetDetailResponse:
+        asset_service, _ = get_knowledge_services()
+        asset = asset_service.get_asset(asset_id)
+        return KnowledgeAssetDetailResponse.model_validate(
+            jsonable_encoder(asset)
+        )
 
     @app.post(
         "/api/v1/tasks/{task_id}/knowledge-assets",

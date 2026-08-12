@@ -121,3 +121,16 @@ def test_unknown_task_is_not_publishable():
 
     with pytest.raises(TaskNotFoundError, match="missing-task"):
         service.confirm_task_result("missing-task", _confirmation())
+
+
+def test_service_exposes_paginated_asset_summaries():
+    service, task_repository, _ = _create_service()
+    state = make_eligible_state()
+    task_repository.create(TaskRecord(state=state))
+    published = service.confirm_task_result(state.task_id, _confirmation())
+
+    page = service.list_asset_summaries(query=state.task_id, limit=5)
+
+    assert page.total == 1
+    assert page.limit == 5
+    assert page.items[0].asset_id == published.asset_id

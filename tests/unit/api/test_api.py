@@ -272,6 +272,61 @@ def test_completed_result_can_be_confirmed_and_indexed_as_knowledge():
     assert indexing_service.calls == ["asset-1"]
 
 
+def test_knowledge_asset_summary_and_detail_endpoints():
+    task_service = FakeApplicationService()
+    confirmed_at = datetime(2026, 8, 12, tzinfo=timezone.utc)
+
+    class AssetService:
+        def list_asset_summaries(self, **kwargs):
+            self.list_kwargs = kwargs
+            item = SimpleNamespace(
+                asset_id="asset-1",
+                source_task_id="task-1",
+                asset_version=1,
+                status="indexed",
+                requirement_summary="订单履约测试资产",
+                reviewer_score=91,
+                test_point_count=12,
+                confirmed_at=confirmed_at,
+                created_at=confirmed_at,
+            )
+            return SimpleNamespace(items=(item,), total=1, offset=0, limit=10)
+
+        def get_asset(self, asset_id):
+            assert asset_id == "asset-1"
+            return SimpleNamespace(
+                asset_id=asset_id,
+                source_task_id="task-1",
+                asset_version=1,
+                content_hash="a" * 64,
+                status="indexed",
+                requirement_summary="订单履约测试资产",
+                reviewer_score=91,
+                test_point_count=12,
+                confirmed_at=confirmed_at,
+                created_at=confirmed_at,
+            )
+
+    asset_service = AssetService()
+    client = TestClient(create_app(
+        task_service,
+        knowledge_asset_service=asset_service,
+        knowledge_indexing_service=SimpleNamespace(),
+    ))
+
+    listed = client.get(
+        "/api/v1/knowledge-assets",
+        params={"query": "订单", "status": "indexed", "limit": 10},
+    )
+    detail = client.get("/api/v1/knowledge-assets/asset-1")
+
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["asset_id"] == "asset-1"
+    assert asset_service.list_kwargs["status"].value == "indexed"
+    assert detail.status_code == 200
+    assert detail.json()["content_hash"] == "a" * 64
+
+
 def test_native_frontend_requires_explicit_knowledge_safety_confirmation():
     page = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")

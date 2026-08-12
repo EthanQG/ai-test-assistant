@@ -19,6 +19,8 @@ from .knowledge_asset_repository import (
     KnowledgeAssetNotFoundError,
     KnowledgeAssetRepository,
     KnowledgeAssetRepositoryError,
+    KnowledgeAssetSummary,
+    KnowledgeAssetSummaryPage,
     KnowledgeAssetStatusConflictError,
 )
 
@@ -76,6 +78,25 @@ CREATE TABLE IF NOT EXISTS knowledge_asset_index_requests (
     INDEX idx_asset_index_requests_status_started (status, started_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 """.strip()
+
+
+def _summary_from_row(row: dict[str, Any]) -> KnowledgeAssetSummary:
+    try:
+        return KnowledgeAssetSummary(
+            asset_id=str(row["asset_id"]),
+            source_task_id=str(row["source_task_id"]),
+            asset_version=int(row["asset_version"]),
+            status=KnowledgeAssetStatus(str(row["status"])),
+            requirement_summary=str(row["requirement_summary"]),
+            reviewer_score=int(row["reviewer_score"]),
+            test_point_count=int(row["test_point_count"]),
+            confirmed_at=_aware_mysql_datetime(row["confirmed_at"]),
+            created_at=_aware_mysql_datetime(row["created_at"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise KnowledgeAssetRepositoryError(
+            "MySQL knowledge asset summary row is invalid"
+        ) from exc
 
 
 class MySQLKnowledgeAssetRepository(KnowledgeAssetRepository):
@@ -249,6 +270,66 @@ class MySQLKnowledgeAssetRepository(KnowledgeAssetRepository):
         except Exception as exc:
             raise KnowledgeAssetRepositoryError(
                 "failed to list MySQL knowledge assets"
+            ) from exc
+        finally:
+            cursor.close()
+            connection.close()
+
+    def list_summaries(
+        self,
+        *,
+        query: str = "",
+        status: KnowledgeAssetStatus | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> KnowledgeAssetSummaryPage:
+        if offset < 0 or limit <= 0:
+            raise ValueError("offset must be non-negative and limit must be positive")
+        conditions: list[str] = []
+        params: list[Any] = []
+        normalized_query = query.strip()
+        if normalized_query:
+            conditions.append(
+                "(requirement_summary LIKE %s OR source_task_id LIKE %s)"
+            )
+            pattern = f"%{normalized_query}%"
+            params.extend((pattern, pattern))
+        if status is not None:
+            conditions.append("status = %s")
+            params.append(status.value)
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                f"SELECT COUNT(*) AS total FROM knowledge_assets{where_clause}",
+                tuple(params),
+            )
+            count_row = cursor.fetchone()
+            if not isinstance(count_row, dict) or "total" not in count_row:
+                raise KnowledgeAssetRepositoryError(
+                    "MySQL knowledge asset summary count row is invalid"
+                )
+            cursor.execute(
+                "SELECT asset_id, source_task_id, asset_version, status, "
+                "requirement_summary, reviewer_score, test_point_count, "
+                "confirmed_at, created_at FROM knowledge_assets"
+                f"{where_clause} ORDER BY created_at DESC, asset_id DESC "
+                "LIMIT %s OFFSET %s",
+                (*params, limit, offset),
+            )
+            items = tuple(_summary_from_row(row) for row in cursor.fetchall())
+            return KnowledgeAssetSummaryPage(
+                items=items,
+                total=int(count_row["total"]),
+                offset=offset,
+                limit=limit,
+            )
+        except KnowledgeAssetRepositoryError:
+            raise
+        except Exception as exc:
+            raise KnowledgeAssetRepositoryError(
+                "failed to list MySQL knowledge asset summaries"
             ) from exc
         finally:
             cursor.close()
