@@ -151,7 +151,7 @@ def test_hidden_knowledge_empty_state_does_not_push_detail_below_viewport():
     assert "[hidden] { display: none !important; }" in styles
     assert 'elements.empty.style.display = "none"' in script
     assert 'elements.detail.style.display = "block"' in script
-    assert "styles.css?v=2.19.2.2" in page
+    assert "styles.css?v=2.19.2.3" in page
     assert "knowledge.js?v=2.19.2.2" in page
 
 
