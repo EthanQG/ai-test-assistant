@@ -58,7 +58,7 @@ def create_app(
     knowledge_indexing_service: KnowledgeAssetIndexingService | None = None,
 ) -> FastAPI:
     app = FastAPI(
-        title="Test Analysis Agent API",
+        title="AI 测试分析助手 API",
         version="1.0.0",
         description="受控测试分析Agent的同步应用接口。",
     )

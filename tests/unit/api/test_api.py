@@ -112,7 +112,7 @@ def test_native_frontend_is_served_by_fastapi():
     assert home.status_code == 307
     assert home.headers["location"] == "/app/"
     assert page.status_code == 200
-    assert "Test Analysis Agent" in page.text
+    assert "AI 测试分析助手" in page.text
     assert script.status_code == 200
     assert "pollProgress" in script.text
     assert "submitClarifications" in script.text
