@@ -227,6 +227,7 @@ textarea:focus, .file-picker:focus-within { outline: 2px solid #bfdbfe; border-c
 .knowledge-pagination span { color: var(--muted); font-size: 12px; }
 .knowledge-detail-panel { position: relative; }
 .knowledge-empty { min-height: 100%; display: grid; place-items: center; text-align: center; }
+.knowledge-empty.is-hidden { display: none; min-height: 0; }
 .knowledge-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 0 20px; }
 .knowledge-metrics div { padding: 13px; border: 1px solid var(--border); border-radius: 8px; }
 .knowledge-metrics dt { color: var(--muted); font-size: 12px; }

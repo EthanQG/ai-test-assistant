@@ -145,8 +145,14 @@ def test_native_knowledge_page_is_served_and_uses_asset_api():
 
 def test_hidden_knowledge_empty_state_does_not_push_detail_below_viewport():
     styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "knowledge.js").read_text(encoding="utf-8")
+    page = (FRONTEND_DIR / "knowledge.html").read_text(encoding="utf-8")
 
     assert "[hidden] { display: none !important; }" in styles
+    assert 'elements.empty.style.display = "none"' in script
+    assert 'elements.detail.style.display = "block"' in script
+    assert "styles.css?v=2.19.2.2" in page
+    assert "knowledge.js?v=2.19.2.2" in page
 
 
 def test_frontend_keeps_polling_while_resumed_task_is_queued_or_running():

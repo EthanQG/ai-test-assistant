@@ -54,6 +54,7 @@ function renderList(page) {
   elements.next.disabled = page.offset + page.items.length >= page.total;
   if (!page.items.length) appendEmpty(elements.list, "没有找到知识资产。");
   page.items.forEach((asset) => elements.list.append(assetItem(asset)));
+  if (!activeAssetId && page.items.length) loadDetail(page.items[0].asset_id);
 }
 
 function assetItem(asset) {
@@ -74,7 +75,9 @@ async function loadDetail(assetId) {
     const asset = await request(`/api/v1/knowledge-assets/${assetId}`);
     activeAssetId = assetId;
     elements.empty.hidden = true;
+    elements.empty.style.display = "none";
     elements.detail.hidden = false;
+    elements.detail.style.display = "block";
     elements.error.hidden = true;
     elements.title.textContent = asset.requirement_summary;
     elements.detailStatus.textContent = statusLabel(asset.status);
