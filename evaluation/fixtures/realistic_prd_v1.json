@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "fixture_set_id": "realistic-multimodal-prd-v1",
+  "description": "用于项目体验和综合文档解析验收的脱敏合成PRD。",
+  "fixtures": [
+    {
+      "fixture_id": "realistic-smart-lock-001",
+      "path": "assets/realistic_smart_lock_prd.docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "domain": "iot_security",
+      "expected": {
+        "text_lines": [
+          "智能门锁蓝牙近场自动解锁需求",
+          "测距结果不大于1.5米",
+          "5分钟内认证失败达到3次",
+          "暂停自动解锁10分钟",
+          "同一动态凭证只能成功使用一次"
+        ],
+        "table_count": 1,
+        "image_count": 1,
+        "visual_kind": "flowchart",
+        "clarification_topics": ["距离灰区", "暂停后恢复", "低电量阈值配置"]
+      }
+    },
+    {
+      "fixture_id": "realistic-checkout-001",
+      "path": "assets/realistic_checkout_prd.docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "domain": "ecommerce",
+      "expected": {
+        "text_lines": [
+          "电商订单履约与优惠结算需求 PRD",
+          "商品金额满200元减30元，运费不计入门槛",
+          "相同request_id重复或并发提交只能创建一张有效订单",
+          "重复回调不得重复记账",
+          "取消成功后释放库存并触发优惠券退回"
+        ],
+        "table_count": 1,
+        "image_count": 1,
+        "visual_kind": "ui_mockup",
+        "clarification_topics": ["支付中过期", "过期券退回状态", "库存超时释放"]
+      }
+    }
+  ]
+}
