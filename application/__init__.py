@@ -8,6 +8,7 @@ from .commands import (
 )
 from .knowledge_asset_service import (
     KnowledgeAssetApplicationService,
+    KnowledgeAssetDetailView,
     KnowledgeAssetSummaryPageView,
     KnowledgeAssetSummaryView,
     KnowledgeAssetView,
@@ -58,6 +59,7 @@ __all__ = [
     "FeedbackView",
     "NodeExecutionMetric",
     "KnowledgeAssetApplicationService",
+    "KnowledgeAssetDetailView",
     "KnowledgeAssetSummaryPageView",
     "KnowledgeAssetSummaryView",
     "KnowledgeAssetIndexingError",

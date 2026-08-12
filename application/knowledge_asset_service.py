@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from knowledge_assets import (
     KnowledgeAsset,
@@ -74,6 +75,27 @@ class KnowledgeAssetSummaryPageView:
     limit: int
 
 
+@dataclass(frozen=True)
+class KnowledgeAssetDetailView(KnowledgeAssetView):
+    original_requirement: str
+    structured_requirement: dict[str, Any]
+    test_points: tuple[dict[str, Any], ...]
+    review_result: dict[str, Any]
+    final_report: str
+
+    @classmethod
+    def from_asset(cls, asset: KnowledgeAsset) -> "KnowledgeAssetDetailView":
+        base = KnowledgeAssetView.from_asset(asset)
+        return cls(
+            **base.__dict__,
+            original_requirement=asset.original_requirement,
+            structured_requirement=asset.structured_requirement.to_dict(),
+            test_points=tuple(point.to_dict() for point in asset.test_points),
+            review_result=asset.review_result.to_dict(),
+            final_report=asset.final_report,
+        )
+
+
 class KnowledgeAssetApplicationService:
     """Publishes confirmed task results without exposing repositories."""
 
@@ -109,8 +131,8 @@ class KnowledgeAssetApplicationService:
         self._asset_repository.create(asset)
         return KnowledgeAssetView.from_asset(asset)
 
-    def get_asset(self, asset_id: str) -> KnowledgeAssetView:
-        return KnowledgeAssetView.from_asset(
+    def get_asset(self, asset_id: str) -> KnowledgeAssetDetailView:
+        return KnowledgeAssetDetailView.from_asset(
             self._asset_repository.get(asset_id)
         )
 

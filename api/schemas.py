@@ -132,3 +132,8 @@ class KnowledgeAssetSummaryPageResponse(BaseModel):
 
 class KnowledgeAssetDetailResponse(KnowledgeAssetSummaryResponse):
     content_hash: str
+    original_requirement: str
+    structured_requirement: dict[str, Any]
+    test_points: list[dict[str, Any]]
+    review_result: dict[str, Any]
+    final_report: str

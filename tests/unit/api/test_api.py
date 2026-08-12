@@ -125,6 +125,22 @@ def test_native_frontend_is_served_by_fastapi():
     assert "最终报告" in page.text
     assert "人工反馈" in page.text
     assert "确认规则并继续" in page.text
+    assert "知识库" in page.text
+
+
+def test_native_knowledge_page_is_served_and_uses_asset_api():
+    client, _ = _client()
+
+    page = client.get("/app/knowledge.html")
+    script = client.get("/app/knowledge.js")
+
+    assert page.status_code == 200
+    assert "历史测试资产" in page.text
+    assert 'id="asset-list"' in page.text
+    assert 'id="knowledge-detail"' in page.text
+    assert script.status_code == 200
+    assert "/api/v1/knowledge-assets" in script.text
+    assert "loadDetail" in script.text
 
 
 def test_frontend_keeps_polling_while_resumed_task_is_queued_or_running():
@@ -305,6 +321,11 @@ def test_knowledge_asset_summary_and_detail_endpoints():
                 test_point_count=12,
                 confirmed_at=confirmed_at,
                 created_at=confirmed_at,
+                original_requirement="订单履约需求",
+                structured_requirement={"summary": "订单履约测试资产", "modules": []},
+                test_points=[],
+                review_result={"overall_score": 91},
+                final_report="# 订单履约测试报告",
             )
 
     asset_service = AssetService()
@@ -325,6 +346,7 @@ def test_knowledge_asset_summary_and_detail_endpoints():
     assert asset_service.list_kwargs["status"].value == "indexed"
     assert detail.status_code == 200
     assert detail.json()["content_hash"] == "a" * 64
+    assert detail.json()["final_report"] == "# 订单履约测试报告"
 
 
 def test_native_frontend_requires_explicit_knowledge_safety_confirmation():

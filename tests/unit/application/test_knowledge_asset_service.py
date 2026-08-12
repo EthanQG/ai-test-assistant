@@ -48,7 +48,10 @@ def test_confirm_task_result_publishes_first_asset_version():
     assert view.asset_version == 1
     assert view.test_point_count == 1
     assert view.reviewer_score == 92
-    assert service.get_asset(view.asset_id) == view
+    detail = service.get_asset(view.asset_id)
+    assert detail.asset_id == view.asset_id
+    assert detail.final_report == state.report
+    assert len(detail.test_points) == view.test_point_count
     assert service.list_assets() == (view,)
     assert len(asset_repository.list()) == 1
 

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>知识库 - AI 测试分析助手</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="product-header">
+    <div class="logo" aria-hidden="true">TA</div>
+    <div class="product-title">
+      <h1>AI 测试分析助手</h1>
+      <p>复用经过确认的历史测试分析资产</p>
+    </div>
+    <nav class="product-navigation" aria-label="产品功能">
+      <a class="product-navigation-link" href="./">任务工作台</a>
+      <a class="product-navigation-link active" href="./knowledge.html">知识库</a>
+    </nav>
+  </header>
+
+  <main class="knowledge-workspace">
+    <aside class="panel knowledge-list-panel">
+      <div class="panel-heading">
+        <div><p class="eyebrow">知识资产</p><h2>历史测试资产</h2></div>
+        <span id="asset-total" class="muted">0 项</span>
+      </div>
+      <div class="knowledge-filters">
+        <input id="asset-query" type="search" placeholder="搜索需求摘要或任务ID">
+        <select id="asset-status" aria-label="索引状态">
+          <option value="">全部状态</option>
+          <option value="indexed">已索引</option>
+          <option value="pending_index">待索引</option>
+          <option value="index_failed">索引失败</option>
+          <option value="retired">已停用</option>
+        </select>
+        <button id="search-assets" class="button primary" type="button">搜索</button>
+      </div>
+      <div id="asset-list" class="knowledge-asset-list"></div>
+      <div class="pagination knowledge-pagination">
+        <button id="previous-assets" class="button secondary" type="button">上一页</button>
+        <span id="asset-page-label">第 1 / 1 页</span>
+        <button id="next-assets" class="button secondary" type="button">下一页</button>
+      </div>
+    </aside>
+
+    <section class="panel knowledge-detail-panel">
+      <div id="knowledge-empty" class="knowledge-empty">
+        <div><p class="eyebrow">资产详情</p><h2>选择一条知识资产</h2>
+        <p class="muted">查看需求摘要、质量结果、结构化测试点和最终报告。</p></div>
+      </div>
+      <article id="knowledge-detail" hidden>
+        <div class="panel-heading">
+          <div><p class="eyebrow">资产详情</p><h2 id="asset-title"></h2></div>
+          <span id="asset-detail-status" class="status neutral"></span>
+        </div>
+        <dl class="knowledge-metrics">
+          <div><dt>Reviewer评分</dt><dd id="asset-score">-</dd></div>
+          <div><dt>测试点</dt><dd id="asset-test-point-count">0</dd></div>
+          <div><dt>资产版本</dt><dd id="asset-version">V1</dd></div>
+          <div><dt>确认时间</dt><dd id="asset-confirmed-at">-</dd></div>
+        </dl>
+        <section class="knowledge-section"><h3>结构化需求</h3><div id="asset-requirement"></div></section>
+        <section class="knowledge-section"><h3>结构化测试点</h3><div id="asset-test-points"></div></section>
+        <section class="knowledge-section"><h3>最终报告</h3><pre id="asset-report" class="report-preview"></pre></section>
+      </article>
+      <p id="knowledge-error" class="message error" hidden></p>
+    </section>
+  </main>
+  <script src="./knowledge.js" defer></script>
+</body>
+</html>
