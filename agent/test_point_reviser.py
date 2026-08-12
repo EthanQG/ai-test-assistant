@@ -77,23 +77,22 @@ class TestPointReviser:
 
             def parse_revision_plan(
                 raw_response: str,
-            ) -> TestPointRevisionPlan:
+            ) -> tuple[TestPointRevisionPlan, TestPointGenerationResult]:
                 plan = TestPointRevisionPlan.from_json(raw_response)
                 self._validate_revision_scope(
                     plan,
                     allowed_actions,
                     max_operations,
                 )
-                return plan
+                return plan, plan.apply_to(original_test_points)
 
-            revision_plan = generate_and_parse_json(
+            revision_plan, result = generate_and_parse_json(
                 self.llm_service,
                 user_prompt,
                 system_prompt,
                 parse_revision_plan,
                 max_tokens=LARGE_STRUCTURED_OUTPUT_MAX_TOKENS,
             )
-            result = revision_plan.apply_to(original_test_points)
             revised_test_points = [
                 test_point.to_dict()
                 for test_point in result.test_points

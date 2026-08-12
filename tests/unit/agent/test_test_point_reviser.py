@@ -87,6 +87,16 @@ class FakeLLMService:
         return self.generate(prompt, system_prompt)
 
 
+class SequenceLLMService(FakeLLMService):
+    def __init__(self, responses: list[str]):
+        super().__init__()
+        self.responses = iter(responses)
+
+    def generate(self, prompt: str, system_prompt: str) -> str:
+        self.calls.append((prompt, system_prompt))
+        return next(self.responses)
+
+
 class TestPointReviserTests(unittest.TestCase):
     def test_success_updates_points_and_invalidates_review(self):
         llm = FakeLLMService(revised_response())
@@ -210,6 +220,33 @@ class TestPointReviserTests(unittest.TestCase):
             state.test_points[1]["title"],
             "库存充足时提交订单",
         )
+
+    def test_duplicate_add_is_retried_inside_atomic_merge_boundary(self):
+        state = ready_state()
+        duplicate = json.dumps(
+            {
+                "operations": [
+                    {
+                        "action": "add",
+                        "test_point": state.test_points[0],
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+        llm = SequenceLLMService([duplicate, revised_response()])
+
+        result = TestPointReviser(llm_service=llm).revise(state)
+
+        self.assertEqual(len(llm.calls), 2)
+        self.assertIn("上一次响应无法通过", llm.calls[1][0])
+        self.assertEqual(len(result.test_points), 1)
+        self.assertIn(
+            "商品库存保持为0",
+            result.test_points[0].expected_results,
+        )
+        self.assertEqual(state.revision_count, 1)
+        self.assertEqual(state.status, AgentStatus.RUNNING)
 
     def test_invalid_target_fails_atomically(self):
         state = ready_state()
