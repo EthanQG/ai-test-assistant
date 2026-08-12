@@ -180,6 +180,13 @@ def test_frontend_stops_at_revision_limit_only_after_background_run_finishes():
     assert 'showResultTab("feedback")' in script
 
 
+def test_frontend_only_offers_knowledge_publication_for_passed_review():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "currentReviewPassed = task.state.review_passed" in script
+    assert "currentReviewPassed === true" in script
+
+
 def test_frontend_javascript_element_ids_exist_in_page():
     page = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
     script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")

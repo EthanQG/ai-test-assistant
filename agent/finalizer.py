@@ -92,9 +92,16 @@ class Finalizer:
             raise FinalizationError(
                 "structured test points must exist before finalization"
             )
-        if state.review_passed is not True or not state.review_result:
+        if not state.review_result:
             raise FinalizationError(
-                "test points must pass review before finalization"
+                "test points must be reviewed before finalization"
+            )
+        if (
+            state.review_passed is not True
+            and state.automatic_revision_count < state.max_revision_count
+        ):
+            raise FinalizationError(
+                "failed review can only be finalized after revision limit"
             )
         if HumanFeedbackHandler.ready_feedback(state):
             raise FinalizationError(
@@ -151,6 +158,7 @@ class Finalizer:
             quality_summary={
                 "overall_score": review.overall_score,
                 "review_threshold": state.review_threshold,
+                "review_passed": state.review_passed is True,
                 "dimension_scores": review.dimension_scores.to_dict(),
                 "review_rounds": len(state.review_history),
                 "revision_count": state.revision_count,
@@ -174,6 +182,10 @@ class Finalizer:
         review: TestPointReviewResult,
     ) -> list[str]:
         warnings = []
+        if state.review_passed is not True:
+            warnings.append(
+                "Reviewer评分未达到推荐质量门槛；报告保留未解决问题，可提交人工反馈后生成新版"
+            )
         if (
             state.knowledge_retrieval_status
             == KnowledgeRetrievalStatus.DEGRADED

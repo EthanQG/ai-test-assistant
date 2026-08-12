@@ -79,6 +79,7 @@ let businessRules = [];
 let humanFeedback = [];
 let pendingBusinessFeedback = null;
 let currentTaskStatus = null;
+let currentReviewPassed = null;
 let currentTaskName = "";
 let activeDeleteConfirmation = null;
 const pageSize = 5;
@@ -443,6 +444,7 @@ async function loadResults() {
   reportMarkdown = task.state.report || "";
   businessRules = task.state.business_rules || [];
   humanFeedback = task.state.human_feedback || [];
+  currentReviewPassed = task.state.review_passed;
   currentPage = 1;
   renderTestPoints();
   renderQuality(task.state.review_result);
@@ -703,7 +705,9 @@ function renderReport() {
 
 function renderKnowledgePublish() {
   elements.knowledgePublish.hidden = !(
-    currentTaskStatus === "completed" && reportMarkdown
+    currentTaskStatus === "completed"
+    && currentReviewPassed === true
+    && reportMarkdown
   );
 }
 
@@ -976,6 +980,7 @@ function resetWorkspace() {
   if (pollTimer) window.clearTimeout(pollTimer);
   currentTaskId = null;
   currentTaskStatus = null;
+  currentReviewPassed = null;
   currentTaskName = "";
   pollTimer = null;
   elements.requirement.value = "";

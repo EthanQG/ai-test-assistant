@@ -140,8 +140,8 @@ class AgentOrchestrator:
             )
         if state.automatic_revision_count >= self.max_revision_count:
             return OrchestratorDecision(
-                OrchestratorAction.REVISION_LIMIT_REACHED,
-                "评审未通过且已达到自动修正次数上限",
+                OrchestratorAction.FINALIZE,
+                "评审未通过且已达到自动修正次数上限，生成带质量风险说明的报告",
             )
         return OrchestratorDecision(
             OrchestratorAction.REVISE_TEST_POINTS,

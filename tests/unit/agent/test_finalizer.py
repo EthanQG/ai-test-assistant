@@ -141,20 +141,41 @@ class FinalizerTests(unittest.TestCase):
         )
         self.assertIn("## 注意事项", state.report)
 
-    def test_unreviewed_or_failed_review_cannot_be_finalized(self):
-        for review_passed in (None, False):
-            with self.subTest(review_passed=review_passed):
-                state = finalizable_state()
-                state.review_passed = review_passed
+    def test_unreviewed_task_cannot_be_finalized(self):
+        state = finalizable_state()
+        state.review_passed = None
+        state.review_result = None
 
-                with self.assertRaisesRegex(
-                    FinalizationError,
-                    "must pass review",
-                ):
-                    Finalizer().finalize(state)
+        with self.assertRaisesRegex(FinalizationError, "must be reviewed"):
+            Finalizer().finalize(state)
 
-                self.assertNotEqual(state.status, AgentStatus.COMPLETED)
-                self.assertIsNone(state.final_result)
+        self.assertNotEqual(state.status, AgentStatus.COMPLETED)
+        self.assertIsNone(state.final_result)
+
+    def test_failed_review_below_revision_limit_cannot_be_finalized(self):
+        state = finalizable_state()
+        state.review_passed = False
+        state.automatic_revision_count = 1
+        state.max_revision_count = 2
+
+        with self.assertRaisesRegex(FinalizationError, "revision limit"):
+            Finalizer().finalize(state)
+
+        self.assertNotEqual(state.status, AgentStatus.COMPLETED)
+
+    def test_failed_review_at_revision_limit_builds_risk_report(self):
+        state = finalizable_state()
+        state.review_passed = False
+        state.review_result["overall_score"] = 78
+        state.automatic_revision_count = 2
+        state.max_revision_count = 2
+
+        result = Finalizer().finalize(state)
+
+        self.assertEqual(state.status, AgentStatus.COMPLETED)
+        self.assertFalse(result.quality_summary["review_passed"])
+        self.assertIn("未达到推荐质量门槛", state.report)
+        self.assertIn("可提交人工反馈后生成新版", state.report)
 
     def test_invalid_test_point_is_rejected_without_completing_task(self):
         state = finalizable_state()

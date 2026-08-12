@@ -112,7 +112,7 @@ class AgentOrchestratorDecisionTests(unittest.TestCase):
             OrchestratorAction.REVISE_TEST_POINTS,
         )
 
-    def test_revision_limit_stops_automatic_loop(self):
+    def test_revision_limit_finalizes_with_quality_risk(self):
         state = generated_state()
         state.review_result = {"overall_score": 70}
         state.review_passed = False
@@ -121,7 +121,7 @@ class AgentOrchestratorDecisionTests(unittest.TestCase):
         decision = self.orchestrator.decide_next(state)
         self.assertEqual(
             decision.action,
-            OrchestratorAction.REVISION_LIMIT_REACHED,
+            OrchestratorAction.FINALIZE,
         )
 
     def test_waiting_and_terminal_states_stop(self):
