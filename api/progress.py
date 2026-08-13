@@ -53,7 +53,10 @@ def build_task_progress(
         "waiting_for_business_rules": bool(view.pending_business_feedback),
         "revision_limit_reached": revision_limit_reached,
         "test_point_count": len(view.test_points),
-        "reviewer_score": review_result.get("score"),
+        "reviewer_score": review_result.get(
+            "overall_score",
+            review_result.get("score"),
+        ),
         "automatic_revision_count": view.automatic_revision_count,
         "human_revision_count": view.human_revision_count,
         "recent_events": [event.to_dict() for event in events],

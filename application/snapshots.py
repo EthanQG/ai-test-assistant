@@ -815,11 +815,20 @@ class TaskSnapshotSerializer:
             "automatic_revision_count",
             "human_revision_count",
         }
-        cls._require_exact_fields(
-            quality,
-            quality_fields,
-            f"{path}.quality_summary",
+        missing_quality_fields = quality_fields - set(quality)
+        unknown_quality_fields = set(quality) - (
+            quality_fields | {"review_passed"}
         )
+        if missing_quality_fields:
+            raise SnapshotValidationError(
+                f"{path}.quality_summary is missing required fields: "
+                + ", ".join(sorted(missing_quality_fields))
+            )
+        if unknown_quality_fields:
+            raise SnapshotValidationError(
+                f"{path}.quality_summary contains unknown fields: "
+                + ", ".join(sorted(unknown_quality_fields))
+            )
         try:
             dimension_scores = ReviewDimensionScores.from_dict(
                 quality["dimension_scores"]
@@ -915,6 +924,16 @@ class TaskSnapshotSerializer:
                     quality["human_revision_count"],
                     f"{path}.quality_summary.human_revision_count",
                     minimum=0,
+                ),
+                **(
+                    {
+                        "review_passed": cls._boolean(
+                            quality["review_passed"],
+                            f"{path}.quality_summary.review_passed",
+                        )
+                    }
+                    if "review_passed" in quality
+                    else {}
                 ),
             },
             "inferred_risks": risks,

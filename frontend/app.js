@@ -679,7 +679,7 @@ function appendFinding(title, items = []) {
   if (!items.length) return;
   const section = document.createElement("section");
   const heading = document.createElement("h4");
-  const list = document.createElement("ul");
+  const list = document.createElement("ol");
   heading.textContent = title;
   items.forEach((text) => {
     const item = document.createElement("li");

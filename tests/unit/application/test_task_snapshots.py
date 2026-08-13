@@ -151,6 +151,7 @@ def build_full_record() -> TaskRecord:
         "quality_summary": {
             "overall_score": 78,
             "review_threshold": 80,
+            "review_passed": False,
             "dimension_scores": deepcopy(
                 REVIEW_RESULT["dimension_scores"]
             ),
@@ -232,7 +233,31 @@ class TaskSnapshotSerializerTests(unittest.TestCase):
             self.record.pending_clarifications,
         )
         self.assertEqual(restored.next_action, self.record.next_action)
+        self.assertFalse(
+            restored.state.final_result["quality_summary"]["review_passed"]
+        )
         self.assertFalse(restored.in_progress)
+
+    def test_final_quality_review_passed_is_backward_compatible(self):
+        quality = self.payload["state"]["final_result"]["quality_summary"]
+        quality.pop("review_passed")
+
+        restored = TaskSnapshotSerializer.from_dict(self.payload)
+
+        self.assertNotIn(
+            "review_passed",
+            restored.state.final_result["quality_summary"],
+        )
+
+    def test_final_quality_review_passed_must_be_boolean(self):
+        quality = self.payload["state"]["final_result"]["quality_summary"]
+        quality["review_passed"] = "false"
+
+        with self.assertRaisesRegex(
+            SnapshotValidationError,
+            "quality_summary.review_passed must be a boolean",
+        ):
+            TaskSnapshotSerializer.from_dict(self.payload)
 
     def test_json_round_trip_uses_standard_json(self):
         raw = TaskSnapshotSerializer.to_json(self.record)

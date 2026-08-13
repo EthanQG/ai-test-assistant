@@ -128,6 +128,26 @@ def test_native_frontend_is_served_by_fastapi():
     assert "知识库" in page.text
 
 
+def test_quality_findings_use_numbered_lists():
+    page = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+    styles = (FRONTEND_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert 'document.createElement("ol")' in script
+    assert ".quality-findings ol" in styles
+    assert "styles.css?v=2.20.3" in page
+    assert "app.js?v=2.20.3" in page
+
+
+def test_report_download_uses_named_markdown_blob():
+    script = (FRONTEND_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'new Blob([reportMarkdown], { type: "text/markdown;charset=utf-8" })' in script
+    assert 'link.download = `${safeFilename(currentTaskName || "测试分析")}-测试分析报告.md`' in script
+    assert "link.click()" in script
+    assert "URL.revokeObjectURL(url)" in script
+
+
 def test_native_knowledge_page_is_served_and_uses_asset_api():
     client, _ = _client()
 

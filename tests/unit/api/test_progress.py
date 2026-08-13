@@ -42,7 +42,7 @@ def test_progress_uses_domain_state_and_limits_recent_events():
     state.status = AgentStatus.WAITING_FOR_USER
     state.open_questions = ["库存不足如何处理？"]
     state.test_points = [{"id": "TP-1"}]
-    state.review_result = {"score": 82}
+    state.review_result = {"overall_score": 82}
     record = TaskRecord(
         state=state,
         pending_clarifications={"库存不足如何处理？": None},
@@ -60,3 +60,15 @@ def test_progress_uses_domain_state_and_limits_recent_events():
     assert progress["reviewer_score"] == 82
     assert len(progress["recent_events"]) == 3
     assert progress["recent_events"][-1]["message"] == "等待补充"
+
+
+def test_progress_keeps_legacy_reviewer_score_compatible():
+    state = TestAnalysisState("订单需求")
+    state.review_result = {"score": 81}
+
+    progress = build_task_progress(
+        TaskView.from_record(TaskRecord(state=state)),
+        BackgroundRunStatus(state.task_id, "stopped", False),
+    )
+
+    assert progress["reviewer_score"] == 81
