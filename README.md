@@ -1,327 +1,190 @@
 # AI 测试分析助手
 
-一个面向测试工程师的智能测试分析项目。当前版本聚焦于读取 PRD 或需求描述，结合本地 Bug 经验与 Milvus 历史测试资产，生成可评审、可追踪的结构化测试分析报告，并支持用户提交结构化反馈后重新修正、评审和生成报告。
+面向测试工程师的 AI 测试分析项目：上传 PRD 后，由受控 Agentic Workflow 完成需求理解、历史测试资产检索、结构化测试点生成、质量评审与报告输出，并支持任务恢复、人工反馈和知识沉淀。
 
-> 当前只有“测试分析报告生成”功能完成。自动化用例生成和异常日志分析仍在规划中，因此暂未在页面展示。
->
-> 当前 Streamlit 页面定位为 V1 功能演示界面，用于完整展示 Agent 能力、状态流转和人工反馈闭环；不以完全复刻 DeepL 或生产级固定工作台为目标。
+> 当前聚焦“测试分析报告生成”。自动化用例执行、缺陷定位和日志分析不属于当前已实现范围。
 
-## 当前能力
+## 项目定位
 
-- 输入文本，或上传 TXT、Markdown、PDF、DOCX 格式的需求文档
-- 页面调用完整Agent链路生成结构化测试分析结果
-- 使用 Milvus 与 Embedding 服务检索相似历史测试资产
-- 展示Agent阶段进度；Orchestrator决策和完整节点事件收纳在默认折叠的执行详情中
-- 展示结构化测试点和Reviewer多维评分
-- 展示并下载Finalizer生成的Markdown报告
-- 内部已实现结构化需求分析节点，可识别需求事实、推导风险和待确认项
-- 内部已实现知识检索节点，可区分历史资产命中、无匹配和服务降级
-- 内部已实现结构化测试点生成节点，支持分类、优先级、执行步骤、预期结果和来源追踪
-- 内部已实现测试点质量评审节点，可检查需求覆盖、边界异常、重复项、幻觉风险和可执行性
-- 内部已实现测试点定向修正节点，可根据Reviewer问题修正并强制重新评审
-- 已实现结构化人工反馈，可区分测试建议与需确认的业务规则并驱动Reviser
-- 内部已实现受控Python编排器，可自动串联节点、限制修正次数并保留每轮变化
-- 内部已实现Finalizer，可确定性汇总覆盖、质量、来源、风险和最终Markdown报告
-- Reviewer未达标且两轮自动修正用尽时仍会生成带质量风险标记的报告；用户可直接下载，或选择提交人工反馈后生成新版
-- Streamlit已接入Agent自动主路径，采用固定高度的左右工作区；左侧正文独立滚动且主要操作固定在栏底，右侧结果正文独立滚动
-- 待确认问题每轮最多3个，用户可以回答或选择“暂不确定”，随后恢复同一Agent任务
-- 待确认候选按核心规则、关键数字、关键分支、需求冲突、实现细节和低影响问题分类；Python最多保留3个真正阻塞项，其余转为风险继续
-- Agent按节点逐步执行并自动刷新轨迹；普通浏览器刷新可在服务进程存活期间恢复当前任务
-- 执行区使用原生动态状态显示当前中文节点、处理内容、合理等待说明和最近3条关键进展，节点完成后在决策轨迹中记录实际耗时
-- 页面使用中文步骤与分类标签，最终Markdown报告以表格展示结构化测试点
-- 页面支持新增、修改、删除测试点和调整优先级，并展示反馈处理状态
-- 结构化测试点默认每页5条，完整前置条件、步骤、预期结果和来源通过详情Dialog查看
-- 任务创建后左侧使用State中的原始需求进行只读对照；人工反馈统一在右侧Tab提交
-- 所有任务状态共用最大1360px工作区；完成态扩大结果栏，测试点使用摘要列表与可展开详情
-- 新增或修改业务规则需要用户二次确认，取消的规则不会进入需求事实
-- 自动修正和人工反馈修正分别计数，人工反馈不会被自动修正次数上限拦截
-- 人工反馈修正使用独立最小作用域：不混入已通过的旧Reviewer建议，并限制允许的操作类型和数量
-- 人工反馈提交后显示受理提示并重置表单，降低等待期间重复提交的风险
-- 结构化LLM节点启用JSON Output、截断检测和一次受控校验重试
-- Reviewer会将可选问题列表中的纯空白占位归一化为空列表，同时继续拒绝错误数据类型
-- Generator与Reviewer使用8192的大体量输出预算；Reviser只返回增删改操作，由Python校验并原子合并，避免重复输出完整测试点集合
-- Streamlit只调用Application Service表达创建、推进、补充、确认、反馈和重试等用户动作
-- TaskRepository隔离任务存储，当前InMemory实现按Streamlit会话装配并返回隔离副本
-- 页面只持有当前task_id和纯UI状态，通过只读TaskView渲染Agent结果
-- Application Service记录每次节点执行的开始、结束、耗时、成功/失败和错误类型，并汇总单任务执行耗时
-- MySQL Repository已经通过真实CRUD和跨Application Service实例恢复验证，可按同一`task_id`恢复等待补充、完成和失败任务
-- 后端已建立KnowledgeAsset准入、版本化JSON、MySQL权威存储、Milvus V2索引写入与可信候选回查边界，并已接入完成报告的显式确认入口
-- FastAPI已提供知识资产摘要搜索、状态筛选、分页和单条详情接口
-- 原生Web已提供独立知识库页面，可搜索、筛选、分页和查看详情，并支持资产停用、恢复、索引失败重试与错误查看
-- 评测目录提供2份真实感综合图文PRD（智能门锁、电商结算），包含正文、规则表、流程图或UI原型及确定性解析金标准，可直接上传项目体验
-
-当前原生Web支持用户确认后沉淀知识资产；Streamlit兼容页面仍不提供该入口。
-阶段2.14.3已经完成有界语义Chunk、一次批量Embedding和Milvus V2 upsert；阶段2.14.4已经完成
-一次查询Embedding、Milvus阈值召回、按资产聚合和MySQL批量回查；阶段2.14.5增加了显式失败重试、
-`request_id`幂等审计和资产停用后的向量清理。页面和当前KnowledgeRetriever尚未触发这些用例，
-因此现在仍不能描述为用户主流程已经使用V2历史资产。
-旧 Workflow 仍保留 `RAGService.save_case()` 兼容能力，但这不代表当前 Agent 已经形成可靠的
-知识闭环。后续将由 MySQL 保存完整、可审计的知识资产，Milvus 只承担向量候选检索。
-
-阶段2.15.3已经在统一`DocumentContent`上增加扫描页与内嵌图片OCR：保留文字、置信度、图片ID、页码
-和处置状态，单张图片失败不会中断整份文档。高置信度文字进入兼容文本，低置信度只作为待复核候选。
-默认适配本地Tesseract；未安装运行时会明确降级。阶段2.15.4新增了有界视觉理解边界：只对文档上下文
-明确标记的流程图、状态图、时序图和UI原型候选调用显式配置的多模态端点，每份文档最多5张，并以
-结构化节点、关系、UI元素、状态变化和不确定性保存结果。当前只有Fake测试证据，尚未验证真实视觉模型
-效果，因此仍不能描述为已经完成完整图文PRD理解。
-
-## 项目结构
+这个项目不是让 LLM 自由规划和任意调用工具的自主 Agent，而是由 Python Orchestrator 控制节点顺序、暂停条件和最大修正次数的受控 Agentic Workflow。
 
 ```text
-.
-├── AGENTS.md               # Codex跨设备协作与开发约定
-├── main.py                 # Streamlit 应用入口
-├── application/            # 应用用例、Command、只读TaskView与会话装配
-├── agent/                  # Agent状态、事件及后续节点
-├── knowledge_assets/       # 知识资产模型、准入、快照与有界语义Chunk
-├── documents/              # 图文文档模型、元素来源与解析警告
-├── repositories/           # Task/KnowledgeAsset Repository抽象与实现
-├── views/                  # 页面与交互状态
-├── services/               # LLM、RAG、文档解析应用服务
-├── utils/                  # 基础客户端、配置及兼容业务入口
-├── prompts/                # 模型提示词
-├── knowledge/              # 本地测试知识
-├── docs/                   # 当前接力状态与开发复盘
-│   └── roadmap/           # 秋招目标、阶段范围和证据要求
-└── tests/                  # 分层自动化测试
-    ├── unit/               # Agent、Application、Repository、Service与Presenter单元测试
-    ├── architecture/       # 静态依赖边界测试
-    ├── app/                # Streamlit AppTest与页面fixture
-    └── integration/        # 需显式开启的真实基础设施集成测试
+PRD文本或文档
+  → 需求分析 RequirementAnalyzer
+  → 历史资产检索 KnowledgeRetriever
+  → 测试点生成 TestPointGenerator
+  → 质量评审 Reviewer
+  → 受控修正 Reviser（按需、最多2轮自动修正）
+  → 报告整理 Finalizer
 ```
 
-当前页面已经不再调用 `TestAssistantManager`，也不直接创建AgentState、Orchestrator、节点
-或FeedbackHandler。页面通过`TestAnalysisApplicationService`进入应用用例，由Application
-Service加载Repository中的隔离副本、调用受控Orchestrator并保存结果，再返回只读`TaskView`。
-旧`TestAssistantManager`只作为Workflow兼容实现保留。
+Human-in-the-loop 可在两个位置介入：
 
-## 开发过程与设计说明
+- 核心信息不足时，任务暂停并等待用户补充，随后恢复同一个 `task_id`；
+- 报告完成后，用户可以选择提交测试建议或业务规则，生成修订版报告，也可以直接结束任务。
 
-当前产品范围与项目从 Workflow 向 Agent 演进的过程，请查看：
+## 核心能力
 
-- [当前产品需求说明书 V2](docs/product/PRD_AGENT_V2.md)
-- [项目文档导航](docs/README.md)
-- [当前开发状态与跨设备接力](docs/CURRENT_STATUS.md)
-- [开发与复盘日志](docs/DEVELOPMENT_LOG.md)
-- [代码学习与面试复盘](docs/LEARNING_NOTES.md)
-- [秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)
+- 支持文本、TXT、Markdown、PDF、DOCX 需求输入；
+- 提取需求事实、业务规则、状态流转、推导风险和关键待确认项；
+- 每轮最多展示3个真正影响测试预期的确认问题，非阻塞问题转为风险继续分析；
+- 生成包含分类、优先级、前置条件、步骤、预期结果和来源依据的结构化测试点；
+- Reviewer检查覆盖度、边界异常、重复项、可执行性、可追踪性和无依据断言；
+- Reviser使用增量操作修正测试点，由Python校验后原子合并并重新评审；
+- 生成可预览、可下载的Markdown测试分析报告；
+- MySQL保存版本化任务快照、Agent事件和执行记录，服务重启后可恢复；
+- 用户确认脱敏后，将完整知识资产保存到MySQL，并将有界检索片段写入Milvus；
+- 历史任务支持搜索、恢复、重命名和删除；知识资产支持搜索、筛选、停用、恢复和索引重试；
+- 记录节点耗时、LLM Token、重试次数、错误类型和Milvus检索耗时。
 
-V1 Workflow PRD 已归档在 [docs/archive/PRD_WORKFLOW_V1.md](docs/archive/PRD_WORKFLOW_V1.md)，不再代表当前产品范围。Codex 的仓库级协作规则位于 [AGENTS.md](AGENTS.md)。
+## 架构设计
 
-## 本地运行
-
-建议使用 Python 3.10 或更高版本。
-
-```bash
-python -m venv .venv
+```mermaid
+flowchart LR
+    UI["原生 Web / Streamlit兼容页"] --> API["FastAPI"]
+    API --> APP["Application Service"]
+    APP --> ORCH["Agent Orchestrator"]
+    ORCH --> NODES["Analyzer / Retriever / Generator / Reviewer / Reviser / Finalizer"]
+    NODES --> LLM["LLM Service"]
+    NODES --> RAG["RAG Service"]
+    APP --> TASK_REPO["TaskRepository"]
+    APP --> ASSET_REPO["KnowledgeAssetRepository"]
+    TASK_REPO --> MYSQL["MySQL"]
+    ASSET_REPO --> MYSQL
+    RAG --> MILVUS["Milvus"]
+    RAG --> EMBEDDING["Embedding Service"]
 ```
 
-Windows PowerShell：
+依赖方向遵循以下边界：
+
+- 页面只表达创建、继续、补充、确认、反馈等用户动作；
+- Application Service负责加载任务、调用Orchestrator、保存结果并返回只读TaskView；
+- Orchestrator根据AgentState决定下一节点，页面不能指定节点；
+- Repository隔离内存和MySQL实现；
+- LLM、Embedding、Milvus和文档解析均通过Service边界接入。
+
+## 数据存储
+
+| 存储 | 保存内容 | 作用 |
+|---|---|---|
+| MySQL任务表 | 完整AgentState JSON快照、状态、步骤、任务名、版本 | 任务恢复与历史查询 |
+| MySQL事件/执行表 | Agent事件、execution_id、执行租约 | 审计与重复执行保护 |
+| MySQL知识资产表 | 完整需求、测试点、评审和报告的版本化快照 | 权威知识内容 |
+| Milvus | 有界短片段、向量、asset_id、版本和内容哈希 | 相似资产候选召回 |
+
+Milvus负责“找到候选”，MySQL负责“返回完整且可审计的权威内容”。召回结果会通过关联标识回查MySQL，不把向量库当作文档数据库使用。
+
+## 真实验收证据
+
+阶段2.20.3使用真实PDF、LLM、MySQL和Milvus完成了一轮端到端验收：
+
+```text
+上传PDF → 解析 → 补充3个关键问题 → 恢复同一任务
+→ 历史资产检索 → 生成测试点 → Reviewer评审 → 生成报告
+→ 可选人工反馈 → 再次修正与评审 → 保存知识资产V1/V2
+→ 重启后端 → 从MySQL恢复历史任务
+```
+
+该次样本首次生成10个测试点、Reviewer评分88分；提交一次人工反馈后生成12个测试点和新版报告。两版知识资产均完成Milvus索引。累计节点耗时97.18秒，其中LLM累计81.56秒、Milvus检索15.59秒。
+
+这些数据只代表该样本、当前模型和网络环境下的一次实测，不是平均性能或通用质量结论。
+
+默认自动化测试结果：
+
+```text
+570 passed, 10 skipped
+```
+
+跳过项是需要显式环境变量开启的真实MySQL和Tesseract集成测试。默认测试使用Fake/Mock，不调用真实LLM、Embedding或Milvus。
+
+## 快速体验
+
+### 1. 安装依赖
+
+建议使用Python 3.10或更高版本。
 
 ```powershell
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 Copy-Item .env.example .env
-streamlit run main.py
 ```
 
-FastAPI后端（阶段2.17.2后台执行接口）：
+至少在 `.env` 中配置可用的LLM：
+
+```text
+DEEPSEEK_API_KEY=your_api_key
+DEEPSEEK_BASE_URL=https://your-compatible-endpoint/v1
+DEEPSEEK_MODEL=your_model
+```
+
+如需体验任务持久化和知识检索，再配置MySQL、Embedding和Milvus。完整配置项可参考 [.env.example](.env.example)。
+
+### 2. 启动FastAPI与原生Web
 
 ```powershell
 python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
-启动后访问`http://127.0.0.1:8000/docs`查看Swagger。当前API复用同一个Application Service，支持文本创建和`POST /api/v1/tasks/from-document`上传TXT、Markdown、PDF、DOCX需求文档，API文件上限为20MB。创建任务后可调用`POST /api/v1/tasks/{task_id}/run`提交后台执行，再通过`GET /api/v1/tasks/{task_id}/progress`轮询当前阶段、执行状态、关键计数和最近3条事件；需要完整结果时再调用任务详情接口。
+打开：
 
-知识资产可通过`GET /api/v1/knowledge-assets`按关键词、状态和分页查询摘要，再通过`GET /api/v1/knowledge-assets/{asset_id}`读取单条详情。当前接口用于后续知识库管理页，尚未提供下线、删除和索引重试操作。
+- 工作台：<http://127.0.0.1:8000/app/>
+- 知识库：<http://127.0.0.1:8000/app/knowledge.html>
+- Swagger：<http://127.0.0.1:8000/docs>
 
-原生Web前端由FastAPI同源托管，启动后访问`http://127.0.0.1:8000/app/`。当前支持文本/文件创建、后台启动、进度轮询、待确认问题回答、结构化测试点分页和详情、Reviewer质量结果、人工反馈与业务规则二次确认、最终Markdown报告预览和下载，以及左侧MySQL历史任务的新建、搜索、恢复、重命名与悬浮确认删除。历史列表只展示任务标题和状态；任务默认按需求标题自动命名，也可由用户修改，报告下载使用当前任务名称。完成且通过Reviewer的结果可在用户确认脱敏后保存到知识库：MySQL保存完整资产，Milvus保存有关联标识的检索片段。
+仓库内提供可公开演示的虚构样本：
 
-顶部“知识库”入口打开`http://127.0.0.1:8000/app/knowledge.html`，支持资产摘要搜索、索引状态筛选、分页、详情浏览、停用、恢复和索引失败重试。物理删除未开放，停用资产不会继续参与RAG召回，并保留审计和恢复能力。
+- `evaluation/fixtures/assets/native_order_requirement.pdf`
+- `evaluation/fixtures/assets/realistic_checkout_prd.docx`
+- `evaluation/fixtures/assets/realistic_smart_lock_prd.docx`
 
-桌面端工作区会使用浏览器可用宽度，历史任务标题最多展示两行。自动修正达到上限后不再强制卡在人工反馈前，系统会生成带风险说明的报告；未通过Reviewer的结果不会开放知识资产沉淀入口。
-
-桌面端原生Web使用固定视口三栏工作区，长历史列表、需求内容和分析结果在对应面板内部滚动；移动端自动回退为自然页面滚动。删除确认层挂载在页面外层，不会被历史列表滚动区域裁剪。
-
-补充信息提交后，页面会在后台任务处于`queued/running`期间继续轮询，不会因旧的`waiting_for_user`业务状态提前停止。长任务Reviewer使用紧凑JSON和事实ID返回覆盖映射，并仅在明确的输出截断时受控重试一次；ID会在Python校验前恢复为原事实文本。
-
-阶段2.17.2使用进程内`ThreadPoolExecutor`避免HTTP请求等待完整Agent链路，并防止同一进程重复启动同一任务。它适合当前单实例演示，不等同于Celery/Redis等分布式任务队列；API多进程、高可用调度和SSE仍未实现。
-
-独立前端的最小调用顺序：
-
-```text
-POST /api/v1/tasks 或 POST /api/v1/tasks/from-document
-→ POST /api/v1/tasks/{task_id}/run
-→ 定时 GET /api/v1/tasks/{task_id}/progress
-→ 如 waiting_for_user，POST /clarifications 后再次 POST /run
-→ completed 后 GET /api/v1/tasks/{task_id}读取测试点和报告
-```
-
-轮询期间只读取轻量`progress`；进入结果页后再读取完整任务详情。业务状态为等待用户时，后台执行状态停止属于正常暂停，不代表任务失败。
-
-如需运行完整开发测试，安装包含pytest的开发依赖：
+### 3. 运行测试
 
 ```powershell
-pip install -r requirements-dev.txt
+python -m pytest -q
+python -m compileall -q agent application api documents knowledge_assets repositories services utils views tests main.py
+git diff --check
 ```
 
-也可以使用无头模式启动：
-
-```powershell
-python -m streamlit run main.py --server.headless=true
-```
-
-运行错误会显示在页面任务状态中；结构化JSON校验失败和受控重试信息同时输出到启动命令所在的PowerShell窗口。
-
-运行前请在 `.env` 中填写真实的 `DEEPSEEK_API_KEY`。`.env` 已加入 Git 忽略规则，请勿提交真实密钥。
-
-扫描PDF和图片文字OCR需要另外安装本地Tesseract及中文`chi_sim`、英文`eng`语言数据，然后在`.env`配置：
+## 项目结构
 
 ```text
-TESSERACT_CMD=tesseract
-OCR_LANGUAGES=chi_sim+eng
-OCR_TIMEOUT_SECONDS=30
+api/                 FastAPI接口、进度Presenter和原生Web托管
+application/         用户用例、Application Service、只读TaskView和任务快照
+agent/               AgentState、Orchestrator、节点、事件和领域模型
+documents/           PDF/DOCX/OCR/视觉元素的统一文档模型与解析
+knowledge_assets/    知识资产、准入策略、版本化快照和有界Chunk
+repositories/        Task/KnowledgeAsset Repository及内存、MySQL实现
+services/            LLM、RAG、Embedding、Milvus和文档解析适配
+frontend/            无框架原生Web工作台与知识库页面
+views/               Streamlit兼容演示页面
+evaluation/          脱敏需求、图文样本、离线评测脚本与结果
+tests/               unit、architecture、app和integration分层测试
+docs/                PRD、开发状态、路线图和学习复盘
 ```
 
-如果没有安装Tesseract，正文和表格解析仍会继续，系统会记录`OCR_UNAVAILABLE`，不会伪造OCR结果。
-Windows自定义路径建议使用正斜杠，例如`TESSERACT_CMD=D:/Tesseract-OCR-5/tesseract.exe`，避免`.env`
-双引号中的`\t`被解析为制表符。
+## 项目边界与已知限制
 
-如需显式启用流程图和UI图理解，需要配置一个支持图片输入与JSON Output的OpenAI兼容端点：
+- 后台任务使用进程内 `ThreadPoolExecutor`，适合单实例演示，不等同于Celery/Redis分布式队列；
+- 前端采用轮询，不是SSE或Token级流式输出；
+- OCR依赖本地Tesseract；视觉理解需要显式配置兼容的多模态端点；
+- 真实图文语义效果仍需更多经过授权和脱敏的企业样本验证；
+- 已有离线评测和少量真实集成证据，但不能声称对任意领域、任意长度PRD都稳定有效；
+- 项目当前功能已冻结，暂不扩展多Agent自由协作、任意工具调用和不受控自主规划。
 
-```text
-VISION_API_KEY=your_vision_api_key
-VISION_BASE_URL=https://your-vision-endpoint.example/v1
-VISION_MODEL=your-vision-model
-VISION_TIMEOUT_SECONDS=60
-VISION_MAX_TOKENS=1500
-```
+## 文档导航
 
-未配置视觉端点时，普通文字、表格和OCR解析不受影响；视觉候选只记录`VISION_UNAVAILABLE`。图片不会全部
-发送给模型：装饰图和小图会跳过，OCR已足够表达且没有流程/UI信号的图片不会重复调用视觉模型。
+- [当前产品PRD](docs/product/PRD_AGENT_V2.md)
+- [当前开发状态](docs/CURRENT_STATUS.md)
+- [完整开发日志](docs/DEVELOPMENT_LOG.md)
+- [代码学习与面试复盘](docs/LEARNING_NOTES.md)
+- [秋招项目路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)
+- [Codex跨设备协作说明](AGENTS.md)
 
-任务存储默认使用会话级内存。如需启用阶段2.13.2新增的MySQL Repository，在本机`.env`中设置：
+## 简历中的准确定位
 
-```text
-TASK_REPOSITORY_BACKEND=mysql
-MYSQL_HOST=127.0.0.1
-MYSQL_PORT=3306
-MYSQL_USER=your_mysql_user
-MYSQL_PASSWORD=your_mysql_password
-MYSQL_DATABASE=ai_test_assistant
-```
+推荐描述为：
 
-应用启动时会创建`agent_tasks`、`agent_task_events`和`agent_task_executions`。建表SQL、TaskRecord真实CRUD、事件级联删除
-以及等待补充/完成/失败任务的跨Application Service实例恢复已在真实MySQL 8.0.32验证。
+> 基于FastAPI、受控Agentic Workflow、RAG与Human-in-the-loop构建AI测试分析助手，实现图文PRD解析、结构化测试点生成、Reviewer/Reviser质量闭环、MySQL任务恢复和Milvus历史测试资产沉淀。
 
-KnowledgeAsset存储使用独立开关。需要让资产Repository使用同一MySQL时设置：
-
-```text
-KNOWLEDGE_ASSET_REPOSITORY_BACKEND=mysql
-```
-
-资产Repository初始化时会创建`knowledge_assets`表。原生Web已接入“保存到知识库”按钮，Streamlit兼容页仍不提供；任何页面启动都不会自动发布资产；
-本阶段提供的是可由后续页面或FastAPI复用的MySQL存储边界。
-
-KnowledgeAsset V2索引使用独立配置：
-
-```text
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-EMBEDDING_MODEL=nomic-embed-text
-EMBEDDING_TIMEOUT=60
-MILVUS_URI=http://127.0.0.1:19530
-MILVUS_ASSET_COLLECTION=knowledge_assets_v2
-MILVUS_TOKEN=
-KNOWLEDGE_RETRIEVAL_TOP_K=3
-KNOWLEDGE_RETRIEVAL_RAW_LIMIT=20
-KNOWLEDGE_RETRIEVAL_MIN_SCORE=0.65
-```
-
-索引用例使用一次批量`/api/embed`请求并限制最多32个Chunk；旧`ai_test_cases`集合保持不动。
-检索用例每次只执行一次查询Embedding、一次Milvus搜索和一次MySQL批量回查；`0.65`只是待离线评测的可配置基线。
-
-日常单元测试不会访问MySQL。如需在本机显式运行真实数据库集成测试：
-
-```powershell
-$env:RUN_MYSQL_INTEGRATION_TESTS='1'
-python -m unittest tests.integration.mysql.test_mysql_task_repository_integration -v
-```
-
-集成测试使用独立UUID并在结束后按`task_id`清理测试数据。2.13.4已实现并通过真实MySQL验证乐观锁、
-`execution_id`和可过期执行租约；当前保证节点结果幂等提交，但不宣称外部LLM请求Exactly Once。
-
-### 测试命令
-
-pytest现在是推荐的统一测试入口，同时继续兼容原有unittest：
-
-```powershell
-python -m pytest
-python -m pytest -m unit
-python -m pytest -m app
-python -m pytest -m integration
-python -m unittest discover -s tests -v
-```
-
-`integration`默认不会访问真实MySQL；仍需设置`RUN_MYSQL_INTEGRATION_TESTS=1`才会执行。
-
-## 外部依赖
-
-测试资产检索当前依赖：
-
-- Milvus 向量数据库
-- 提供 `nomic-embed-text` 模型的 Embedding 服务
-- DeepSeek 兼容的 Chat Completions API
-
-Milvus 与 Embedding 地址目前仍由现有 RAG 客户端配置。后续阶段会统一迁移到环境变量。
-
-## 后续计划
-
-1. 阶段2.13.1：已完成版本化JSON任务快照，可恢复AgentState、事件、决策和节点指标
-2. 阶段2.13.2：已实现MySQL任务快照与独立事件Repository，真实连接和建表已验证
-3. 阶段2.13.3：已完成真实MySQL CRUD和跨Application Service实例恢复验证
-4. 阶段2.13.4：已实现version、execution_id与执行租约保护
-5. 阶段2.13.5：已使用pytest统一测试入口、marker与fixture，并保留现有unittest兼容
-6. 阶段2.13.6：已按unit、architecture、app和integration整理测试目录，测试内容保持不变
-7. 阶段2.14.1：已完成KnowledgeAsset模型、准入策略、内容哈希和内存Repository边界
-8. 阶段2.14.2：已完成完整KnowledgeAsset的MySQL权威存储实现
-9. 阶段2.14.3：已完成有界Chunk、批量Embedding和Milvus V2索引写入边界
-10. 阶段2.14.4：已完成V2候选召回、阈值过滤、MySQL批量回查和来源验证
-11. 阶段2.14.5：已实现索引失败的显式重试、重复请求保护、补偿审计和停用清理
-12. 阶段2.15.1：已完成统一DocumentContent、稳定来源和现有文本解析兼容
-13. 阶段2.15.2：已完成PDF/DOCX原生结构、图片附件和解析覆盖统计
-14. 阶段2.15.3：已完成OCR协议、Tesseract适配、扫描页渲染、置信度分流和失败隔离
-15. 阶段2.15.4：已完成有界视觉候选筛选、结构化多模态协议、调用限额和失败降级
-16. 阶段2.15.5：已完成关键问题筛选与Human-in-the-loop限流
-17. 阶段2.15.6：已完成ContextBuilder、节点字段白名单、输入预算和裁剪指标
-18. 阶段2.15.7：已完成真实/估算Token、分层耗时、Prompt指纹和错误分类记录
-19. 阶段2.16.1：已建立schema v1人工标注契约和10份单人复核的脱敏评测需求；尚无双人一致性数据
-20. 阶段2.16.2：已建立5份合成图文样本及正文、表格、OCR、流程和UI确定性评分；真实视觉端点尚未运行
-21. 阶段2.16.3：已建立5份虚构RAG查询和资产级指标，并用Fake外部依赖跑通真实Retrieval Service边界；尚无真实Milvus效果结果
-22. 阶段2.16.3真实实验：5份合成KnowledgeAsset已通过MySQL、`nomic-embed-text`和Milvus完成端到端评测；Recall@3=1.0，但禁止资产命中率为0.1，仍需阈值对比
-23. 阶段2.16.3参数对比：9组真实实验中阈值0.70保持Recall=1.0并消除当前样本的禁止命中；样本过少，尚未修改线上默认参数
-24. 阶段2.16.4第一小步：已建立12份Reviewer缺陷注入样本和Precision、Recall、正确样本误报率；尚未运行真实Reviewer
-25. 阶段2.16.4第二小步：已将现有结构化评审结果保守映射为六类缺陷；无法确定的自由文本不会强行分类
-26. 阶段2.16.4第三小步：已建立`TestAnalysisState → Reviewer → 缺陷适配 → 指标`Runner，并生成Fake接线报告；尚未运行真实Reviewer
-27. 阶段2.16.4真实基线：已用`deepseek-v4-pro`运行12份合成样本，Precision=0.3636、Recall=0.3333，3份结构化输出失败；结果只代表当前小样本
-28. 阶段2.16.4 Reviser第一小步：已建立6份最小修复样本、目标修复率和正确测试点保留率；当前只有Fake接线报告
-29. 阶段2.16.4真实Reviser：6份样本严格目标修复率0.1667、保护率1.0、1份结构校验失败；严格匹配不代表人工语义正确率
-30. 阶段2.16.5第一小步：已固定三方案实验契约、相同10份输入和统一质量/耗时/Token指标；当前仅Fake接线
-31. 阶段2.16.5第二小步：已将Application Service只读`TaskView`适配为统一实验输出，复用真实耗时、Token和修正次数
-32. 阶段2.16.5第三小步：已固定三组能力开关及相同的待确认问题自动延期策略，并通过Application Service同task_id恢复
-33. 阶段2.16.5第四小步：已在不修改Orchestrator的前提下装配无RAG和质量旁路节点，三组差异留有显式事件证据
-34. 阶段2.16.5真实烟测：已完成1份需求三组运行并记录耗时/Token；严格文本指标全0且RAG受旧控制台编码降级影响，禁止用作质量提升结论
-35. 阶段2.16.6：汇总现有真实证据和简历材料，完整10×3降为可选增强
-
-秋招项目的可写能力、量化证据、限制和面试讲解见[`docs/RESUME_EVIDENCE.md`](docs/RESUME_EVIDENCE.md)。
-
-长PRD需求分析采用“章节分片 + 稳定陈述ID”契约：Python先为原文陈述分配`S001`等ID并保存来源，LLM只返回事实、规则、状态对应的ID和少量风险，Python再回填原文；待确认问题在整份需求上统一审核，避免分片重复提问。未知ID会被拒绝，截断时仍保留最多3层有界拆分。
-
-DeepSeek V4默认启用思考模式，隐藏推理也会消耗输出额度。项目对结构化JSON调用显式关闭思考模式，普通文本调用不变。同一2735字符演示PRD真实验证从旧版319.55秒、8次调用/2次拆分，变为13.38秒、3次调用/0次拆分且未截断。该数字只代表当前单份合成样本，不外推到所有PRD。
-
-长PRD进入知识检索时，不会再重复携带全部原文、事实、规则、状态和风险依据。ContextBuilder为这些分区设置独立预算，优先保留关键数字和业务规则，并在指标中记录裁剪分区；完整AgentState不受影响。2735字符样本已完成真实主链路验收并安全停在自动修正上限；约416秒的同步耗时仍是V1演示层的明确限制。
-
-旧Agent RAG的Embedding请求也读取`OLLAMA_BASE_URL`、`EMBEDDING_MODEL`和`EMBEDDING_TIMEOUT`，并对该明确配置的内部服务禁用环境代理，避免Streamlit启动环境中的本地代理造成误路由。
-36. 阶段2.17：只有前述阶段稳定后，再评估FastAPI、后台任务、SSE和Vue
-
-详细范围、验收证据和明确不做的功能见
-[秋招项目含金量提升路线图](docs/roadmap/AUTUMN_RECRUITMENT_ROADMAP.md)。
+不建议描述为“完全自主Agent”“多Agent协作平台”或“自动完成测试执行”，因为这些能力不在当前实现范围内。
